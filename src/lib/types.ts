@@ -21,7 +21,15 @@ export type Confidence = "low" | "medium" | "high";
 
 export type AlertType = "price" | "pattern" | "opinion";
 
-export type DrawingTool = "none" | "trend" | "horizontal";
+export type DrawingKind =
+  | "trend"
+  | "horizontal"
+  | "channel"
+  | "fibonacci"
+  | "rectangle"
+  | "text";
+
+export type DrawingTool = "none" | DrawingKind;
 
 export interface SymbolMeta {
   id: string;
@@ -110,12 +118,19 @@ export interface PatternHit {
   feedback?: "correct" | "incorrect";
 }
 
+export interface DrawingPoint {
+  time: number;
+  price: number;
+}
+
 export interface Drawing {
   id: string;
   symbolId: string;
-  tool: "trend" | "horizontal";
-  points: { time: number; price: number }[];
+  tool: DrawingKind;
+  points: DrawingPoint[];
   color: string;
+  /** Text memo body (tool === "text") */
+  text?: string;
   createdAt: string;
 }
 

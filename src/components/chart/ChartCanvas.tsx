@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   CandlestickSeries,
   ColorType,
@@ -13,28 +13,37 @@ import {
   type SeriesMarker,
   type Time,
 } from "lightweight-charts";
-import type { Candle, Drawing, PatternHit } from "@/lib/types";
+import {
+  DrawingOverlay,
+  type ChartApiBundle,
+} from "@/components/chart/DrawingOverlay";
+import type { Candle, Drawing, DrawingTool, PatternHit } from "@/lib/types";
 import { bollinger, ema, rsi, sma } from "@/lib/indicators";
 import type { IndicatorId } from "@/lib/store";
+import { cn } from "@/lib/utils";
 
 interface ChartCanvasProps {
+  symbolId: string;
   candles: Candle[];
   indicators: IndicatorId[];
   patternHits?: PatternHit[];
   drawings?: Drawing[];
-  drawingTool?: "none" | "trend" | "horizontal";
+  drawingTool?: DrawingTool;
   onAddDrawing?: (drawing: Omit<Drawing, "id" | "createdAt">) => void;
+  onDeleteDrawing?: (id: string) => void;
   height?: number;
   className?: string;
 }
 
 export function ChartCanvas({
+  symbolId,
   candles,
   indicators,
   patternHits = [],
   drawings = [],
   drawingTool = "none",
   onAddDrawing,
+  onDeleteDrawing,
   height = 420,
   className,
 }: ChartCanvasProps) {
@@ -43,8 +52,8 @@ export function ChartCanvas({
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volumeRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const overlayRefs = useRef<ISeriesApi<"Line">[]>([]);
-  const pendingPoint = useRef<{ time: number; price: number } | null>(null);
-  const symbolIdRef = useRef<string>("");
+  const [chartApi, setChartApi] = useState<ChartApiBundle | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -86,6 +95,7 @@ export function ChartCanvas({
     chartRef.current = chart;
     candleSeriesRef.current = candleSeries;
     volumeRef.current = volumeSeries;
+    setChartApi({ chart, series: candleSeries });
 
     const ro = new ResizeObserver(() => {
       if (!containerRef.current) return;
@@ -95,6 +105,7 @@ export function ChartCanvas({
 
     return () => {
       ro.disconnect();
+      setChartApi(null);
       chart.remove();
       chartRef.current = null;
       candleSeriesRef.current = null;
@@ -121,7 +132,10 @@ export function ChartCanvas({
       candles.map((c) => ({
         time: c.time as Time,
         value: c.volume,
-        color: c.close >= c.open ? "rgba(45,212,168,0.35)" : "rgba(240,113,120,0.35)",
+        color:
+          c.close >= c.open
+            ? "rgba(45,212,168,0.35)"
+            : "rgba(240,113,120,0.35)",
       }))
     );
 
@@ -193,92 +207,34 @@ export function ChartCanvas({
     chart.timeScale().fitContent();
   }, [candles, indicators, patternHits]);
 
+  // Reset pending selection when tool changes
   useEffect(() => {
-    const chart = chartRef.current;
-    const series = candleSeriesRef.current;
-    if (!chart || !series || !onAddDrawing) return;
-
-    const handler = (param: {
-      point?: { x: number; y: number };
-      time?: Time;
-    }) => {
-      if (drawingTool === "none" || !param.point || param.time == null) return;
-      const price = series.coordinateToPrice(param.point.y);
-      if (price == null) return;
-      const point = { time: Number(param.time), price };
-      if (drawingTool === "horizontal") {
-        onAddDrawing({
-          symbolId: symbolIdRef.current || "active",
-          tool: "horizontal",
-          points: [point],
-          color: "#fbbf24",
-        });
-        return;
-      }
-      if (!pendingPoint.current) {
-        pendingPoint.current = point;
-      } else {
-        onAddDrawing({
-          symbolId: symbolIdRef.current || "active",
-          tool: "trend",
-          points: [pendingPoint.current, point],
-          color: "#38bdf8",
-        });
-        pendingPoint.current = null;
-      }
-    };
-
-    chart.subscribeClick(handler);
-    return () => chart.unsubscribeClick(handler);
-  }, [drawingTool, onAddDrawing]);
-
-  // Drawings as simple line overlays
-  useEffect(() => {
-    const chart = chartRef.current;
-    if (!chart || candles.length === 0) return;
-    const temp: ISeriesApi<"Line">[] = [];
-    for (const d of drawings) {
-      if (d.tool === "horizontal" && d.points[0]) {
-        const series = chart.addSeries(LineSeries, {
-          color: d.color,
-          lineWidth: 1,
-          lineStyle: 2,
-          priceLineVisible: false,
-          lastValueVisible: false,
-        });
-        series.setData([
-          { time: candles[0].time as Time, value: d.points[0].price },
-          {
-            time: candles[candles.length - 1].time as Time,
-            value: d.points[0].price,
-          },
-        ]);
-        temp.push(series);
-      }
-      if (d.tool === "trend" && d.points.length >= 2) {
-        const series = chart.addSeries(LineSeries, {
-          color: d.color,
-          lineWidth: 2,
-          priceLineVisible: false,
-          lastValueVisible: false,
-        });
-        series.setData(
-          d.points.map((p) => ({ time: p.time as Time, value: p.price }))
-        );
-        temp.push(series);
-      }
-    }
-    return () => {
-      for (const s of temp) chart.removeSeries(s);
-    };
-  }, [drawings, candles]);
+    if (drawingTool !== "none") setSelectedId(null);
+  }, [drawingTool]);
 
   return (
     <div
-      ref={containerRef}
-      className={className}
+      className={cn("relative w-full", className)}
       style={{ height }}
       data-testid="chart-canvas"
-    />
+      data-drawing-tool={drawingTool}
+    >
+      <div ref={containerRef} className="absolute inset-0" />
+      <DrawingOverlay
+        chartApi={chartApi}
+        symbolId={symbolId}
+        drawings={drawings}
+        tool={drawingTool}
+        onAddDrawing={onAddDrawing}
+        onDeleteDrawing={onDeleteDrawing}
+        selectedId={selectedId}
+        onSelectDrawing={setSelectedId}
+      />
+      {drawingTool !== "none" && (
+        <div className="pointer-events-none absolute bottom-2 left-2 z-20 rounded bg-black/55 px-2 py-1 text-[10px] text-[var(--workspace-muted)]">
+          드로잉: {drawingTool} · Esc 취소 · Del 선택 삭제
+        </div>
+      )}
+    </div>
   );
 }

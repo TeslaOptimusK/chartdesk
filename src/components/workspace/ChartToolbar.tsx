@@ -4,11 +4,15 @@ import { useMemo, useState } from "react";
 import {
   Bell,
   Columns2,
+  Eraser,
   LayoutGrid,
   LineChart,
   Minus,
+  MoveDiagonal,
+  Percent,
   Search,
   Square,
+  Type,
   TrendingUp,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -19,7 +23,13 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { useWorkspace, type IndicatorId, type LayoutMode } from "@/lib/store";
-import { TIMEFRAME_LABELS, type Timeframe } from "@/lib/types";
+import { DRAWING_TOOL_META } from "@/lib/drawings";
+import {
+  TIMEFRAME_LABELS,
+  type DrawingKind,
+  type DrawingTool,
+  type Timeframe,
+} from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const TFS: Timeframe[] = ["1", "5", "15", "60", "240", "D"];
@@ -29,6 +39,18 @@ const INDICATORS: { id: IndicatorId; label: string }[] = [
   { id: "bb", label: "Bollinger" },
   { id: "rsi", label: "RSI" },
 ];
+
+const DRAWING_ICONS: Record<
+  DrawingKind,
+  React.ComponentType<{ className?: string }>
+> = {
+  trend: TrendingUp,
+  horizontal: Minus,
+  channel: MoveDiagonal,
+  fibonacci: Percent,
+  rectangle: Square,
+  text: Type,
+};
 
 export function ChartToolbar({ onOpenIngest }: { onOpenIngest: () => void }) {
   const {
@@ -45,6 +67,8 @@ export function ChartToolbar({ onOpenIngest }: { onOpenIngest: () => void }) {
     setLayoutMode,
     alerts,
     setRightTab,
+    drawings,
+    setDrawings,
   } = useWorkspace();
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -169,23 +193,38 @@ export function ChartToolbar({ onOpenIngest }: { onOpenIngest: () => void }) {
       </div>
 
       <div className="flex items-center gap-1 border-l border-[var(--workspace-border)] pl-2">
+        {DRAWING_TOOL_META.map((meta) => {
+          const Icon = DRAWING_ICONS[meta.id];
+          return (
+            <ToolBtn
+              key={meta.id}
+              active={drawingTool === meta.id}
+              onClick={() =>
+                setDrawingTool(
+                  drawingTool === meta.id ? "none" : (meta.id as DrawingTool)
+                )
+              }
+              title={`${meta.label} — ${meta.hint}`}
+            >
+              <Icon className="h-3.5 w-3.5" />
+            </ToolBtn>
+          );
+        })}
         <ToolBtn
-          active={drawingTool === "trend"}
-          onClick={() =>
-            setDrawingTool(drawingTool === "trend" ? "none" : "trend")
-          }
-          title="추세선"
+          active={false}
+          onClick={async () => {
+            const next = drawings.filter((d) => d.symbolId !== activeSymbolId);
+            setDrawings(next);
+            setDrawingTool("none");
+            await fetch("/api/drawings", {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ symbolId: activeSymbolId, drawings: [] }),
+            });
+          }}
+          title="현재 심볼 드로잉 모두 지우기"
         >
-          <TrendingUp className="h-3.5 w-3.5" />
-        </ToolBtn>
-        <ToolBtn
-          active={drawingTool === "horizontal"}
-          onClick={() =>
-            setDrawingTool(drawingTool === "horizontal" ? "none" : "horizontal")
-          }
-          title="수평선"
-        >
-          <Minus className="h-3.5 w-3.5" />
+          <Eraser className="h-3.5 w-3.5" />
         </ToolBtn>
       </div>
 

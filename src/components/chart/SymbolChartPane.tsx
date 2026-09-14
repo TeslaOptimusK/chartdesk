@@ -64,28 +64,33 @@ export function SymbolChartPane({
   );
   const localDrawings = drawings.filter((d) => d.symbolId === symbolId);
 
-  const onAddDrawing = async (draft: Omit<Drawing, "id" | "createdAt">) => {
-    if (!interactive) return;
-    const next: Drawing = {
-      ...draft,
-      symbolId,
-      id: `draw_${Date.now()}`,
-      createdAt: new Date().toISOString(),
-    };
+  const persist = async (nextLocal: Drawing[]) => {
     const merged = [
       ...drawings.filter((d) => d.symbolId !== symbolId),
-      ...localDrawings,
-      next,
+      ...nextLocal,
     ];
     setDrawings(merged);
     await fetch("/api/drawings", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        symbolId,
-        drawings: merged.filter((d) => d.symbolId === symbolId),
-      }),
+      body: JSON.stringify({ symbolId, drawings: nextLocal }),
     });
+  };
+
+  const onAddDrawing = async (draft: Omit<Drawing, "id" | "createdAt">) => {
+    if (!interactive) return;
+    const next: Drawing = {
+      ...draft,
+      symbolId,
+      id: `draw_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      createdAt: new Date().toISOString(),
+    };
+    await persist([...localDrawings, next]);
+  };
+
+  const onDeleteDrawing = async (id: string) => {
+    if (!interactive) return;
+    await persist(localDrawings.filter((d) => d.id !== id));
   };
 
   return (
@@ -116,12 +121,14 @@ export function SymbolChartPane({
         </div>
       )}
       <ChartCanvas
+        symbolId={symbolId}
         candles={candles}
         indicators={indicators as IndicatorId[]}
         patternHits={hits}
         drawings={localDrawings}
         drawingTool={interactive ? drawingTool : "none"}
         onAddDrawing={interactive ? onAddDrawing : undefined}
+        onDeleteDrawing={interactive ? onDeleteDrawing : undefined}
         height={height}
         className="w-full"
       />

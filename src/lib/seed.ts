@@ -8,6 +8,89 @@ import type {
   Post,
   SymbolMeta,
 } from "@/lib/types";
+import { defaultColor } from "@/lib/drawings";
+import { generateMockCandles } from "@/lib/market-data/mock-adapter";
+
+function buildDemoDrawings(): Drawing[] {
+  const symbolId = "kr_005930";
+  const candles = generateMockCandles({
+    symbolId,
+    ticker: "005930",
+    timeframe: "D",
+    limit: 120,
+  });
+  if (candles.length < 80) return [];
+  const a = candles[Math.floor(candles.length * 0.25)];
+  const b = candles[Math.floor(candles.length * 0.45)];
+  const c = candles[Math.floor(candles.length * 0.55)];
+  const d = candles[Math.floor(candles.length * 0.7)];
+  const e = candles[Math.floor(candles.length * 0.8)];
+  const now = new Date().toISOString();
+  return [
+    {
+      id: "draw_seed_trend",
+      symbolId,
+      tool: "trend",
+      points: [
+        { time: a.time, price: a.low },
+        { time: b.time, price: b.high },
+      ],
+      color: defaultColor("trend"),
+      createdAt: now,
+    },
+    {
+      id: "draw_seed_horizontal",
+      symbolId,
+      tool: "horizontal",
+      points: [{ time: c.time, price: c.close }],
+      color: defaultColor("horizontal"),
+      createdAt: now,
+    },
+    {
+      id: "draw_seed_channel",
+      symbolId,
+      tool: "channel",
+      points: [
+        { time: a.time, price: a.low * 0.995 },
+        { time: d.time, price: d.low * 1.002 },
+        { time: c.time, price: c.high },
+      ],
+      color: defaultColor("channel"),
+      createdAt: now,
+    },
+    {
+      id: "draw_seed_fib",
+      symbolId,
+      tool: "fibonacci",
+      points: [
+        { time: b.time, price: Math.max(b.high, d.high) },
+        { time: e.time, price: Math.min(e.low, c.low) },
+      ],
+      color: defaultColor("fibonacci"),
+      createdAt: now,
+    },
+    {
+      id: "draw_seed_rect",
+      symbolId,
+      tool: "rectangle",
+      points: [
+        { time: c.time, price: c.high },
+        { time: e.time, price: e.low },
+      ],
+      color: defaultColor("rectangle"),
+      createdAt: now,
+    },
+    {
+      id: "draw_seed_text",
+      symbolId,
+      tool: "text",
+      points: [{ time: d.time, price: d.high }],
+      color: defaultColor("text"),
+      text: "데모: 지지 관찰",
+      createdAt: now,
+    },
+  ];
+}
 
 export const SEED_SYMBOLS: SymbolMeta[] = [
   {
@@ -288,7 +371,7 @@ export function createSeedStore(): AppStoreData {
     opinions: SEED_OPINIONS,
     patterns: SEED_PATTERNS,
     patternHits: [] as PatternHit[],
-    drawings: [] as Drawing[],
+    drawings: buildDemoDrawings(),
     alerts: SEED_ALERTS,
     watchlist: ["kr_005930", "us_NVDA", "crypto_BTCUSDT", "kr_000660"],
   };
