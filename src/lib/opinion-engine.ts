@@ -22,9 +22,10 @@ function directionFromText(text: string): OpinionDirection {
   const sellHits = (t.match(/매도|숏|이탈|하락|bear|sell|저항/g) ?? []).length;
   const watchHits = (t.match(/관망|대기|지켜|watch|홀딩/g) ?? []).length;
   if (buyHits === 0 && sellHits === 0 && watchHits === 0) return "unclear";
-  if (buyHits > sellHits && buyHits >= watchHits) return "buy";
-  if (sellHits > buyHits && sellHits >= watchHits) return "sell";
-  if (watchHits >= buyHits && watchHits >= sellHits) return "watch";
+  // Prefer explicit 관망 when tied with buy/sell (e.g. "매수보다 관망")
+  if (watchHits > 0 && watchHits >= buyHits && watchHits >= sellHits) return "watch";
+  if (buyHits > sellHits) return "buy";
+  if (sellHits > buyHits) return "sell";
   return "unclear";
 }
 
