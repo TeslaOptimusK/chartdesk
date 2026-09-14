@@ -1,0 +1,133 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-plex-sans), "IBM Plex Sans", sans-serif;
+  --font-mono: var(--font-chart-mono), "IBM Plex Mono", monospace;
+  --font-heading: var(--font-plex-sans), "IBM Plex Sans", sans-serif;
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  /* ChartDesk dark trading workspace tokens */
+  --workspace-bg: #080c11;
+  --workspace-panel: #0e141c;
+  --workspace-elevated: #141c27;
+  --workspace-border: #1e2a38;
+  --workspace-fg: #e8eef5;
+  --workspace-muted: #9aa7b5;
+  --workspace-faint: #6b7a8c;
+  --chart-bg: #0c1219;
+  --brand-accent: #e8b86d;
+  --candle-up: #2dd4a8;
+  --candle-down: #f07178;
+
+  --background: #080c11;
+  --foreground: #e8eef5;
+  --card: #0e141c;
+  --card-foreground: #e8eef5;
+  --popover: #141c27;
+  --popover-foreground: #e8eef5;
+  --primary: #e8b86d;
+  --primary-foreground: #0b1016;
+  --secondary: #1a2430;
+  --secondary-foreground: #e8eef5;
+  --muted: #1a2430;
+  --muted-foreground: #9aa7b5;
+  --accent: #1a2430;
+  --accent-foreground: #e8eef5;
+  --destructive: #f07178;
+  --border: #1e2a38;
+  --input: #1e2a38;
+  --ring: #e8b86d;
+  --chart-1: #2dd4a8;
+  --chart-2: #e8b86d;
+  --chart-3: #38bdf8;
+  --chart-4: #f07178;
+  --chart-5: #a3e635;
+  --radius: 0.5rem;
+  --sidebar: #0e141c;
+  --sidebar-foreground: #e8eef5;
+  --sidebar-primary: #e8b86d;
+  --sidebar-primary-foreground: #0b1016;
+  --sidebar-accent: #1a2430;
+  --sidebar-accent-foreground: #e8eef5;
+  --sidebar-border: #1e2a38;
+  --sidebar-ring: #e8b86d;
+}
+
+.dark {
+  --background: #080c11;
+  --foreground: #e8eef5;
+  --card: #0e141c;
+  --card-foreground: #e8eef5;
+  --popover: #141c27;
+  --popover-foreground: #e8eef5;
+  --primary: #e8b86d;
+  --primary-foreground: #0b1016;
+  --secondary: #1a2430;
+  --secondary-foreground: #e8eef5;
+  --muted: #1a2430;
+  --muted-foreground: #9aa7b5;
+  --accent: #1a2430;
+  --accent-foreground: #e8eef5;
+  --destructive: #f07178;
+  --border: #1e2a38;
+  --input: #1e2a38;
+  --ring: #e8b86d;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    background-image:
+      radial-gradient(ellipse 80% 50% at 10% -10%, rgba(232, 184, 109, 0.08), transparent),
+      radial-gradient(ellipse 60% 40% at 100% 0%, rgba(45, 212, 168, 0.05), transparent);
+  }
+  html {
+    @apply font-sans;
+  }
+}

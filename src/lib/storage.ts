@@ -1,0 +1,187 @@
+import { promises as fs } from "fs";
+import path from "path";
+import { randomUUID } from "crypto";
+import type {
+  AlertItem,
+  AppStoreData,
+  Drawing,
+  Opinion,
+  PatternDef,
+  PatternHit,
+  Post,
+} from "@/lib/types";
+import { createSeedStore } from "@/lib/seed";
+
+const DATA_DIR = path.join(process.cwd(), "data");
+const STORE_PATH = path.join(DATA_DIR, "store.json");
+
+let writeQueue: Promise<unknown> = Promise.resolve();
+
+async function ensureStore(): Promise<AppStoreData> {
+  await fs.mkdir(DATA_DIR, { recursive: true });
+  try {
+    const raw = await fs.readFile(STORE_PATH, "utf8");
+    return JSON.parse(raw) as AppStoreData;
+  } catch {
+    const seed = createSeedStore();
+    await fs.writeFile(STORE_PATH, JSON.stringify(seed, null, 2), "utf8");
+    return seed;
+  }
+}
+
+async function mutate(
+  fn: (data: AppStoreData) => AppStoreData | void
+): Promise<AppStoreData> {
+  const run = writeQueue.then(async () => {
+    const data = await ensureStore();
+    const next = fn(data) ?? data;
+    await fs.writeFile(STORE_PATH, JSON.stringify(next, null, 2), "utf8");
+    return next;
+  });
+  writeQueue = run.catch(() => undefined);
+  return run;
+}
+
+export async function readStore(): Promise<AppStoreData> {
+  return ensureStore();
+}
+
+export async function resetStore(): Promise<AppStoreData> {
+  return mutate(() => createSeedStore());
+}
+
+export async function updateWatchlist(ids: string[]): Promise<AppStoreData> {
+  return mutate((d) => {
+    d.watchlist = ids;
+  });
+}
+
+export async function addPost(post: Omit<Post, "id" | "createdAt">): Promise<Post> {
+  const created: Post = {
+    ...post,
+    id: `post_${randomUUID().slice(0, 8)}`,
+    createdAt: new Date().toISOString(),
+  };
+  await mutate((d) => {
+    d.posts.unshift(created);
+  });
+  return created;
+}
+
+export async function addOpinion(
+  opinion: Omit<Opinion, "id" | "createdAt">
+): Promise<Opinion> {
+  const created: Opinion = {
+    ...opinion,
+    id: `op_${randomUUID().slice(0, 8)}`,
+    createdAt: new Date().toISOString(),
+  };
+  await mutate((d) => {
+    d.opinions.unshift(created);
+  });
+  return created;
+}
+
+export async function reviewOpinion(
+  id: string,
+  status: "approved" | "rejected",
+  reviewer = "local-user"
+): Promise<Opinion | null> {
+  let updated: Opinion | null = null;
+  await mutate((d) => {
+    const op = d.opinions.find((o) => o.id === id);
+    if (!op) return;
+    op.status = status;
+    op.reviewedBy = reviewer;
+    op.reviewedAt = new Date().toISOString();
+    updated = op;
+    if (status === "approved") {
+      d.alerts.unshift({
+        id: `alert_${randomUUID().slice(0, 8)}`,
+        type: "opinion",
+        title: "의견 승인됨",
+        message: `${op.summary} 이(가) 게시되었습니다.`,
+        symbolId: op.symbolId,
+        opinionId: op.id,
+        firedAt: new Date().toISOString(),
+        read: false,
+      });
+    }
+  });
+  return updated;
+}
+
+export async function saveDrawings(
+  symbolId: string,
+  drawings: Drawing[]
+): Promise<Drawing[]> {
+  await mutate((d) => {
+    d.drawings = [
+      ...d.drawings.filter((x) => x.symbolId !== symbolId),
+      ...drawings,
+    ];
+  });
+  return drawings;
+}
+
+export async function upsertPatternHits(hits: PatternHit[]): Promise<PatternHit[]> {
+  await mutate((d) => {
+    for (const hit of hits) {
+      const idx = d.patternHits.findIndex((h) => h.id === hit.id);
+      if (idx >= 0) d.patternHits[idx] = hit;
+      else d.patternHits.unshift(hit);
+    }
+  });
+  return hits;
+}
+
+export async function addAlert(
+  alert: Omit<AlertItem, "id" | "firedAt" | "read">
+): Promise<AlertItem> {
+  const created: AlertItem = {
+    ...alert,
+    id: `alert_${randomUUID().slice(0, 8)}`,
+    firedAt: new Date().toISOString(),
+    read: false,
+  };
+  await mutate((d) => {
+    d.alerts.unshift(created);
+  });
+  return created;
+}
+
+export async function markAlertsRead(ids?: string[]): Promise<AppStoreData> {
+  return mutate((d) => {
+    for (const a of d.alerts) {
+      if (!ids || ids.includes(a.id)) a.read = true;
+    }
+  });
+}
+
+export async function setPatternEnabled(
+  id: string,
+  enabled: boolean
+): Promise<PatternDef | null> {
+  let updated: PatternDef | null = null;
+  await mutate((d) => {
+    const p = d.patterns.find((x) => x.id === id);
+    if (!p) return;
+    p.enabled = enabled;
+    updated = p;
+  });
+  return updated;
+}
+
+export async function setPatternFeedback(
+  hitId: string,
+  feedback: "correct" | "incorrect"
+): Promise<PatternHit | null> {
+  let updated: PatternHit | null = null;
+  await mutate((d) => {
+    const h = d.patternHits.find((x) => x.id === hitId);
+    if (!h) return;
+    h.feedback = feedback;
+    updated = h;
+  });
+  return updated;
+}
