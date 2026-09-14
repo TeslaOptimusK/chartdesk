@@ -14,7 +14,7 @@ import {
   type Time,
 } from "lightweight-charts";
 import type { Candle, Drawing, PatternHit } from "@/lib/types";
-import { bollinger, ema, sma } from "@/lib/indicators";
+import { bollinger, ema, rsi, sma } from "@/lib/indicators";
 import type { IndicatorId } from "@/lib/store";
 
 interface ChartCanvasProps {
@@ -157,6 +157,29 @@ export function ChartCanvas({
       addLine(bb.upper, "#64748b");
       addLine(bb.mid, "#94a3b8");
       addLine(bb.lower, "#64748b");
+    }
+    if (indicators.includes("rsi")) {
+      const values = rsi(candles, 14);
+      const series = chart.addSeries(LineSeries, {
+        color: "#c084fc",
+        lineWidth: 2,
+        priceScaleId: "rsi",
+        priceLineVisible: false,
+        lastValueVisible: true,
+      });
+      chart.priceScale("rsi").applyOptions({
+        scaleMargins: { top: 0.75, bottom: 0.05 },
+      });
+      series.setData(
+        candles
+          .map((c, i) =>
+            values[i] == null
+              ? null
+              : { time: c.time as Time, value: values[i]! }
+          )
+          .filter((x): x is { time: Time; value: number } => x != null)
+      );
+      overlayRefs.current.push(series);
     }
 
     const markers: SeriesMarker<Time>[] = patternHits.map((h) => ({

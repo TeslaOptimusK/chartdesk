@@ -27,7 +27,7 @@ const INDICATORS: { id: IndicatorId; label: string }[] = [
   { id: "sma20", label: "SMA 20" },
   { id: "ema9", label: "EMA 9" },
   { id: "bb", label: "Bollinger" },
-  { id: "rsi", label: "RSI (패널)" },
+  { id: "rsi", label: "RSI" },
 ];
 
 export function ChartToolbar({ onOpenIngest }: { onOpenIngest: () => void }) {
