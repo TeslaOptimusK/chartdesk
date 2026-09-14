@@ -27,9 +27,19 @@ export type DrawingKind =
   | "channel"
   | "fibonacci"
   | "rectangle"
-  | "text";
+  | "text"
+  | "vertical"
+  | "ray"
+  | "measure";
 
 export type DrawingTool = "none" | DrawingKind;
+
+export type ChartStyle =
+  | "candle"
+  | "bar"
+  | "line"
+  | "area"
+  | "heikin_ashi";
 
 export interface SymbolMeta {
   id: string;
@@ -132,6 +142,28 @@ export interface Drawing {
   /** Text memo body (tool === "text") */
   text?: string;
   createdAt: string;
+}
+
+export interface PriceWatch {
+  id: string;
+  symbolId: string;
+  price: number;
+  op: "above" | "below";
+  createdAt: string;
+  triggered?: boolean;
+}
+
+export interface WorkspaceLayoutPreset {
+  id: string;
+  name: string;
+  symbolId: string;
+  compareSymbolId: string | null;
+  timeframe: Timeframe;
+  chartStyle: ChartStyle;
+  indicators: string[];
+  layoutMode: "single" | "split2" | "split4";
+  magnet: boolean;
+  savedAt: string;
 }
 
 export interface AlertItem {

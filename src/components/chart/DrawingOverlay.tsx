@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { IChartApi, ISeriesApi, Time } from "lightweight-charts";
 import type {
+  Candle,
   Drawing,
   DrawingKind,
   DrawingPoint,
@@ -15,10 +16,11 @@ import {
   fibPrices,
   FIB_LEVELS,
 } from "@/lib/drawings";
+import { snapToCandle } from "@/lib/indicators";
 
 export type ChartApiBundle = {
   chart: IChartApi;
-  series: ISeriesApi<"Candlestick">;
+  series: ISeriesApi<"Candlestick" | "Bar" | "Line" | "Area">;
 };
 
 /** @deprecated alias — prefer ChartApiBundle */
@@ -33,6 +35,8 @@ interface DrawingOverlayProps {
   onDeleteDrawing?: (id: string) => void;
   selectedId?: string | null;
   onSelectDrawing?: (id: string | null) => void;
+  candles?: Candle[];
+  magnet?: boolean;
 }
 
 function pointToXY(
@@ -54,6 +58,8 @@ export function DrawingOverlay({
   onDeleteDrawing,
   selectedId,
   onSelectDrawing,
+  candles = [],
+  magnet = false,
 }: DrawingOverlayProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pendingRef = useRef<DrawingPoint[]>([]);
@@ -150,7 +156,8 @@ export function DrawingOverlay({
     const time = chartApi.chart.timeScale().coordinateToTime(x);
     const price = chartApi.series.coordinateToPrice(y);
     if (time == null || price == null) return null;
-    return { time: Number(time), price };
+    const raw = { time: Number(time), price };
+    return magnet && candles.length ? snapToCandle(candles, raw.time, raw.price) : raw;
   };
 
   const finish = (points: DrawingPoint[], kind: DrawingKind, text?: string) => {
@@ -174,8 +181,8 @@ export function DrawingOverlay({
     const point = eventToPoint(e);
     if (!point) return;
 
-    if (tool === "horizontal") {
-      finish([point], "horizontal");
+    if (tool === "horizontal" || tool === "vertical") {
+      finish([point], tool);
       return;
     }
     if (tool === "text") {
@@ -266,14 +273,70 @@ function paintDrawing(
     return;
   }
 
-  if (d.tool === "trend" && d.points.length >= 2) {
+  if (d.tool === "vertical" && d.points[0]) {
+    const x = api.chart.timeScale().timeToCoordinate(d.points[0].time as Time);
+    if (x == null) {
+      ctx.restore();
+      return;
+    }
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, ctx.canvas.clientHeight || 800);
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
+
+  if ((d.tool === "trend" || d.tool === "ray") && d.points.length >= 2) {
     const a = pointToXY(api, d.points[0]);
     const b = pointToXY(api, d.points[1]);
     if (a && b) {
+      if (d.tool === "ray") {
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const scale = Math.max(width, 1200) / len;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(a.x + dx * scale, a.y + dy * scale);
+        ctx.stroke();
+      } else {
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+    return;
+  }
+
+  if (d.tool === "measure" && d.points.length >= 2) {
+    const a = pointToXY(api, d.points[0]);
+    const b = pointToXY(api, d.points[1]);
+    if (a && b) {
+      ctx.setLineDash([4, 3]);
       ctx.beginPath();
       ctx.moveTo(a.x, a.y);
       ctx.lineTo(b.x, b.y);
       ctx.stroke();
+      const bars = Math.round(
+        Math.abs(d.points[1].time - d.points[0].time) / 86400
+      );
+      const dp = d.points[1].price - d.points[0].price;
+      const pct = (dp / d.points[0].price) * 100;
+      const label = `${dp >= 0 ? "+" : ""}${dp.toFixed(2)} (${pct.toFixed(2)}%) · ~${bars}d`;
+      ctx.setLineDash([]);
+      ctx.font = "11px ui-monospace, monospace";
+      const tw = ctx.measureText(label).width;
+      const mx = (a.x + b.x) / 2;
+      const my = (a.y + b.y) / 2;
+      ctx.fillStyle = "rgba(10,14,20,0.85)";
+      roundRect(ctx, mx - tw / 2 - 6, my - 16, tw + 12, 20, 4);
+      ctx.fill();
+      ctx.fillStyle = color;
+      ctx.fillText(label, mx - tw / 2, my - 2);
     }
     ctx.restore();
     return;

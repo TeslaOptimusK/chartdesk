@@ -9,7 +9,9 @@ export const DRAWING_TOOL_META: {
   hint: string;
 }[] = [
   { id: "trend", label: "추세선", clicks: 2, hint: "시작점 → 끝점" },
+  { id: "ray", label: "레이", clicks: 2, hint: "시작 → 방향(무한 연장)" },
   { id: "horizontal", label: "수평선", clicks: 1, hint: "가격 클릭" },
+  { id: "vertical", label: "수직선", clicks: 1, hint: "시간 클릭" },
   {
     id: "channel",
     label: "평행 채널",
@@ -18,6 +20,7 @@ export const DRAWING_TOOL_META: {
   },
   { id: "fibonacci", label: "피보나치", clicks: 2, hint: "고점 ↔ 저점" },
   { id: "rectangle", label: "사각형", clicks: 2, hint: "모서리 2점" },
+  { id: "measure", label: "측정", clicks: 2, hint: "구간 거리·등락률" },
   { id: "text", label: "텍스트", clicks: 1, hint: "위치 클릭 후 메모" },
 ];
 
@@ -29,14 +32,20 @@ export function defaultColor(tool: DrawingKind): string {
   switch (tool) {
     case "trend":
       return "#38bdf8";
+    case "ray":
+      return "#7dd3fc";
     case "horizontal":
       return "#fbbf24";
+    case "vertical":
+      return "#fcd34d";
     case "channel":
       return "#34d399";
     case "fibonacci":
       return "#c084fc";
     case "rectangle":
       return "#fb7185";
+    case "measure":
+      return "#a3e635";
     case "text":
       return "#e8b86d";
   }

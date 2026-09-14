@@ -27,11 +27,21 @@ export function SymbolChartPane({
     drawings,
     setDrawings,
     symbols,
+    chartStyle,
+    compareSymbolId,
+    magnet,
+    goToDate,
+    priceWatches,
+    setPriceWatches,
+    setAlerts,
+    alerts,
   } = useWorkspace();
   const [candles, setCandles] = useState<Candle[]>([]);
+  const [compareCandles, setCompareCandles] = useState<Candle[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const symbol = symbols.find((s) => s.id === symbolId);
+  const compareSymbol = symbols.find((s) => s.id === compareSymbolId);
 
   useEffect(() => {
     let cancelled = false;
@@ -58,6 +68,65 @@ export function SymbolChartPane({
       cancelled = true;
     };
   }, [symbolId, timeframe]);
+
+  useEffect(() => {
+    if (!compareSymbolId || !interactive) {
+      setCompareCandles([]);
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/candles?symbolId=${compareSymbolId}&tf=${timeframe}&limit=180`)
+      .then((r) => r.json())
+      .then((data: { candles: Candle[] }) => {
+        if (!cancelled) setCompareCandles(data.candles ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setCompareCandles([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [compareSymbolId, timeframe, interactive]);
+
+  // Fire price watches when last close crosses threshold
+  useEffect(() => {
+    if (!interactive || candles.length === 0) return;
+    const last = candles[candles.length - 1];
+    const pending = priceWatches.filter(
+      (w) => w.symbolId === symbolId && !w.triggered
+    );
+    if (!pending.length) return;
+    const fired: string[] = [];
+    for (const w of pending) {
+      const hit =
+        (w.op === "above" && last.close >= w.price) ||
+        (w.op === "below" && last.close <= w.price);
+      if (hit) fired.push(w.id);
+    }
+    if (!fired.length) return;
+    setPriceWatches(
+      priceWatches.map((w) =>
+        fired.includes(w.id) ? { ...w, triggered: true } : w
+      )
+    );
+    for (const w of pending.filter((x) => fired.includes(x.id))) {
+      void fetch("/api/alerts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "price",
+          title: `가격 알림 ${w.op === "above" ? "↑" : "↓"} ${w.price}`,
+          message: `${symbol?.ticker ?? symbolId} 종가 ${last.close.toFixed(2)} (${w.op} ${w.price})`,
+          symbolId,
+        }),
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.alert) setAlerts([data.alert, ...alerts]);
+        });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [candles, symbolId]);
 
   const hits = patternHits.filter(
     (h: PatternHit) => h.symbolId === symbolId && h.timeframe === timeframe
@@ -129,6 +198,11 @@ export function SymbolChartPane({
         drawingTool={interactive ? drawingTool : "none"}
         onAddDrawing={interactive ? onAddDrawing : undefined}
         onDeleteDrawing={interactive ? onDeleteDrawing : undefined}
+        chartStyle={chartStyle}
+        compareCandles={interactive ? compareCandles : undefined}
+        compareLabel={compareSymbol?.ticker}
+        magnet={magnet}
+        goToDate={interactive ? goToDate : null}
         height={height}
         className="w-full"
       />

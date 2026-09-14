@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useWorkspace } from "@/lib/store";
 import {
   CATEGORY_LABELS,
@@ -20,6 +21,7 @@ export function RightPanel() {
     ["patterns", "패턴"],
     ["posts", "포스트"],
     ["alerts", "알림"],
+    ["objects", "오브젝트"],
   ] as const;
 
   return (
@@ -31,7 +33,7 @@ export function RightPanel() {
             type="button"
             onClick={() => setRightTab(id)}
             className={cn(
-              "flex-1 px-1 py-2 text-[11px] font-medium",
+              "flex-1 px-0.5 py-2 text-[10px] font-medium",
               rightTab === id
                 ? "border-b-2 border-[var(--brand-accent)] text-[var(--workspace-fg)]"
                 : "text-[var(--workspace-muted)] hover:text-[var(--workspace-fg)]"
@@ -47,6 +49,7 @@ export function RightPanel() {
         {rightTab === "patterns" && <PatternsTab />}
         {rightTab === "posts" && <PostsTab />}
         {rightTab === "alerts" && <AlertsTab />}
+        {rightTab === "objects" && <ObjectsTab />}
       </ScrollArea>
     </aside>
   );
@@ -413,7 +416,19 @@ function PostsTab() {
 }
 
 function AlertsTab() {
-  const { alerts, setAlerts, setActiveSymbol, setRightTab } = useWorkspace();
+  const {
+    alerts,
+    setAlerts,
+    setActiveSymbol,
+    setRightTab,
+    activeSymbolId,
+    symbols,
+    priceWatches,
+    addPriceWatch,
+    setPriceWatches,
+  } = useWorkspace();
+  const [price, setPrice] = useState("");
+  const [op, setOp] = useState<"above" | "below">("above");
 
   const markAll = async () => {
     const res = await fetch("/api/alerts", {
@@ -425,8 +440,74 @@ function AlertsTab() {
     setAlerts(data.alerts ?? []);
   };
 
+  const createWatch = () => {
+    const n = Number(price);
+    if (!Number.isFinite(n) || n <= 0) return;
+    addPriceWatch({ symbolId: activeSymbolId, price: n, op });
+    setPrice("");
+  };
+
+  const active = symbols.find((s) => s.id === activeSymbolId);
+
   return (
     <div className="space-y-2 p-2">
+      <div className="rounded-md border border-[var(--workspace-border)] bg-[var(--workspace-elevated)] p-2">
+        <div className="mb-1.5 text-xs font-semibold text-[var(--workspace-fg)]">
+          가격 알림 · {active?.ticker ?? activeSymbolId}
+        </div>
+        <div className="flex gap-1">
+          <select
+            value={op}
+            onChange={(e) => setOp(e.target.value as "above" | "below")}
+            className="h-8 rounded border border-[var(--workspace-border)] bg-[var(--workspace-panel)] px-1 text-xs text-[var(--workspace-fg)]"
+          >
+            <option value="above">이상</option>
+            <option value="below">이하</option>
+          </select>
+          <input
+            type="number"
+            value={price}
+            onChange={(e) => setPrice(e.target.value)}
+            placeholder="가격"
+            className="h-8 min-w-0 flex-1 rounded border border-[var(--workspace-border)] bg-[var(--workspace-panel)] px-2 text-xs text-[var(--workspace-fg)]"
+          />
+          <Button
+            size="sm"
+            className="h-8 bg-[var(--brand-accent)] px-2 text-xs text-[#0b1016]"
+            onClick={createWatch}
+          >
+            등록
+          </Button>
+        </div>
+        {priceWatches.filter((w) => w.symbolId === activeSymbolId).length >
+          0 && (
+          <div className="mt-2 space-y-1">
+            {priceWatches
+              .filter((w) => w.symbolId === activeSymbolId)
+              .map((w) => (
+                <div
+                  key={w.id}
+                  className="flex items-center justify-between text-[11px] text-[var(--workspace-muted)]"
+                >
+                  <span>
+                    {w.op === "above" ? "↑" : "↓"} {w.price}
+                    {w.triggered ? " · 발화됨" : ""}
+                  </span>
+                  <button
+                    type="button"
+                    className="text-rose-300"
+                    onClick={() =>
+                      setPriceWatches(priceWatches.filter((x) => x.id !== w.id))
+                    }
+                  >
+                    삭제
+                  </button>
+                </div>
+              ))}
+          </div>
+        )}
+      </div>
+
       <div className="flex justify-end">
         <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={markAll}>
           모두 읽음
@@ -462,6 +543,93 @@ function AlertsTab() {
             {new Date(a.firedAt).toLocaleString()}
           </div>
         </button>
+      ))}
+    </div>
+  );
+}
+
+function ObjectsTab() {
+  const {
+    drawings,
+    setDrawings,
+    activeSymbolId,
+    symbols,
+    setActiveSymbol,
+  } = useWorkspace();
+  const local = drawings.filter((d) => d.symbolId === activeSymbolId);
+  const active = symbols.find((s) => s.id === activeSymbolId);
+
+  const remove = async (id: string) => {
+    const nextLocal = local.filter((d) => d.id !== id);
+    const merged = [
+      ...drawings.filter((d) => d.symbolId !== activeSymbolId),
+      ...nextLocal,
+    ];
+    setDrawings(merged);
+    await fetch("/api/drawings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ symbolId: activeSymbolId, drawings: nextLocal }),
+    });
+  };
+
+  const clearAll = async () => {
+    const merged = drawings.filter((d) => d.symbolId !== activeSymbolId);
+    setDrawings(merged);
+    await fetch("/api/drawings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ symbolId: activeSymbolId, drawings: [] }),
+    });
+  };
+
+  return (
+    <div className="space-y-2 p-2">
+      <div className="flex items-center justify-between px-1">
+        <div className="text-xs font-semibold text-[var(--workspace-fg)]">
+          드로잉 · {active?.ticker ?? activeSymbolId}
+        </div>
+        {local.length > 0 && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 text-[10px] text-rose-300"
+            onClick={clearAll}
+          >
+            전부 삭제
+          </Button>
+        )}
+      </div>
+      {local.length === 0 && <Empty>오브젝트 없음</Empty>}
+      {local.map((d) => (
+        <div
+          key={d.id}
+          className="flex items-center gap-2 rounded-md border border-[var(--workspace-border)] bg-[var(--workspace-elevated)] px-2 py-1.5"
+        >
+          <span
+            className="h-2.5 w-2.5 shrink-0 rounded-full"
+            style={{ background: d.color }}
+          />
+          <button
+            type="button"
+            className="min-w-0 flex-1 text-left text-xs text-[var(--workspace-fg)]"
+            onClick={() => setActiveSymbol(d.symbolId)}
+          >
+            <div className="font-medium capitalize">{d.tool}</div>
+            <div className="truncate text-[10px] text-[var(--workspace-faint)]">
+              {d.text?.trim() ||
+                d.points.map((p) => p.price.toFixed(1)).join(" → ") ||
+                d.id}
+            </div>
+          </button>
+          <button
+            type="button"
+            className="text-[10px] text-rose-300"
+            onClick={() => remove(d.id)}
+          >
+            삭제
+          </button>
+        </div>
       ))}
     </div>
   );

@@ -1,10 +1,41 @@
 import { NextResponse } from "next/server";
-import { markAlertsRead, readStore, saveDrawings } from "@/lib/storage";
-import type { Drawing } from "@/lib/types";
+import {
+  addAlert,
+  markAlertsRead,
+  readStore,
+  saveDrawings,
+} from "@/lib/storage";
+import type { AlertType, Drawing } from "@/lib/types";
 
 export async function GET() {
   const store = await readStore();
   return NextResponse.json({ alerts: store.alerts });
+}
+
+export async function POST(req: Request) {
+  const body = (await req.json()) as {
+    type?: AlertType;
+    title?: string;
+    message?: string;
+    symbolId?: string;
+    patternId?: string;
+    opinionId?: string;
+  };
+  if (!body.type || !body.title || !body.message) {
+    return NextResponse.json(
+      { error: "type, title, message required" },
+      { status: 400 }
+    );
+  }
+  const alert = await addAlert({
+    type: body.type,
+    title: body.title,
+    message: body.message,
+    symbolId: body.symbolId,
+    patternId: body.patternId,
+    opinionId: body.opinionId,
+  });
+  return NextResponse.json({ alert });
 }
 
 export async function PATCH(req: Request) {
