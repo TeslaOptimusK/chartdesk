@@ -58,71 +58,71 @@ Phase 1 완료 = 첨부 ChartDesk 스크린샷과 같은 셸.
 
 | ID | 기능 | 상태 |  
 |----|------|------|  
-| `indicator.dialog` | 지표 검색 `/` | todo |  
-| `indicator.template` | 지표 템플릿 | todo |  
-| `chart.type.bars` | 바 | todo |  
-| `chart.type.hollow_candles` | 중공 캔들 | todo |  
-| `chart.type.area` | 에어리어 | todo |  
-| `chart.type.baseline` | 베이스라인 | todo |  
-| `chart.interval.full` | 전체 인터벌 + 커스텀 | todo |  
-| `chart.interval.custom` | 7분 등 리샘플 | todo |  
-| `chart.range_preset` | 1D/5D/1M/1Y/All | todo |  
-| `chart.goto` | 날짜 이동 | todo |  
-| `chart.date_format` | mm/dd/yyyy | todo |  
-| `chart.extended_hours` | 프리/애프터 | todo |  
-| `chart.snapshot` | 스냅샷 | todo |  
-| `chart.canvas` | 배경/그리드/워터마크 | todo |  
-| `scale.log` | 로그축 | todo |  
-| `scale.percent` | %축 | todo |  
-| `scale.indexed_100` | Indexed 100 | todo |  
-| `scale.countdown` | 봉 마감 카운트다운 | todo |  
-| `layout.grid` | 2~4분할 | todo |  
-| `layout.sync.symbol` | 심볼 동기 | todo |  
-| `layout.sync.interval` | 인터벌 동기 | todo |  
-| `layout.sync.crosshair` | 크로스헤어 동기 | todo |  
-| `layout.sync.drawings` | 드로잉 동기 | todo |  
-| `draw.ray` | 레이 | todo |  
-| `draw.extended_line` | 연장선 | todo |  
-| `draw.parallel_channel` | 평행 채널 | todo |  
-| `draw.vertical_line` | 수직선 | todo |  
-| `draw.long_position` | 롱 포지션 | todo |  
-| `draw.short_position` | 숏 포지션 | todo |  
-| `draw.vp.fixed_range` | 고정 VP | todo |  
-| `draw.anchored_vwap` | 앵커 VWAP | todo |  
-| `draw.favorites` | 즐겨찾는 도구 | todo |  
-| `draw.stay_in_mode` | 연속 그리기 | todo |  
-| `draw.sync.layout` | 레이아웃 동기 | todo |  
-| `alert.technical.drawing` | 선 알림 | todo |  
-| `alert.technical.indicator` | 지표 알림 | todo |  
-| `alert.webhook` | 웹훅 | todo |  
-| `news` | 뉴스 탭 | todo |  
-| `pattern.candlestick` | 캔들 패턴 | todo |  
-| `pattern.auto_chart` | 자동 차트 패턴 | todo |  
-| `note` | 코멘터리 | todo |  
-| `calendar.eco` | 경제 캘린더 | todo |  
-| `calendar.earnings` | 실적 캘린더 | todo |  
-| `events.earnings` | 실적 마커 | todo |  
-| `events.dividends` | 배당 마커 | todo |  
-| `events.splits` | 분할 마커 | todo |  
-| `events.news` | 뉴스 마커 | todo |  
-| `replay` | 바 리플레이 | todo |  
-| `shell.command_palette` | 빠른 검색 | todo |  
+| `indicator.dialog` | 지표 검색 `/` | done |  
+| `indicator.template` | 지표 템플릿 | done |  
+| `chart.type.bars` | 바 | done |  
+| `chart.type.hollow_candles` | 중공 캔들 | done |  
+| `chart.type.area` | 에어리어 | done |  
+| `chart.type.baseline` | 베이스라인 | done |  
+| `chart.interval.full` | 전체 인터벌 + 커스텀 | done |  
+| `chart.interval.custom` | 7분 등 리샘플 | done |  
+| `chart.range_preset` | 1D/5D/1M/1Y/All | done |  
+| `chart.goto` | 날짜 이동 | done |  
+| `chart.date_format` | mm/dd/yyyy | done |  
+| `chart.extended_hours` | 프리/애프터 | done |  
+| `chart.snapshot` | 스냅샷 | done |  
+| `chart.canvas` | 배경/그리드/워터마크 | done |  
+| `scale.log` | 로그축 | done |  
+| `scale.percent` | %축 | done |  
+| `scale.indexed_100` | Indexed 100 | done |  
+| `scale.countdown` | 봉 마감 카운트다운 | done |  
+| `layout.grid` | 2~4분할 | done |  
+| `layout.sync.symbol` | 심볼 동기 | done |  
+| `layout.sync.interval` | 인터벌 동기 | done |  
+| `layout.sync.crosshair` | 크로스헤어 동기 | done |  
+| `layout.sync.drawings` | 드로잉 동기 | done |  
+| `draw.ray` | 레이 | done |  
+| `draw.extended_line` | 연장선 | done |  
+| `draw.parallel_channel` | 평행 채널 | done |  
+| `draw.vertical_line` | 수직선 | done |  
+| `draw.long_position` | 롱 포지션 | done |  
+| `draw.short_position` | 숏 포지션 | done |  
+| `draw.vp.fixed_range` | 고정 VP | done |  
+| `draw.anchored_vwap` | 앵커 VWAP | done |  
+| `draw.favorites` | 즐겨찾는 도구 | done |  
+| `draw.stay_in_mode` | 연속 그리기 | done |  
+| `draw.sync.layout` | 레이아웃 동기 | done |  
+| `alert.technical.drawing` | 선 알림 | done |  
+| `alert.technical.indicator` | 지표 알림 | done |  
+| `alert.webhook` | 웹훅 | done |  
+| `news` | 뉴스 탭 | done |  
+| `pattern.candlestick` | 캔들 패턴 | done |  
+| `pattern.auto_chart` | 자동 차트 패턴 | done |  
+| `note` | 코멘터리 | done |  
+| `calendar.eco` | 경제 캘린더 | done |  
+| `calendar.earnings` | 실적 캘린더 | done |  
+| `events.earnings` | 실적 마커 | done |  
+| `events.dividends` | 배당 마커 | done |  
+| `events.splits` | 분할 마커 | done |  
+| `events.news` | 뉴스 마커 | done |  
+| `replay` | 바 리플레이 | done |  
+| `shell.command_palette` | 빠른 검색 | done |  
 
 내장 지표 전수는 정본 §7.2. 최소 즐겨찾기:  
 
 | ID | 상태 |  
 |----|------|  
-| SMA / EMA / WMA | todo |  
-| EMA 20/50/200 템플릿 | todo |  
-| Bollinger Bands | todo |  
-| Ichimoku | todo |  
-| SuperTrend | todo |  
-| VWAP | todo |  
-| RSI | todo |  
-| MACD | todo |  
-| Stochastic | todo |  
-| ATR | todo |  
-| Volume | todo |  
+| SMA / EMA / WMA | done |  
+| EMA 20/50/200 템플릿 | done |  
+| Bollinger Bands | done |  
+| Ichimoku | done |  
+| SuperTrend | done |  
+| VWAP | done |  
+| RSI | done |  
+| MACD | done |  
+| Stochastic | done |  
+| ATR | done |  
+| Volume | done |  
 
 ---  
 

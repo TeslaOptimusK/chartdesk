@@ -11,7 +11,10 @@ import type {
   PatternHit,
   Post,
   PriceWatch,
+  TechnicalAlert,
+  WebhookConfig,
 } from "@/lib/types";
+import { DEFAULT_WEBHOOK_CONFIG } from "@/lib/types";
 import { createSeedStore } from "@/lib/seed";
 
 const DATA_DIR = path.join(process.cwd(), "data");
@@ -25,6 +28,8 @@ function migrateStore(raw: AppStoreData): AppStoreData {
     priceWatches: raw.priceWatches ?? [],
     comments: raw.comments ?? [],
     news: raw.news ?? [],
+    technicalAlerts: raw.technicalAlerts ?? [],
+    webhookConfig: raw.webhookConfig ?? DEFAULT_WEBHOOK_CONFIG,
   };
 }
 
@@ -233,4 +238,43 @@ export async function setPatternFeedback(
     updated = h;
   });
   return updated;
+}
+
+/** Feature ID: alert.webhook */
+export async function saveWebhookConfig(
+  config: WebhookConfig
+): Promise<WebhookConfig> {
+  await mutate((d) => {
+    d.webhookConfig = config;
+  });
+  return config;
+}
+
+export async function readWebhookConfig(): Promise<WebhookConfig> {
+  const d = await readStore();
+  return d.webhookConfig ?? DEFAULT_WEBHOOK_CONFIG;
+}
+
+/** Feature ID: alert.technical.* */
+export async function saveTechnicalAlerts(
+  alerts: TechnicalAlert[]
+): Promise<TechnicalAlert[]> {
+  await mutate((d) => {
+    d.technicalAlerts = alerts;
+  });
+  return alerts;
+}
+
+export async function addTechnicalAlert(
+  alert: Omit<TechnicalAlert, "id" | "createdAt">
+): Promise<TechnicalAlert> {
+  const created: TechnicalAlert = {
+    ...alert,
+    id: `ta_${randomUUID().slice(0, 8)}`,
+    createdAt: new Date().toISOString(),
+  };
+  await mutate((d) => {
+    d.technicalAlerts = [created, ...(d.technicalAlerts ?? [])];
+  });
+  return created;
 }

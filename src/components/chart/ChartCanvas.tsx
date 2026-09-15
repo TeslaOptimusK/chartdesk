@@ -4,12 +4,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AreaSeries,
   BarSeries,
+  BaselineSeries,
   CandlestickSeries,
   ColorType,
   createChart,
   createSeriesMarkers,
   HistogramSeries,
   LineSeries,
+  PriceScaleMode,
   type IChartApi,
   type ISeriesApi,
   type SeriesMarker,
@@ -22,11 +24,17 @@ import {
 } from "@/components/chart/DrawingOverlay";
 import type {
   Candle,
+  ChartEventKind,
+  ChartEventMarker,
   ChartSettings,
   ChartStyle,
+  DateFormat,
   Drawing,
   DrawingTool,
   PatternHit,
+  PriceScaleMode as AppScaleMode,
+  RangePreset,
+  Timeframe,
 } from "@/lib/types";
 import { DEFAULT_CHART_SETTINGS } from "@/lib/types";
 import {
@@ -39,7 +47,19 @@ import {
   toHeikinAshi,
   vwap,
 } from "@/lib/indicators";
+import {
+  anchoredVwap as anchoredVwapSeries,
+  ichimoku,
+  stochastic,
+  supertrend,
+  wma,
+} from "@/lib/indicators-extra";
 import type { IndicatorId } from "@/lib/store";
+import {
+  barsForRangePreset,
+  formatChartDate,
+  secondsToBarClose,
+} from "@/lib/chart-time";
 import { cn } from "@/lib/utils";
 
 interface ChartCanvasProps {
@@ -60,6 +80,20 @@ interface ChartCanvasProps {
   className?: string;
   chartSettings?: ChartSettings;
   locked?: boolean;
+  priceScaleMode?: AppScaleMode;
+  rangePreset?: RangePreset;
+  dateFormat?: DateFormat;
+  extendedHours?: boolean;
+  showCountdown?: boolean;
+  timeframe?: Timeframe;
+  timezone?: string;
+  eventMarkers?: ChartEventMarker[];
+  eventToggles?: Record<ChartEventKind, boolean>;
+  snapshotTick?: number;
+  syncCrosshair?: boolean;
+  sharedCrosshairTime?: number | null;
+  onCrosshairTime?: (t: number | null) => void;
+  stayInDrawMode?: boolean;
 }
 
 type AnySeries = ISeriesApi<SeriesType>;
@@ -91,6 +125,20 @@ export function ChartCanvas({
   className,
   chartSettings = DEFAULT_CHART_SETTINGS,
   locked = false,
+  priceScaleMode = "linear",
+  rangePreset = "ALL",
+  dateFormat = "mm/dd/yyyy",
+  extendedHours = false,
+  showCountdown = true,
+  timeframe = "D",
+  timezone = "America/New_York",
+  eventMarkers = [],
+  eventToggles,
+  snapshotTick = 0,
+  syncCrosshair = false,
+  sharedCrosshairTime = null,
+  onCrosshairTime,
+  stayInDrawMode = false,
 }: ChartCanvasProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -102,10 +150,52 @@ export function ChartCanvas({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [legend, setLegend] = useState<LegendState | null>(null);
 
+  const [countdownSec, setCountdownSec] = useState(0);
+
+  const scaledCandles = useMemo(() => {
+    const base = candles[0]?.close || 1;
+    if (priceScaleMode === "percent") {
+      const map = (p: number) => ((p - base) / base) * 100;
+      return candles.map((c) => ({
+        ...c,
+        open: map(c.open),
+        high: map(c.high),
+        low: map(c.low),
+        close: map(c.close),
+      }));
+    }
+    if (priceScaleMode === "indexed_100") {
+      const map = (p: number) => (p / base) * 100;
+      return candles.map((c) => ({
+        ...c,
+        open: map(c.open),
+        high: map(c.high),
+        low: map(c.low),
+        close: map(c.close),
+      }));
+    }
+    return candles;
+  }, [candles, priceScaleMode]);
+
   const displayCandles = useMemo(
-    () => (chartStyle === "heikin_ashi" ? toHeikinAshi(candles) : candles),
-    [candles, chartStyle]
+    () =>
+      chartStyle === "heikin_ashi"
+        ? toHeikinAshi(scaledCandles)
+        : scaledCandles,
+    [scaledCandles, chartStyle]
   );
+
+  useEffect(() => {
+    if (!showCountdown || displayCandles.length === 0) return;
+    const last = displayCandles[displayCandles.length - 1];
+    const tick = () => {
+      const now = Math.floor(Date.now() / 1000);
+      setCountdownSec(secondsToBarClose(now, last.time, timeframe));
+    };
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [displayCandles, showCountdown, timeframe]);
 
   // Create chart once
   useEffect(() => {
@@ -187,6 +277,17 @@ export function ChartCanvas({
     });
   }, [chartSettings]);
 
+  // Feature ID: scale.log
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    const mode =
+      priceScaleMode === "log"
+        ? PriceScaleMode.Logarithmic
+        : PriceScaleMode.Normal;
+    chart.priceScale("right").applyOptions({ mode });
+  }, [priceScaleMode]);
+
   // Recreate main series when chart style changes
   useEffect(() => {
     const chart = chartRef.current;
@@ -210,6 +311,17 @@ export function ChartCanvas({
         bottomColor: "rgba(56,189,248,0.02)",
         lineWidth: 2,
       });
+    } else if (chartStyle === "baseline") {
+      series = chart.addSeries(BaselineSeries, {
+        baseValue: { type: "price", price: 0 },
+        topLineColor: chartSettings.upColor,
+        bottomLineColor: chartSettings.downColor,
+        topFillColor1: "rgba(38,166,154,0.28)",
+        topFillColor2: "rgba(38,166,154,0.05)",
+        bottomFillColor1: "rgba(239,83,80,0.05)",
+        bottomFillColor2: "rgba(239,83,80,0.28)",
+        lineWidth: 2,
+      });
     } else if (chartStyle === "bar") {
       series = chart.addSeries(BarSeries, {
         upColor: chartSettings.upColor,
@@ -229,6 +341,21 @@ export function ChartCanvas({
     setChartApi({ chart, series: series as ISeriesApi<"Candlestick"> });
   }, [chartStyle, chartSettings.upColor, chartSettings.downColor]);
 
+  // Feature ID: chart.snapshot
+  useEffect(() => {
+    if (!snapshotTick || !chartRef.current) return;
+    try {
+      const shot = chartRef.current.takeScreenshot(true, false);
+      const url = shot.toDataURL("image/png");
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `chartdesk-${symbolId}-${Date.now()}.png`;
+      a.click();
+    } catch {
+      /* ignore */
+    }
+  }, [snapshotTick, symbolId]);
+
   // Data + indicators
   useEffect(() => {
     const chart = chartRef.current;
@@ -242,6 +369,29 @@ export function ChartCanvas({
           time: c.time as Time,
           value: c.close,
         }))
+      );
+    } else if (chartStyle === "baseline") {
+      (main as ISeriesApi<"Baseline">).setData(
+        displayCandles.map((c) => ({
+          time: c.time as Time,
+          value: c.close,
+        }))
+      );
+    } else if (chartStyle === "hollow_candle") {
+      (main as ISeriesApi<"Candlestick">).setData(
+        displayCandles.map((c) => {
+          const up = c.close >= c.open;
+          return {
+            time: c.time as Time,
+            open: c.open,
+            high: c.high,
+            low: c.low,
+            close: c.close,
+            color: up ? "transparent" : chartSettings.downColor,
+            borderColor: up ? chartSettings.upColor : chartSettings.downColor,
+            wickColor: up ? chartSettings.upColor : chartSettings.downColor,
+          };
+        })
       );
     } else {
       (main as ISeriesApi<"Candlestick">).setData(
@@ -303,6 +453,20 @@ export function ChartCanvas({
 
     if (indicators.includes("sma20")) addLine(sma(closes, 20), "#fbbf24");
     if (indicators.includes("ema9")) addLine(ema(closes, 9), "#38bdf8");
+    if (indicators.includes("ema20")) addLine(ema(closes, 20), "#22d3ee");
+    if (indicators.includes("ema50")) addLine(ema(closes, 50), "#a78bfa");
+    if (indicators.includes("ema200")) addLine(ema(closes, 200), "#f472b6");
+    if (indicators.includes("wma")) addLine(wma(closes, 20), "#fcd34d");
+    if (indicators.includes("ichimoku")) {
+      const ichi = ichimoku(displayCandles);
+      addLine(ichi.tenkan, "#ef4444");
+      addLine(ichi.kijun, "#3b82f6");
+      addLine(ichi.spanA, "#22c55e");
+      addLine(ichi.spanB, "#eab308");
+    }
+    if (indicators.includes("supertrend")) {
+      addLine(supertrend(displayCandles).line, "#14b8a6");
+    }
     if (indicators.includes("bb")) {
       const bb = bollinger(displayCandles);
       addLine(bb.upper, "#64748b");
@@ -343,6 +507,11 @@ export function ChartCanvas({
       overlayRefs.current.push(hist);
       addLine(m.macd, "#38bdf8", "macd");
       addLine(m.signal, "#fbbf24", "macd");
+    }
+    if (indicators.includes("stoch")) {
+      const st = stochastic(displayCandles);
+      addLine(st.k, "#f97316", "stoch");
+      addLine(st.d, "#6366f1", "stoch");
     }
     if (indicators.includes("volMa")) {
       const vols = displayCandles.map((c) => c.volume);
@@ -391,7 +560,12 @@ export function ChartCanvas({
       overlayRefs.current.push(series);
     }
 
-    if (chartStyle === "candle" || chartStyle === "heikin_ashi" || chartStyle === "bar") {
+    if (
+      chartStyle === "candle" ||
+      chartStyle === "heikin_ashi" ||
+      chartStyle === "bar" ||
+      chartStyle === "hollow_candle"
+    ) {
       const markers: SeriesMarker<Time>[] = patternHits.map((h) => ({
         time: h.toTs as Time,
         position: "aboveBar",
@@ -399,10 +573,42 @@ export function ChartCanvas({
         shape: "arrowDown",
         text: h.label,
       }));
+      for (const ev of eventMarkers) {
+        if (eventToggles && !eventToggles[ev.kind]) continue;
+        markers.push({
+          time: ev.time as Time,
+          position: "belowBar",
+          color:
+            ev.kind === "earnings"
+              ? "#a78bfa"
+              : ev.kind === "dividends"
+                ? "#34d399"
+                : ev.kind === "splits"
+                  ? "#fbbf24"
+                  : "#60a5fa",
+          shape: "circle",
+          text: ev.title,
+        });
+      }
       createSeriesMarkers(main as ISeriesApi<"Candlestick">, markers);
     }
 
-    chart.timeScale().fitContent();
+    const barCount = barsForRangePreset(rangePreset, timeframe);
+    if (barCount == null) {
+      chart.timeScale().fitContent();
+    } else {
+      const fromIdx = Math.max(0, displayCandles.length - barCount);
+      const from = displayCandles[fromIdx]?.time;
+      const to = displayCandles[displayCandles.length - 1]?.time;
+      if (from != null && to != null) {
+        chart.timeScale().setVisibleRange({
+          from: from as Time,
+          to: to as Time,
+        });
+      } else {
+        chart.timeScale().fitContent();
+      }
+    }
     const last = displayCandles[displayCandles.length - 1];
     if (last) {
       setLegend({
@@ -421,9 +627,13 @@ export function ChartCanvas({
     chartStyle,
     compareCandles,
     compareLabel,
+    rangePreset,
+    timeframe,
+    eventMarkers,
+    eventToggles,
   ]);
 
-  // Crosshair legend
+  // Crosshair legend + layout.sync.crosshair
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
@@ -433,6 +643,7 @@ export function ChartCanvas({
     }) => {
       if (!param.time) return;
       const t = Number(param.time);
+      onCrosshairTime?.(t);
       const c = displayCandles.find((x) => x.time === t);
       if (!c) return;
       setLegend({
@@ -446,7 +657,17 @@ export function ChartCanvas({
     };
     chart.subscribeCrosshairMove(handler);
     return () => chart.unsubscribeCrosshairMove(handler);
-  }, [displayCandles]);
+  }, [displayCandles, onCrosshairTime]);
+
+  useEffect(() => {
+    if (!syncCrosshair || sharedCrosshairTime == null) return;
+    const chart = chartRef.current;
+    const main = mainSeriesRef.current;
+    if (!chart || !main) return;
+    const c = displayCandles.find((x) => x.time === sharedCrosshairTime);
+    if (!c) return;
+    chart.setCrosshairPosition(c.close, sharedCrosshairTime as Time, main);
+  }, [sharedCrosshairTime, syncCrosshair, displayCandles]);
 
   // Go to date
   useEffect(() => {
@@ -488,15 +709,41 @@ export function ChartCanvas({
       data-testid="chart-canvas"
       data-drawing-tool={drawingTool}
       data-chart-style={chartStyle}
+      data-feature={
+        chartStyle === "hollow_candle"
+          ? "chart.type.hollow_candles"
+          : chartStyle === "baseline"
+            ? "chart.type.baseline"
+            : chartStyle === "bar"
+              ? "chart.type.bars"
+              : chartStyle === "area"
+                ? "chart.type.area"
+                : undefined
+      }
     >
       <div ref={containerRef} className="absolute inset-0" />
+      {chartSettings.showWatermark && (
+        <div
+          className="pointer-events-none absolute inset-0 z-[5] flex items-center justify-center text-4xl font-semibold tracking-widest text-white/5"
+          data-feature="chart.canvas"
+        >
+          {chartSettings.watermark}
+        </div>
+      )}
+      {extendedHours && (
+        <div
+          className="pointer-events-none absolute inset-y-0 right-0 z-[6] w-[18%] bg-indigo-500/5"
+          data-feature="chart.extended_hours"
+          title="프리/애프터 마켓 (stub)"
+        />
+      )}
       {legend && (
         <div
           className="pointer-events-none absolute left-2 top-2 z-20 rounded bg-black/55 px-2 py-1 font-mono text-[10px] text-[var(--workspace-muted)]"
           data-feature="chart.status_line"
         >
           <span className="mr-2 text-[var(--workspace-fg)]">
-            {new Date(legend.time * 1000).toLocaleString()}
+            {formatChartDate(legend.time, dateFormat, timezone)}
           </span>
           O {legend.open.toFixed(2)} H {legend.high.toFixed(2)} L{" "}
           {legend.low.toFixed(2)} C{" "}
@@ -546,7 +793,18 @@ export function ChartCanvas({
         candles={displayCandles}
         magnet={magnet}
         locked={locked}
+        stayInDrawMode={stayInDrawMode}
+        candlesFull={candles}
       />
+      {showCountdown && countdownSec > 0 && (
+        <div
+          className="pointer-events-none absolute bottom-2 right-2 z-20 rounded bg-black/55 px-2 py-1 font-mono text-[10px] text-[var(--workspace-muted)]"
+          data-feature="scale.countdown"
+        >
+          봉 마감 {Math.floor(countdownSec / 60)}:
+          {(countdownSec % 60).toString().padStart(2, "0")}
+        </div>
+      )}
       {drawingTool !== "none" && (
         <div className="pointer-events-none absolute bottom-2 left-2 z-20 rounded bg-black/55 px-2 py-1 text-[10px] text-[var(--workspace-muted)]">
           드로잉: {drawingTool}

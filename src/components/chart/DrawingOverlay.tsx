@@ -17,6 +17,7 @@ import {
   FIB_LEVELS,
 } from "@/lib/drawings";
 import { snapToCandle } from "@/lib/indicators";
+import { anchoredVwap, volumeProfile } from "@/lib/indicators-extra";
 
 export type ChartApiBundle = {
   chart: IChartApi;
@@ -39,6 +40,10 @@ interface DrawingOverlayProps {
   magnet?: boolean;
   /** Feature ID: draw.lock_all */
   locked?: boolean;
+  /** Feature ID: draw.stay_in_mode */
+  stayInDrawMode?: boolean;
+  /** Raw candles for VP / anchored VWAP (unscaled) */
+  candlesFull?: Candle[];
 }
 
 function pointToXY(
@@ -63,7 +68,10 @@ export function DrawingOverlay({
   candles = [],
   magnet = false,
   locked = false,
+  stayInDrawMode = false,
+  candlesFull,
 }: DrawingOverlayProps) {
+  const profileCandles = candlesFull?.length ? candlesFull : candles;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pendingRef = useRef<DrawingPoint[]>([]);
   const [pending, setPending] = useState<DrawingPoint[]>([]);
@@ -94,7 +102,7 @@ export function DrawingOverlay({
     ctx.clearRect(0, 0, w, h);
 
     for (const d of drawings) {
-      paintDrawing(ctx, chartApi, d, d.id === selectedId, w);
+      paintDrawing(ctx, chartApi, d, d.id === selectedId, w, profileCandles);
     }
 
     if (tool !== "none" && pending.length > 0) {
@@ -118,7 +126,8 @@ export function DrawingOverlay({
           createdAt: "",
         },
         true,
-        w
+        w,
+        profileCandles
       );
       for (const p of pending) {
         const xy = pointToXY(chartApi, p);
@@ -129,7 +138,16 @@ export function DrawingOverlay({
         ctx.fill();
       }
     }
-  }, [chartApi, drawings, pending, cursor, tool, symbolId, selectedId]);
+  }, [
+    chartApi,
+    drawings,
+    pending,
+    cursor,
+    tool,
+    symbolId,
+    selectedId,
+    profileCandles,
+  ]);
 
   useEffect(() => {
     redraw();
@@ -174,9 +192,14 @@ export function DrawingOverlay({
       color: defaultColor(kind),
       text,
     });
-    pendingRef.current = [];
-    setPending([]);
-    setCursor(null);
+    if (!stayInDrawMode) {
+      pendingRef.current = [];
+      setPending([]);
+      setCursor(null);
+    } else {
+      pendingRef.current = [];
+      setPending([]);
+    }
   };
 
   const onClick = (e: React.MouseEvent) => {
@@ -264,7 +287,8 @@ function paintDrawing(
   api: ChartApiBundle,
   d: Drawing,
   highlight: boolean,
-  width: number
+  width: number,
+  profileCandles: Candle[]
 ) {
   const color = d.color || "#94a3b8";
   ctx.save();
@@ -320,6 +344,24 @@ function paintDrawing(
     ctx.moveTo(x, 0);
     ctx.lineTo(x, ctx.canvas.clientHeight || 800);
     ctx.stroke();
+    ctx.restore();
+    return;
+  }
+
+  // Feature ID: draw.extended_line
+  if (d.tool === "extended" && d.points.length >= 2) {
+    const a = pointToXY(api, d.points[0]);
+    const b = pointToXY(api, d.points[1]);
+    if (a && b) {
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const scale = Math.max(width, 1200) / len;
+      ctx.beginPath();
+      ctx.moveTo(a.x - dx * scale, a.y - dy * scale);
+      ctx.lineTo(a.x + dx * scale, a.y + dy * scale);
+      ctx.stroke();
+    }
     ctx.restore();
     return;
   }
@@ -480,6 +522,105 @@ function paintDrawing(
       ctx.fill();
       ctx.globalAlpha = 0.95;
       ctx.stroke();
+    }
+    ctx.restore();
+    return;
+  }
+
+  // Feature ID: draw.long_position / draw.short_position
+  if (
+    (d.tool === "long_position" || d.tool === "short_position") &&
+    d.points.length >= 2
+  ) {
+    const entry = d.points[0];
+    const target = d.points[1];
+    const stop = d.points[2] ?? {
+      time: target.time,
+      price: entry.price + (entry.price - target.price) * 0.5,
+    };
+    const ex = pointToXY(api, entry);
+    const tx = pointToXY(api, target);
+    const sx = pointToXY(api, stop);
+    if (ex && tx) {
+      const left = Math.min(ex.x, tx.x) - 20;
+      const right = Math.max(ex.x, tx.x) + 20;
+      const profitColor =
+        d.tool === "long_position" ? "rgba(34,197,94,0.25)" : "rgba(239,68,68,0.25)";
+      const lossColor =
+        d.tool === "long_position" ? "rgba(239,68,68,0.2)" : "rgba(34,197,94,0.2)";
+      const entryY = ex.y;
+      const targetY = tx.y;
+      const stopY = sx?.y ?? entryY + (entryY - targetY);
+      ctx.fillStyle = profitColor;
+      ctx.fillRect(left, Math.min(entryY, targetY), right - left, Math.abs(targetY - entryY));
+      ctx.fillStyle = lossColor;
+      ctx.fillRect(left, Math.min(entryY, stopY), right - left, Math.abs(stopY - entryY));
+      ctx.strokeStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(left, entryY);
+      ctx.lineTo(right, entryY);
+      ctx.stroke();
+      ctx.font = "10px ui-monospace, monospace";
+      ctx.fillStyle = color;
+      ctx.fillText(d.tool === "long_position" ? "LONG" : "SHORT", left + 4, entryY - 4);
+    }
+    ctx.restore();
+    return;
+  }
+
+  // Feature ID: draw.vp.fixed_range
+  if (d.tool === "vp_fixed" && d.points.length >= 2) {
+    const [p0, p1] = d.points;
+    const x0 = api.chart.timeScale().timeToCoordinate(p0.time as Time);
+    const x1 = api.chart.timeScale().timeToCoordinate(p1.time as Time);
+    if (x0 != null && x1 != null) {
+      const left = Math.min(x0, x1);
+      const right = Math.max(x0, x1);
+      const profile = volumeProfile(profileCandles, p0.time, p1.time, 16);
+      const maxV = Math.max(...profile.map((b) => b.volume), 1);
+      const barW = Math.min(28, (right - left) / Math.max(profile.length, 1));
+      profile.forEach((b, i) => {
+        const y = api.series.priceToCoordinate(b.price);
+        if (y == null) return;
+        const w = (b.volume / maxV) * barW;
+        ctx.globalAlpha = 0.55;
+        ctx.fillStyle = color;
+        ctx.fillRect(right + 4, y - 3, w, 6);
+        ctx.globalAlpha = 1;
+      });
+      ctx.setLineDash([4, 3]);
+      ctx.strokeRect(left, 0, right - left, ctx.canvas.clientHeight || 400);
+    }
+    ctx.restore();
+    return;
+  }
+
+  // Feature ID: draw.anchored_vwap
+  if (d.tool === "anchored_vwap" && d.points[0]) {
+    const anchor = d.points[0].time;
+    const vals = anchoredVwap(profileCandles, anchor);
+    ctx.beginPath();
+    let started = false;
+    for (let i = 0; i < profileCandles.length; i++) {
+      const c = profileCandles[i];
+      const v = vals[i];
+      if (v == null) return;
+      const xy = pointToXY(api, { time: c.time, price: v });
+      if (!xy) return;
+      if (!started) {
+        ctx.moveTo(xy.x, xy.y);
+        started = true;
+      } else ctx.lineTo(xy.x, xy.y);
+    }
+    ctx.strokeStyle = "#e8b86d";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    const ax = pointToXY(api, d.points[0]);
+    if (ax) {
+      ctx.beginPath();
+      ctx.arc(ax.x, ax.y, 4, 0, Math.PI * 2);
+      ctx.fillStyle = "#e8b86d";
+      ctx.fill();
     }
     ctx.restore();
     return;

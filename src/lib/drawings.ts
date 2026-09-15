@@ -7,7 +7,6 @@ export const DRAWING_TOOL_META: {
   label: string;
   clicks: number;
   hint: string;
-  /** Feature ID string when distinct from tool id */
   featureId?: string;
 }[] = [
   {
@@ -17,7 +16,20 @@ export const DRAWING_TOOL_META: {
     hint: "시작점 → 끝점",
     featureId: "draw.trendline",
   },
-  { id: "ray", label: "레이", clicks: 2, hint: "시작 → 방향(무한 연장)" },
+  {
+    id: "ray",
+    label: "레이",
+    clicks: 2,
+    hint: "시작 → 방향(무한 연장)",
+    featureId: "draw.ray",
+  },
+  {
+    id: "extended",
+    label: "연장선",
+    clicks: 2,
+    hint: "양방향 무한 연장",
+    featureId: "draw.extended_line",
+  },
   {
     id: "horizontal",
     label: "수평선",
@@ -32,12 +44,19 @@ export const DRAWING_TOOL_META: {
     hint: "가격 클릭 → 우측 무한",
     featureId: "draw.horizontal_ray",
   },
-  { id: "vertical", label: "수직선", clicks: 1, hint: "시간 클릭" },
+  {
+    id: "vertical",
+    label: "수직선",
+    clicks: 1,
+    hint: "시간 클릭",
+    featureId: "draw.vertical_line",
+  },
   {
     id: "channel",
     label: "평행 채널",
     clicks: 3,
-    hint: "기준선 2점 → 폭(3번째 점)",
+    hint: "기준선 2점 → 폭",
+    featureId: "draw.parallel_channel",
   },
   {
     id: "fibonacci",
@@ -52,6 +71,34 @@ export const DRAWING_TOOL_META: {
     clicks: 2,
     hint: "모서리 2점",
     featureId: "draw.rectangle",
+  },
+  {
+    id: "long_position",
+    label: "롱 포지션",
+    clicks: 3,
+    hint: "진입 → 목표 → 손절",
+    featureId: "draw.long_position",
+  },
+  {
+    id: "short_position",
+    label: "숏 포지션",
+    clicks: 3,
+    hint: "진입 → 목표 → 손절",
+    featureId: "draw.short_position",
+  },
+  {
+    id: "vp_fixed",
+    label: "고정 VP",
+    clicks: 2,
+    hint: "구간 2점",
+    featureId: "draw.vp.fixed_range",
+  },
+  {
+    id: "anchored_vwap",
+    label: "앵커 VWAP",
+    clicks: 1,
+    hint: "앵커 시점",
+    featureId: "draw.anchored_vwap",
   },
   {
     id: "measure",
@@ -78,6 +125,7 @@ export function defaultColor(tool: DrawingKind): string {
     case "trend":
       return "#38bdf8";
     case "ray":
+    case "extended":
       return "#7dd3fc";
     case "horizontal":
       return "#fbbf24";
@@ -91,6 +139,14 @@ export function defaultColor(tool: DrawingKind): string {
       return "#c084fc";
     case "rectangle":
       return "#fb7185";
+    case "long_position":
+      return "#22c55e";
+    case "short_position":
+      return "#f43f5e";
+    case "vp_fixed":
+      return "#a78bfa";
+    case "anchored_vwap":
+      return "#f472b6";
     case "measure":
       return "#a3e635";
     case "text":

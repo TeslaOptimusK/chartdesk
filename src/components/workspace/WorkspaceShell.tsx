@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { ChartToolbar } from "@/components/workspace/ChartToolbar";
+import { CommandPalette } from "@/components/workspace/CommandPalette";
 import { IngestDialog } from "@/components/workspace/IngestDialog";
 import { RightPanel } from "@/components/workspace/RightPanel";
 import { SymbolChartPane } from "@/components/chart/SymbolChartPane";
@@ -63,6 +64,7 @@ export function WorkspaceShell() {
     setObjectTreeOpen,
     drawingsLocked,
     setDrawingsLocked,
+    sync,
   } = useWorkspace();
   const [ingestOpen, setIngestOpen] = useState(false);
   const [bootError, setBootError] = useState<string | null>(null);
@@ -180,17 +182,23 @@ export function WorkspaceShell() {
     [active?.exchange, clock]
   );
 
-  const paneSymbols =
+  const paneSymbolsRaw =
     layoutMode === "single"
       ? [activeSymbolId]
       : layoutMode === "split2"
-        ? [activeSymbolId, secondarySymbolIds[0] ?? watchlist[1] ?? activeSymbolId]
+        ? [
+            activeSymbolId,
+            secondarySymbolIds[0] ?? watchlist[1] ?? activeSymbolId,
+          ]
         : [
             activeSymbolId,
             secondarySymbolIds[0] ?? watchlist[1] ?? activeSymbolId,
             secondarySymbolIds[1] ?? watchlist[2] ?? activeSymbolId,
             secondarySymbolIds[2] ?? watchlist[3] ?? activeSymbolId,
           ];
+  const paneSymbols = sync.symbol
+    ? paneSymbolsRaw.map(() => activeSymbolId)
+    : paneSymbolsRaw;
 
   if (bootError) {
     return (
@@ -285,6 +293,7 @@ export function WorkspaceShell() {
                       : 280
               }
               interactive={idx === 0}
+              paneIndex={idx}
               className="min-h-0"
             />
           ))}
@@ -326,6 +335,7 @@ export function WorkspaceShell() {
       </footer>
 
       <IngestDialog open={ingestOpen} onOpenChange={setIngestOpen} />
+      <CommandPalette />
     </div>
   );
 }

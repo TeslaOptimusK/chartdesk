@@ -3,22 +3,35 @@
 import { create } from "zustand";
 import type {
   AlertItem,
+  CalendarEvent,
   ChartComment,
+  ChartEventKind,
   ChartSettings,
   ChartStyle,
+  DateFormat,
   Drawing,
+  DrawingKind,
   DrawingTool,
   NewsItem,
   Opinion,
   PatternDef,
   PatternHit,
   Post,
+  PriceScaleMode,
   PriceWatch,
+  RangePreset,
   SymbolMeta,
+  TechnicalAlert,
   Timeframe,
+  WebhookConfig,
   WorkspaceLayoutPreset,
 } from "@/lib/types";
-import { DEFAULT_CHART_SETTINGS } from "@/lib/types";
+import {
+  DEFAULT_CHART_SETTINGS,
+  DEFAULT_WEBHOOK_CONFIG,
+  INDICATOR_TEMPLATES,
+} from "@/lib/types";
+import { buildCalendarEvents } from "@/lib/phase2-data";
 
 /** Feature ID: shell.brand — fixed right-panel tab order */
 export type RightTab =
@@ -31,20 +44,81 @@ export type RightTab =
   | "commentary";
 
 export type LayoutMode = "single" | "split2" | "split4";
+/** Built-in overlay / pane indicators (Phase 2 favorites in checklist §7.2) */
 export type IndicatorId =
   | "sma20"
   | "ema9"
+  | "ema20"
+  | "ema50"
+  | "ema200"
+  | "wma"
   | "bb"
+  | "ichimoku"
+  | "supertrend"
   | "rsi"
   | "macd"
+  | "stoch"
   | "atr"
   | "vwap"
-  | "volMa";
+  | "volMa"
+  | "volume";
+
+/** Feature ID: layout.sync.* */
+export interface LayoutSyncFlags {
+  symbol: boolean;
+  interval: boolean;
+  crosshair: boolean;
+  drawings: boolean;
+}
+
+/** Feature ID: events.* toggles */
+export type EventToggleMap = Record<ChartEventKind, boolean>;
 
 const LAYOUT_KEY = "chartdesk-layouts-v1";
 const RECENT_KEY = "chartdesk-recent-v1";
 const SETTINGS_KEY = "chartdesk-settings-v1";
 const TZ_KEY = "chartdesk-timezone-v1";
+const PHASE2_KEY = "chartdesk-phase2-v1";
+
+export interface Phase2Prefs {
+  priceScaleMode: PriceScaleMode;
+  rangePreset: RangePreset;
+  dateFormat: DateFormat;
+  extendedHours: boolean;
+  sync: LayoutSyncFlags;
+  favoriteTools: DrawingKind[];
+  stayInDrawMode: boolean;
+  showCountdown: boolean;
+  customIntervalMinutes: number | null;
+  eventToggles: EventToggleMap;
+}
+
+const DEFAULT_SYNC: LayoutSyncFlags = {
+  symbol: true,
+  interval: true,
+  crosshair: false,
+  drawings: true,
+};
+
+const DEFAULT_EVENT_TOGGLES: EventToggleMap = {
+  earnings: true,
+  dividends: true,
+  splits: true,
+  news: true,
+};
+
+const DEFAULT_PHASE2: Phase2Prefs = {
+  priceScaleMode: "linear",
+  rangePreset: "ALL",
+  dateFormat: "mm/dd/yyyy",
+  extendedHours: false,
+  sync: DEFAULT_SYNC,
+  favoriteTools: ["trend", "horizontal", "ray"],
+  stayInDrawMode: false,
+  showCountdown: true,
+  customIntervalMinutes: null,
+  eventToggles: DEFAULT_EVENT_TOGGLES,
+};
 
 interface WorkspaceState {
   ready: boolean;
@@ -84,6 +158,43 @@ interface WorkspaceState {
   undoStack: Drawing[][];
   redoStack: Drawing[][];
   objectTreeOpen: boolean;
+  /** Feature ID: scale.log / scale.percent / scale.indexed_100 */
+  priceScaleMode: PriceScaleMode;
+  /** Feature ID: chart.range_preset */
+  rangePreset: RangePreset;
+  /** Feature ID: chart.date_format */
+  dateFormat: DateFormat;
+  /** Feature ID: chart.extended_hours */
+  extendedHours: boolean;
+  /** Feature ID: layout.sync.* */
+  sync: LayoutSyncFlags;
+  /** Feature ID: draw.favorites */
+  favoriteTools: DrawingKind[];
+  /** Feature ID: draw.stay_in_mode */
+  stayInDrawMode: boolean;
+  /** Feature ID: replay */
+  replayActive: boolean;
+  replayIndex: number | null;
+  /** Feature ID: indicator.dialog */
+  indicatorDialogOpen: boolean;
+  /** Feature ID: shell.command_palette */
+  commandPaletteOpen: boolean;
+  /** Feature ID: chart.interval.custom */
+  customIntervalMinutes: number | null;
+  /** Feature ID: events.* */
+  eventToggles: EventToggleMap;
+  /** Feature ID: alert.webhook */
+  webhookConfig: WebhookConfig;
+  /** Feature ID: alert.technical.* */
+  technicalAlerts: TechnicalAlert[];
+  /** Feature ID: calendar.eco / calendar.earnings */
+  calendarEvents: CalendarEvent[];
+  /** Feature ID: scale.countdown */
+  showCountdown: boolean;
+  /** Feature ID: layout.sync.crosshair — shared crosshair time (unix sec) */
+  sharedCrosshairTime: number | null;
+  /** Feature ID: chart.snapshot — increment to trigger capture */
+  snapshotTick: number;
   setReady: (v: boolean) => void;
   hydrate: (data: {
     symbols: SymbolMeta[];
@@ -97,6 +208,8 @@ interface WorkspaceState {
     priceWatches?: PriceWatch[];
     comments?: ChartComment[];
     news?: NewsItem[];
+    technicalAlerts?: TechnicalAlert[];
+    webhookConfig?: WebhookConfig;
   }) => void;
   setActiveSymbol: (id: string) => void;
   setTimeframe: (tf: Timeframe) => void;
@@ -131,6 +244,27 @@ interface WorkspaceState {
   saveLayout: (name: string) => void;
   loadLayout: (id: string) => void;
   deleteLayout: (id: string) => void;
+  setPriceScaleMode: (mode: PriceScaleMode) => void;
+  setRangePreset: (preset: RangePreset) => void;
+  setDateFormat: (fmt: DateFormat) => void;
+  setExtendedHours: (v: boolean) => void;
+  setSync: (partial: Partial<LayoutSyncFlags>) => void;
+  toggleFavoriteTool: (tool: DrawingKind) => void;
+  setStayInDrawMode: (v: boolean) => void;
+  setReplayActive: (v: boolean) => void;
+  setReplayIndex: (idx: number | null) => void;
+  setIndicatorDialogOpen: (v: boolean) => void;
+  setCommandPaletteOpen: (v: boolean) => void;
+  setCustomIntervalMinutes: (m: number | null) => void;
+  setEventToggles: (partial: Partial<EventToggleMap>) => void;
+  setWebhookConfig: (partial: Partial<WebhookConfig>) => void;
+  setTechnicalAlerts: (alerts: TechnicalAlert[]) => void;
+  setShowCountdown: (v: boolean) => void;
+  setSharedCrosshairTime: (t: number | null) => void;
+  /** Feature ID: indicator.template */
+  applyIndicatorTemplate: (templateId: string) => void;
+  setIndicators: (ids: IndicatorId[]) => void;
+  requestSnapshot: () => void;
 }
 
 function readLayouts(): WorkspaceLayoutPreset[] {
@@ -178,6 +312,29 @@ function readSettings(): ChartSettings {
 function writeSettings(s: ChartSettings) {
   if (typeof window === "undefined") return;
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
+}
+
+function readPhase2(): Phase2Prefs {
+  if (typeof window === "undefined") return DEFAULT_PHASE2;
+  try {
+    const raw = localStorage.getItem(PHASE2_KEY);
+    if (!raw) return DEFAULT_PHASE2;
+    const parsed = JSON.parse(raw) as Partial<Phase2Prefs>;
+    return {
+      ...DEFAULT_PHASE2,
+      ...parsed,
+      sync: { ...DEFAULT_SYNC, ...parsed.sync },
+      eventToggles: { ...DEFAULT_EVENT_TOGGLES, ...parsed.eventToggles },
+    };
+  } catch {
+    return DEFAULT_PHASE2;
+  }
+}
+
+function writePhase2(partial: Partial<Phase2Prefs>) {
+  if (typeof window === "undefined") return;
+  const cur = readPhase2();
+  localStorage.setItem(PHASE2_KEY, JSON.stringify({ ...cur, ...partial }));
 }
 
 function readTimezone(): string {
@@ -229,13 +386,35 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   undoStack: [],
   redoStack: [],
   objectTreeOpen: false,
+  priceScaleMode: DEFAULT_PHASE2.priceScaleMode,
+  rangePreset: DEFAULT_PHASE2.rangePreset,
+  dateFormat: DEFAULT_PHASE2.dateFormat,
+  extendedHours: DEFAULT_PHASE2.extendedHours,
+  sync: DEFAULT_SYNC,
+  favoriteTools: DEFAULT_PHASE2.favoriteTools,
+  stayInDrawMode: DEFAULT_PHASE2.stayInDrawMode,
+  replayActive: false,
+  replayIndex: null,
+  indicatorDialogOpen: false,
+  commandPaletteOpen: false,
+  customIntervalMinutes: null,
+  eventToggles: DEFAULT_EVENT_TOGGLES,
+  webhookConfig: DEFAULT_WEBHOOK_CONFIG,
+  technicalAlerts: [],
+  calendarEvents: buildCalendarEvents(),
+  showCountdown: DEFAULT_PHASE2.showCountdown,
+  sharedCrosshairTime: null,
+  snapshotTick: 0,
   setReady: (v) => set({ ready: v }),
-  hydrate: (data) =>
+  hydrate: (data) => {
+    const p2 = readPhase2();
     set({
       ...data,
       priceWatches: data.priceWatches ?? [],
       comments: data.comments ?? [],
       news: data.news ?? [],
+      technicalAlerts: data.technicalAlerts ?? [],
+      webhookConfig: data.webhookConfig ?? DEFAULT_WEBHOOK_CONFIG,
       activeSymbolId:
         data.watchlist.find((id) => id === "us_NVDA") ??
         data.watchlist[0] ??
@@ -248,7 +427,19 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       timezone: readTimezone(),
       undoStack: [],
       redoStack: [],
-    }),
+      priceScaleMode: p2.priceScaleMode,
+      rangePreset: p2.rangePreset,
+      dateFormat: p2.dateFormat,
+      extendedHours: p2.extendedHours,
+      sync: p2.sync,
+      favoriteTools: p2.favoriteTools,
+      stayInDrawMode: p2.stayInDrawMode,
+      showCountdown: p2.showCountdown,
+      customIntervalMinutes: p2.customIntervalMinutes,
+      eventToggles: p2.eventToggles,
+      calendarEvents: buildCalendarEvents(),
+    });
+  },
   setActiveSymbol: (id) => {
     const recent = [id, ...get().recentSymbolIds.filter((x) => x !== id)].slice(
       0,
@@ -369,4 +560,69 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     writeLayouts(layouts);
     set({ layouts });
   },
+  setPriceScaleMode: (mode) => {
+    writePhase2({ priceScaleMode: mode });
+    set({ priceScaleMode: mode });
+  },
+  setRangePreset: (preset) => {
+    writePhase2({ rangePreset: preset });
+    set({ rangePreset: preset });
+  },
+  setDateFormat: (fmt) => {
+    writePhase2({ dateFormat: fmt });
+    set({ dateFormat: fmt });
+  },
+  setExtendedHours: (v) => {
+    writePhase2({ extendedHours: v });
+    set({ extendedHours: v });
+  },
+  setSync: (partial) => {
+    const sync = { ...get().sync, ...partial };
+    writePhase2({ sync });
+    set({ sync });
+  },
+  toggleFavoriteTool: (tool) => {
+    const cur = get().favoriteTools;
+    const favoriteTools = cur.includes(tool)
+      ? cur.filter((t) => t !== tool)
+      : [...cur, tool];
+    writePhase2({ favoriteTools });
+    set({ favoriteTools });
+  },
+  setStayInDrawMode: (v) => {
+    writePhase2({ stayInDrawMode: v });
+    set({ stayInDrawMode: v });
+  },
+  setReplayActive: (v) =>
+    set({ replayActive: v, replayIndex: v ? get().replayIndex : null }),
+  setReplayIndex: (idx) => set({ replayIndex: idx }),
+  setIndicatorDialogOpen: (v) => set({ indicatorDialogOpen: v }),
+  setCommandPaletteOpen: (v) => set({ commandPaletteOpen: v }),
+  setCustomIntervalMinutes: (m) => {
+    writePhase2({ customIntervalMinutes: m });
+    set({ customIntervalMinutes: m });
+  },
+  setEventToggles: (partial) => {
+    const eventToggles = { ...get().eventToggles, ...partial };
+    writePhase2({ eventToggles });
+    set({ eventToggles });
+  },
+  setWebhookConfig: (partial) => {
+    const webhookConfig = { ...get().webhookConfig, ...partial };
+    set({ webhookConfig });
+  },
+  setTechnicalAlerts: (technicalAlerts) => set({ technicalAlerts }),
+  setShowCountdown: (v) => {
+    writePhase2({ showCountdown: v });
+    set({ showCountdown: v });
+  },
+  setSharedCrosshairTime: (t) => set({ sharedCrosshairTime: t }),
+  applyIndicatorTemplate: (templateId) => {
+    const tpl = INDICATOR_TEMPLATES.find((t) => t.id === templateId);
+    if (!tpl) return;
+    set({ indicators: tpl.indicators as IndicatorId[] });
+  },
+  setIndicators: (ids) => set({ indicators: ids }),
+  requestSnapshot: () =>
+    set({ snapshotTick: get().snapshotTick + 1 }),
 }));

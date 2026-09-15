@@ -25,6 +25,11 @@ import {
   Undo2,
   ArrowRightFromLine,
   ListTree,
+  Camera,
+  Command,
+  Star,
+  Play,
+  Pause,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,14 +43,18 @@ import { DRAWING_TOOL_META } from "@/lib/drawings";
 import {
   SYMBOL_CHIP_IDS,
   TIMEFRAME_LABELS,
+  ALL_TIMEFRAMES,
+  RANGE_PRESET_LABELS,
+  INDICATOR_TEMPLATES,
   type ChartStyle,
   type DrawingKind,
   type DrawingTool,
+  type RangePreset,
   type Timeframe,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-const TFS: Timeframe[] = ["1", "5", "15", "60", "240", "D"];
+const TFS: Timeframe[] = ALL_TIMEFRAMES;
 const INDICATORS: { id: IndicatorId; label: string }[] = [
   { id: "sma20", label: "SMA20" },
   { id: "ema9", label: "EMA9" },
@@ -56,11 +65,13 @@ const INDICATORS: { id: IndicatorId; label: string }[] = [
   { id: "vwap", label: "VWAP" },
   { id: "volMa", label: "VolMA" },
 ];
-const CHART_STYLES: { id: ChartStyle; label: string }[] = [
+const CHART_STYLES: { id: ChartStyle; label: string; feature?: string }[] = [
   { id: "candle", label: "캔들" },
-  { id: "bar", label: "바" },
+  { id: "bar", label: "바", feature: "chart.type.bars" },
+  { id: "hollow_candle", label: "중공", feature: "chart.type.hollow_candles" },
   { id: "line", label: "라인" },
-  { id: "area", label: "영역" },
+  { id: "area", label: "영역", feature: "chart.type.area" },
+  { id: "baseline", label: "베이스", feature: "chart.type.baseline" },
   { id: "heikin_ashi", label: "하이킨" },
 ];
 
@@ -78,6 +89,11 @@ const DRAWING_ICONS: Record<
   rectangle: Square,
   measure: Ruler,
   text: Type,
+  extended: MoveDiagonal,
+  long_position: TrendingUp,
+  short_position: TrendingUp,
+  vp_fixed: LayoutGrid,
+  anchored_vwap: LineChart,
 };
 
 export function ChartToolbar({ onOpenIngest }: { onOpenIngest: () => void }) {
@@ -121,11 +137,40 @@ export function ChartToolbar({ onOpenIngest }: { onOpenIngest: () => void }) {
     setChartSettings,
     objectTreeOpen,
     setObjectTreeOpen,
+    rangePreset,
+    setRangePreset,
+    dateFormat,
+    setDateFormat,
+    extendedHours,
+    setExtendedHours,
+    priceScaleMode,
+    setPriceScaleMode,
+    showCountdown,
+    setShowCountdown,
+    sync,
+    setSync,
+    favoriteTools,
+    toggleFavoriteTool,
+    stayInDrawMode,
+    setStayInDrawMode,
+    customIntervalMinutes,
+    setCustomIntervalMinutes,
+    setIndicatorDialogOpen,
+    setCommandPaletteOpen,
+    applyIndicatorTemplate,
+    requestSnapshot,
+    replayActive,
+    setReplayActive,
+    replayIndex,
+    setReplayIndex,
+    eventToggles,
+    setEventToggles,
   } = useWorkspace();
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [dateInput, setDateInput] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [customMin, setCustomMin] = useState("");
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -222,10 +267,10 @@ export function ChartToolbar({ onOpenIngest }: { onOpenIngest: () => void }) {
         </PopoverContent>
       </Popover>
 
-      {/* Feature ID: chart.interval */}
+      {/* Feature ID: chart.interval.full */}
       <div
-        className="flex items-center rounded-md border border-[var(--workspace-border)] bg-[var(--workspace-elevated)] p-0.5"
-        data-feature="chart.interval"
+        className="flex max-w-[420px] flex-wrap items-center rounded-md border border-[var(--workspace-border)] bg-[var(--workspace-elevated)] p-0.5"
+        data-feature="chart.interval.full"
       >
         {TFS.map((tf) => (
           <button
@@ -240,6 +285,66 @@ export function ChartToolbar({ onOpenIngest }: { onOpenIngest: () => void }) {
             )}
           >
             {TIMEFRAME_LABELS[tf]}
+          </button>
+        ))}
+      </div>
+
+      <div
+        className="flex items-center gap-1"
+        data-feature="chart.interval.custom"
+      >
+        <Input
+          type="number"
+          min={1}
+          max={240}
+          placeholder="7"
+          value={customMin}
+          onChange={(e) => setCustomMin(e.target.value)}
+          className="h-7 w-12 border-[var(--workspace-border)] bg-[var(--workspace-elevated)] text-[10px]"
+        />
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 text-[10px]"
+          onClick={() => {
+            const n = Number(customMin);
+            setCustomIntervalMinutes(Number.isFinite(n) && n > 0 ? n : null);
+          }}
+        >
+          분
+        </Button>
+        {customIntervalMinutes && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 text-[10px]"
+            onClick={() => {
+              setCustomIntervalMinutes(null);
+              setCustomMin("");
+            }}
+          >
+            리셋
+          </Button>
+        )}
+      </div>
+
+      <div
+        className="flex items-center rounded-md border border-[var(--workspace-border)] bg-[var(--workspace-elevated)] p-0.5"
+        data-feature="chart.range_preset"
+      >
+        {(Object.keys(RANGE_PRESET_LABELS) as RangePreset[]).map((rp) => (
+          <button
+            key={rp}
+            type="button"
+            onClick={() => setRangePreset(rp)}
+            className={cn(
+              "rounded px-1.5 py-1 text-[10px]",
+              rangePreset === rp
+                ? "bg-[var(--brand-accent)] font-semibold text-[#0b1016]"
+                : "text-[var(--workspace-muted)]"
+            )}
+          >
+            {RANGE_PRESET_LABELS[rp]}
           </button>
         ))}
       </div>
@@ -261,13 +366,14 @@ export function ChartToolbar({ onOpenIngest }: { onOpenIngest: () => void }) {
                 : "text-[var(--workspace-muted)] hover:text-[var(--workspace-fg)]"
             )}
             data-feature={
-              s.id === "candle"
+              s.feature ??
+              (s.id === "candle"
                 ? "chart.type.candles"
                 : s.id === "line"
                   ? "chart.type.line"
                   : s.id === "heikin_ashi"
                     ? "chart.type.heikin_ashi"
-                    : undefined
+                    : undefined)
             }
           >
             {s.label}
@@ -328,6 +434,40 @@ export function ChartToolbar({ onOpenIngest }: { onOpenIngest: () => void }) {
         ))}
       </div>
 
+      <div
+        className="flex items-center gap-0.5 border-l border-[var(--workspace-border)] pl-2"
+        data-feature="draw.favorites"
+      >
+        {favoriteTools.map((id) => {
+          const meta = DRAWING_TOOL_META.find((m) => m.id === id);
+          if (!meta) return null;
+          const Icon = DRAWING_ICONS[meta.id];
+          return (
+            <ToolBtn
+              key={`fav-${meta.id}`}
+              active={drawingTool === meta.id}
+              onClick={() =>
+                setDrawingTool(
+                  drawingTool === meta.id ? "none" : (meta.id as DrawingTool)
+                )
+              }
+              title={`★ ${meta.label}`}
+              dataFeature={meta.featureId}
+            >
+              <Icon className="h-3.5 w-3.5" />
+            </ToolBtn>
+          );
+        })}
+        <ToolBtn
+          active={stayInDrawMode}
+          onClick={() => setStayInDrawMode(!stayInDrawMode)}
+          title="연속 그리기"
+          dataFeature="draw.stay_in_mode"
+        >
+          <Star className="h-3.5 w-3.5" />
+        </ToolBtn>
+      </div>
+
       <div className="flex items-center gap-0.5 border-l border-[var(--workspace-border)] pl-2">
         {DRAWING_TOOL_META.map((meta) => {
           const Icon = DRAWING_ICONS[meta.id];
@@ -335,12 +475,16 @@ export function ChartToolbar({ onOpenIngest }: { onOpenIngest: () => void }) {
             <ToolBtn
               key={meta.id}
               active={drawingTool === meta.id}
-              onClick={() =>
+              onClick={(e) => {
+                if (e.shiftKey) {
+                  toggleFavoriteTool(meta.id);
+                  return;
+                }
                 setDrawingTool(
                   drawingTool === meta.id ? "none" : (meta.id as DrawingTool)
-                )
-              }
-              title={`${meta.label} — ${meta.hint}`}
+                );
+              }}
+              title={`${meta.label} — ${meta.hint} (Shift=즐겨찾기)`}
               dataFeature={meta.featureId}
             >
               <Icon className="h-3.5 w-3.5" />
@@ -479,7 +623,7 @@ export function ChartToolbar({ onOpenIngest }: { onOpenIngest: () => void }) {
         </PopoverContent>
       </Popover>
 
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1" data-feature="chart.goto">
         <Input
           type="date"
           value={dateInput}
@@ -568,6 +712,181 @@ export function ChartToolbar({ onOpenIngest }: { onOpenIngest: () => void }) {
         </PopoverContent>
       </Popover>
 
+      <select
+        value={dateFormat}
+        onChange={(e) =>
+          setDateFormat(e.target.value as typeof dateFormat)
+        }
+        className="h-7 rounded border border-[var(--workspace-border)] bg-[var(--workspace-elevated)] px-1 text-[10px]"
+        data-feature="chart.date_format"
+      >
+        <option value="mm/dd/yyyy">mm/dd/yyyy</option>
+        <option value="yyyy-mm-dd">yyyy-mm-dd</option>
+        <option value="dd/mm/yyyy">dd/mm/yyyy</option>
+      </select>
+
+      <label
+        className="flex items-center gap-1 text-[10px] text-[var(--workspace-muted)]"
+        data-feature="chart.extended_hours"
+      >
+        <input
+          type="checkbox"
+          checked={extendedHours}
+          onChange={(e) => setExtendedHours(e.target.checked)}
+        />
+        EH
+      </label>
+
+      <div className="flex items-center gap-0.5" data-feature="scale.log">
+        {(
+          [
+            ["linear", "Lin"],
+            ["log", "Log"],
+            ["percent", "%"],
+            ["indexed_100", "100"],
+          ] as const
+        ).map(([mode, label]) => (
+          <button
+            key={mode}
+            type="button"
+            onClick={() => setPriceScaleMode(mode)}
+            data-feature={
+              mode === "log"
+                ? "scale.log"
+                : mode === "percent"
+                  ? "scale.percent"
+                  : mode === "indexed_100"
+                    ? "scale.indexed_100"
+                    : undefined
+            }
+            className={cn(
+              "rounded px-1.5 py-1 text-[10px]",
+              priceScaleMode === mode
+                ? "bg-[var(--brand-accent)] text-[#0b1016]"
+                : "text-[var(--workspace-muted)]"
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <label
+        className="flex items-center gap-1 text-[10px]"
+        data-feature="scale.countdown"
+      >
+        <input
+          type="checkbox"
+          checked={showCountdown}
+          onChange={(e) => setShowCountdown(e.target.checked)}
+        />
+        CD
+      </label>
+
+      <div className="flex flex-wrap items-center gap-1 text-[10px]" data-feature="draw.sync.layout">
+        {(
+          [
+            ["symbol", "Sym", "layout.sync.symbol"],
+            ["interval", "Int", "layout.sync.interval"],
+            ["crosshair", "Xhair", "layout.sync.crosshair"],
+            ["drawings", "Drw", "layout.sync.drawings"],
+          ] as const
+        ).map(([key, label, feat]) => (
+          <label key={key} className="flex items-center gap-0.5" data-feature={feat}>
+            <input
+              type="checkbox"
+              checked={sync[key]}
+              onChange={(e) => setSync({ [key]: e.target.checked })}
+            />
+            {label}
+          </label>
+        ))}
+      </div>
+
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-7 text-[10px]"
+        data-feature="chart.snapshot"
+        onClick={() => requestSnapshot()}
+      >
+        <Camera className="mr-1 h-3.5 w-3.5" />
+        Snap
+      </Button>
+
+      <div className="flex items-center gap-1" data-feature="replay">
+        <Button
+          size="sm"
+          variant={replayActive ? "default" : "ghost"}
+          className="h-7 px-2 text-[10px]"
+          onClick={() => setReplayActive(!replayActive)}
+        >
+          {replayActive ? (
+            <Pause className="h-3.5 w-3.5" />
+          ) : (
+            <Play className="h-3.5 w-3.5" />
+          )}
+        </Button>
+        {replayActive && (
+          <input
+            type="range"
+            min={10}
+            max={200}
+            value={replayIndex ?? 180}
+            onChange={(e) => setReplayIndex(Number(e.target.value))}
+            className="w-20"
+          />
+        )}
+      </div>
+
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-7 text-[10px]"
+        data-feature="indicator.dialog"
+        onClick={() => setIndicatorDialogOpen(true)}
+      >
+        /
+      </Button>
+
+      <Popover>
+        <PopoverTrigger
+          render={
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 text-[10px]"
+              data-feature="indicator.template"
+            />
+          }
+        >
+          Tpl
+        </PopoverTrigger>
+        <PopoverContent className="w-48 border-[var(--workspace-border)] bg-[var(--workspace-elevated)] p-2">
+          {INDICATOR_TEMPLATES.map((tpl) => (
+            <button
+              key={tpl.id}
+              type="button"
+              className="mb-1 w-full rounded px-2 py-1 text-left text-xs hover:bg-[var(--workspace-panel)]"
+              onClick={() => applyIndicatorTemplate(tpl.id)}
+            >
+              {tpl.name}
+            </button>
+          ))}
+        </PopoverContent>
+      </Popover>
+
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-7 w-7 p-0"
+        data-feature="shell.command_palette"
+        onClick={() => setCommandPaletteOpen(true)}
+        title="Ctrl+K"
+      >
+        <Command className="h-3.5 w-3.5" />
+      </Button>
+
       {/* Feature ID: chart.settings */}
       <Popover open={settingsOpen} onOpenChange={setSettingsOpen}>
         <PopoverTrigger
@@ -597,6 +916,46 @@ export function ChartToolbar({ onOpenIngest }: { onOpenIngest: () => void }) {
               }
             />
           </label>
+          <label className="mb-2 flex items-center justify-between text-[11px] text-[var(--workspace-muted)]">
+            워터마크
+            <input
+              type="checkbox"
+              checked={chartSettings.showWatermark}
+              onChange={(e) =>
+                setChartSettings({ showWatermark: e.target.checked })
+              }
+            />
+          </label>
+          <input
+            value={chartSettings.watermark}
+            onChange={(e) => setChartSettings({ watermark: e.target.value })}
+            className="mb-2 h-7 w-full rounded border border-[var(--workspace-border)] bg-[var(--workspace-panel)] px-2 text-[11px]"
+            data-feature="chart.canvas"
+          />
+          <div className="mb-2 text-[10px] text-[var(--workspace-faint)]">
+            이벤트 마커
+          </div>
+          {(
+            [
+              ["earnings", "실적", "events.earnings"],
+              ["dividends", "배당", "events.dividends"],
+              ["splits", "분할", "events.splits"],
+              ["news", "뉴스", "events.news"],
+            ] as const
+          ).map(([key, label, feat]) => (
+            <label
+              key={key}
+              className="mb-1 flex items-center justify-between text-[11px]"
+              data-feature={feat}
+            >
+              {label}
+              <input
+                type="checkbox"
+                checked={eventToggles[key]}
+                onChange={(e) => setEventToggles({ [key]: e.target.checked })}
+              />
+            </label>
+          ))}
           {(
             [
               ["background", "배경"],
@@ -729,7 +1088,7 @@ function ToolBtn({
   dataFeature,
 }: {
   active: boolean;
-  onClick: () => void;
+  onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
   title: string;
   children: React.ReactNode;
   disabled?: boolean;

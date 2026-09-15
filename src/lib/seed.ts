@@ -482,5 +482,7 @@ export function createSeedStore(): AppStoreData {
     priceWatches: SEED_PRICE_WATCHES,
     comments: SEED_COMMENTS,
     news: SEED_NEWS,
+    technicalAlerts: [],
+    webhookConfig: { url: "", enabled: false },
   };
 }

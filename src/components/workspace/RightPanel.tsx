@@ -1,7 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useWorkspace, type RightTab } from "@/lib/store";
+import {
+  detectAutoChartPatterns,
+  detectCandlestickPatterns,
+} from "@/lib/phase2-data";
 import {
   CATEGORY_LABELS,
   DIRECTION_LABELS,
@@ -129,9 +133,45 @@ function WatchlistTab() {
 }
 
 function NewsTab() {
-  const { news, setActiveSymbol } = useWorkspace();
+  const { news, setActiveSymbol, calendarEvents } = useWorkspace();
+  const eco = calendarEvents.filter((e) => e.kind === "eco");
+  const earn = calendarEvents.filter((e) => e.kind === "earnings");
   return (
     <div className="space-y-2 p-2" data-feature="news">
+      <div data-feature="calendar.eco">
+        <div className="mb-1 px-1 text-[10px] font-semibold uppercase text-[var(--workspace-faint)]">
+          경제 캘린더
+        </div>
+        {eco.map((e) => (
+          <div
+            key={e.id}
+            className="mb-1 rounded border border-[var(--workspace-border)] px-2 py-1.5 text-[11px]"
+          >
+            <div className="text-[var(--workspace-fg)]">{e.title}</div>
+            <div className="text-[10px] text-[var(--workspace-faint)]">
+              {new Date(e.at).toLocaleString()} · {e.impact}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div data-feature="calendar.earnings">
+        <div className="mb-1 px-1 text-[10px] font-semibold uppercase text-[var(--workspace-faint)]">
+          실적 캘린더
+        </div>
+        {earn.map((e) => (
+          <button
+            key={e.id}
+            type="button"
+            className="mb-1 w-full rounded border border-[var(--workspace-border)] px-2 py-1.5 text-left text-[11px]"
+            onClick={() => e.symbolId && setActiveSymbol(e.symbolId)}
+          >
+            <div className="text-[var(--workspace-fg)]">{e.title}</div>
+            <div className="text-[10px] text-[var(--workspace-faint)]">
+              {new Date(e.at).toLocaleString()}
+            </div>
+          </button>
+        ))}
+      </div>
       {news.length === 0 && <Empty>뉴스가 없습니다.</Empty>}
       {news.map((n) => (
         <button
@@ -197,7 +237,38 @@ function PatternsTab() {
     setPatterns,
     setActiveSymbol,
     setTimeframe,
+    activeSymbolId,
+    timeframe,
   } = useWorkspace();
+  const [candlePatterns, setCandlePatterns] = useState<
+    { time: number; label: string }[]
+  >([]);
+  const [autoPatterns, setAutoPatterns] = useState<
+    { from: number; to: number; label: string }[]
+  >([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(
+      `/api/candles?symbolId=${activeSymbolId}&tf=${timeframe}&limit=120`
+    )
+      .then((r) => r.json())
+      .then((data: { candles: { time: number; open: number; high: number; low: number; close: number }[] }) => {
+        if (cancelled) return;
+        const c = data.candles ?? [];
+        setCandlePatterns(detectCandlestickPatterns(c));
+        setAutoPatterns(detectAutoChartPatterns(c));
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCandlePatterns([]);
+          setAutoPatterns([]);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSymbolId, timeframe]);
 
   const toggle = async (id: string, enabled: boolean) => {
     const res = await fetch("/api/patterns", {
@@ -215,6 +286,36 @@ function PatternsTab() {
 
   return (
     <div className="space-y-3 p-2">
+      <div data-feature="pattern.candlestick">
+        <div className="mb-1 px-1 text-[10px] font-semibold uppercase text-[var(--workspace-faint)]">
+          캔들 패턴
+        </div>
+        {candlePatterns.length === 0 && (
+          <Empty>감지된 캔들 패턴 없음</Empty>
+        )}
+        {candlePatterns.map((p) => (
+          <div
+            key={`${p.time}-${p.label}`}
+            className="mb-1 rounded border border-[var(--workspace-border)] px-2 py-1 text-xs"
+          >
+            {p.label} · {new Date(p.time * 1000).toLocaleDateString()}
+          </div>
+        ))}
+      </div>
+      <div data-feature="pattern.auto_chart">
+        <div className="mb-1 px-1 text-[10px] font-semibold uppercase text-[var(--workspace-faint)]">
+          자동 차트 패턴
+        </div>
+        {autoPatterns.length === 0 && <Empty>구조 패턴 없음</Empty>}
+        {autoPatterns.map((p) => (
+          <div
+            key={`${p.from}-${p.label}`}
+            className="mb-1 rounded border border-[var(--workspace-border)] px-2 py-1 text-xs"
+          >
+            {p.label}
+          </div>
+        ))}
+      </div>
       <div className="space-y-2">
         {patterns.map((p) => (
           <div
@@ -322,11 +423,40 @@ function AlertsTab() {
     symbols,
     priceWatches,
     setPriceWatches,
+    drawings,
+    indicators,
+    technicalAlerts,
+    setTechnicalAlerts,
+    webhookConfig,
+    setWebhookConfig,
   } = useWorkspace();
   const [price, setPrice] = useState("");
   const [op, setOp] = useState<PriceWatchOp>("above");
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  const [techTarget, setTechTarget] = useState("");
+  const [techKind, setTechKind] = useState<"drawing" | "indicator">("drawing");
+
+  const localDrawings = useMemo(
+    () => drawings.filter((d) => d.symbolId === activeSymbolId),
+    [drawings, activeSymbolId]
+  );
+
+  useEffect(() => {
+    fetch("/api/technical-alerts")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.technicalAlerts) setTechnicalAlerts(d.technicalAlerts);
+      })
+      .catch(() => undefined);
+    fetch("/api/webhooks")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.webhookConfig) setWebhookConfig(d.webhookConfig);
+      })
+      .catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const markAll = async () => {
     const res = await fetch("/api/alerts", {
@@ -378,8 +508,116 @@ function AlertsTab() {
   const opLabel = (o: PriceWatchOp) =>
     o === "above" ? "이상" : o === "below" ? "이하" : "돌파";
 
+  const createTechnical = async () => {
+    if (!techTarget.trim()) return;
+    const res = await fetch("/api/technical-alerts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kind: techKind,
+        symbolId: activeSymbolId,
+        targetId: techTarget.trim(),
+        label: techTarget.trim(),
+        message: message.trim() || undefined,
+      }),
+    });
+    const data = await res.json();
+    if (data.technicalAlert) {
+      setTechnicalAlerts([data.technicalAlert, ...technicalAlerts]);
+      setTechTarget("");
+      setMessage("");
+    }
+  };
+
+  const saveWebhook = () => {
+    void fetch("/api/webhooks", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(webhookConfig),
+    });
+  };
+
   return (
     <div className="space-y-2 p-2" data-feature="alert.price">
+      <div
+        className="rounded-md border border-[var(--workspace-border)] bg-[var(--workspace-elevated)] p-2"
+        data-feature="alert.webhook"
+      >
+        <div className="mb-1 text-xs font-semibold text-[var(--workspace-fg)]">
+          웹훅
+        </div>
+        <label className="mb-1 flex items-center gap-2 text-[11px]">
+          <input
+            type="checkbox"
+            checked={webhookConfig.enabled}
+            onChange={(e) =>
+              setWebhookConfig({ enabled: e.target.checked })
+            }
+          />
+          활성
+        </label>
+        <input
+          value={webhookConfig.url}
+          onChange={(e) => setWebhookConfig({ url: e.target.value })}
+          placeholder="https://hooks.example/..."
+          className="mb-1 h-8 w-full rounded border border-[var(--workspace-border)] bg-[var(--workspace-panel)] px-2 text-xs"
+        />
+        <Button size="sm" className="h-7 text-xs" onClick={saveWebhook}>
+          저장
+        </Button>
+      </div>
+
+      <div
+        className="rounded-md border border-[var(--workspace-border)] bg-[var(--workspace-elevated)] p-2"
+        data-feature="alert.technical.drawing"
+      >
+        <div className="mb-1 text-xs font-semibold text-[var(--workspace-fg)]">
+          기술 알림 (선 / 지표)
+        </div>
+        <select
+          value={techKind}
+          onChange={(e) =>
+            setTechKind(e.target.value as "drawing" | "indicator")
+          }
+          className="mb-1 h-8 w-full rounded border border-[var(--workspace-border)] bg-[var(--workspace-panel)] px-1 text-xs"
+          data-feature="alert.technical.indicator"
+        >
+          <option value="drawing">드로잉</option>
+          <option value="indicator">지표</option>
+        </select>
+        <select
+          value={techTarget}
+          onChange={(e) => setTechTarget(e.target.value)}
+          className="mb-1 h-8 w-full rounded border border-[var(--workspace-border)] bg-[var(--workspace-panel)] px-1 text-xs"
+        >
+          <option value="">대상 선택</option>
+          {techKind === "drawing"
+            ? localDrawings.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.tool} · {d.id.slice(-6)}
+                </option>
+              ))
+            : indicators.map((id) => (
+                <option key={id} value={id}>
+                  {id}
+                </option>
+              ))}
+        </select>
+        <Button size="sm" className="h-7 text-xs" onClick={createTechnical}>
+          등록
+        </Button>
+        {technicalAlerts
+          .filter((t) => t.symbolId === activeSymbolId)
+          .map((t) => (
+            <div
+              key={t.id}
+              className="mt-1 text-[11px] text-[var(--workspace-muted)]"
+            >
+              {t.kind}: {t.label}
+            </div>
+          ))}
+      </div>
+
       <div className="rounded-md border border-[var(--workspace-border)] bg-[var(--workspace-elevated)] p-2">
         <div className="mb-1.5 text-xs font-semibold text-[var(--workspace-fg)]">
           가격 알림 · {active?.ticker ?? activeSymbolId}
