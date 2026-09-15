@@ -183,11 +183,13 @@ function writeSettings(s: ChartSettings) {
 function readTimezone(): string {
   if (typeof window === "undefined") return "America/New_York";
   try {
-    return (
-      localStorage.getItem(TZ_KEY) ||
-      Intl.DateTimeFormat().resolvedOptions().timeZone ||
-      "America/New_York"
-    );
+    const saved = localStorage.getItem(TZ_KEY);
+    if (saved) return saved;
+    const detected =
+      Intl.DateTimeFormat().resolvedOptions().timeZone || "America/New_York";
+    // Cloud/CI often reports UTC — prefer NY for US equity session badge demo
+    if (detected === "UTC" || detected === "Etc/UTC") return "America/New_York";
+    return detected;
   } catch {
     return "America/New_York";
   }
