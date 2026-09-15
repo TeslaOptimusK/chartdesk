@@ -24,6 +24,7 @@ export type AlertType = "price" | "pattern" | "opinion";
 export type DrawingKind =
   | "trend"
   | "horizontal"
+  | "horizontal_ray" // Feature ID: draw.horizontal_ray
   | "channel"
   | "fibonacci"
   | "rectangle"
@@ -33,6 +34,9 @@ export type DrawingKind =
   | "measure";
 
 export type DrawingTool = "none" | DrawingKind;
+
+/** Feature ID: alert.price.* */
+export type PriceWatchOp = "above" | "below" | "crossing";
 
 export type ChartStyle =
   | "candle"
@@ -137,10 +141,12 @@ export interface Drawing {
   id: string;
   symbolId: string;
   tool: DrawingKind;
+  /** Persist as {time, price} — never pixel coords */
   points: DrawingPoint[];
   color: string;
   /** Text memo body (tool === "text") */
   text?: string;
+  locked?: boolean;
   createdAt: string;
 }
 
@@ -148,9 +154,39 @@ export interface PriceWatch {
   id: string;
   symbolId: string;
   price: number;
-  op: "above" | "below";
+  op: PriceWatchOp;
+  /** Feature ID: alert.message */
+  message?: string;
   createdAt: string;
   triggered?: boolean;
+  /** Prior close for crossing evaluation */
+  lastClose?: number;
+}
+
+/** Feature ID: chart.settings */
+export interface ChartSettings {
+  background: string;
+  gridColor: string;
+  upColor: string;
+  downColor: string;
+  showGrid: boolean;
+}
+
+export interface ChartComment {
+  id: string;
+  symbolId: string;
+  body: string;
+  author: string;
+  createdAt: string;
+}
+
+export interface NewsItem {
+  id: string;
+  symbolId?: string;
+  title: string;
+  summary: string;
+  source: string;
+  publishedAt: string;
 }
 
 export interface WorkspaceLayoutPreset {
@@ -187,7 +223,31 @@ export interface AppStoreData {
   drawings: Drawing[];
   alerts: AlertItem[];
   watchlist: string[];
+  /** Feature ID: alert.price — server-side watch definitions */
+  priceWatches: PriceWatch[];
+  /** Feature ID: note / commentary tab */
+  comments: ChartComment[];
+  news: NewsItem[];
 }
+
+export const DEFAULT_CHART_SETTINGS: ChartSettings = {
+  background: "#0c1219",
+  gridColor: "#16202b",
+  upColor: "#26a69a",
+  downColor: "#ef5350",
+  showGrid: true,
+};
+
+/** Feature ID: symbol.chips — pinned compare/benchmark chips */
+export const SYMBOL_CHIP_IDS = [
+  "idx_SPX500",
+  "us_SPY",
+  "us_QQQ",
+  "idx_MAG7",
+  "idx_SOX",
+  "us_VNQ",
+  "us_VNPA",
+] as const;
 
 export const CATEGORY_LABELS: Record<PostCategory, string> = {
   survival_strategy: "비밀 생존 전략",

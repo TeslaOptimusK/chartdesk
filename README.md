@@ -1,14 +1,19 @@
 # ChartDesk
 
-TradingView-like chart research workspace linked to **legally ingested** Fanding @easychart membership notes. Candles via `lightweight-charts`. Not affiliated with TradingView. **Not investment advice.**
+TradingView-like chart research workspace. Candles via `lightweight-charts`. Not affiliated with TradingView. **Not investment advice.**
 
-## Features (Phase 0–3 slice)
+Phase 1 feature contracts: [`docs/chartdesk/TRADINGVIEW_FEATURES.md`](./docs/chartdesk/TRADINGVIEW_FEATURES.md) · checklist [`docs/chartdesk/TRADINGVIEW_FEATURES_CHECKLIST.md`](./docs/chartdesk/TRADINGVIEW_FEATURES_CHECKLIST.md).
 
-- Dark chart workspace: symbol search (KR / US / crypto), timeframes, SMA/EMA/Bollinger, trend & horizontal drawings (persisted)
-- Manual post ingest for 4 categories: 비밀 생존 전략 / 실시간 차트 분석 / 마인드셋 / 인사이트
-- Opinion drafts (buy/sell/watch/unclear) with human approval queue; rule-based + optional LLM
-- Pattern library (≥6 seeded), matcher, chart markers, feedback, alert center
-- Multi-chart layouts (1 / 2 / 4), market-data adapter (`mock` | `delayed` | realtime-ready)
+## Phase 1 (screenshot parity)
+
+- Symbol search / header / recent / compare / chips (`SPX500` `SPY` `QQQ` `MAG7` `SOX` `VNQ` `VNPA`)
+- Intervals `1/5/15/60/240/1D`, chart types candle · line · heikin-ashi
+- Status line OHLC + change%, crosshair, undo/redo, price & time scales
+- Session badge (`NYSE Closed (delayed)` …) + timezone picker
+- Volume pane + MA overlays; drawings as `{time, price}` (trend, H-line, H-ray, fib, rect, text, measure, magnet, lock, object tree)
+- Right tabs fixed: 워치리스트 · 뉴스 · 최근 · 패턴 · 포스트 · 알림 · 코멘터리
+- Server-side price alerts (`이상` / `이하` / `돌파` + 노트), layout save, chart settings
+- Pine Script: out of scope (`wont`)
 
 ## Run locally
 
@@ -41,7 +46,7 @@ Optional: `MARKET_DATA_MODE=delayed` + vendor URL/key for free delayed quotes; `
 
 ## Data
 
-JSON store at `data/store.json` (created on first boot from seed). Safe to delete to reset.
+JSON store at `data/store.json` (created on first boot from seed). Includes drawings, alerts, **price watches**, comments, news. Safe to delete to reset.
 
 ## Compliance
 

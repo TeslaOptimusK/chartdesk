@@ -37,6 +37,8 @@ interface DrawingOverlayProps {
   onSelectDrawing?: (id: string | null) => void;
   candles?: Candle[];
   magnet?: boolean;
+  /** Feature ID: draw.lock_all */
+  locked?: boolean;
 }
 
 function pointToXY(
@@ -60,6 +62,7 @@ export function DrawingOverlay({
   onSelectDrawing,
   candles = [],
   magnet = false,
+  locked = false,
 }: DrawingOverlayProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pendingRef = useRef<DrawingPoint[]>([]);
@@ -96,7 +99,10 @@ export function DrawingOverlay({
 
     if (tool !== "none" && pending.length > 0) {
       const previewPoints =
-        cursor && tool !== "horizontal" && tool !== "text"
+        cursor &&
+        tool !== "horizontal" &&
+        tool !== "horizontal_ray" &&
+        tool !== "text"
           ? [...pending, cursor]
           : pending;
       paintDrawing(
@@ -174,6 +180,7 @@ export function DrawingOverlay({
   };
 
   const onClick = (e: React.MouseEvent) => {
+    if (locked) return;
     if (tool === "none") {
       onSelectDrawing?.(null);
       return;
@@ -181,7 +188,11 @@ export function DrawingOverlay({
     const point = eventToPoint(e);
     if (!point) return;
 
-    if (tool === "horizontal" || tool === "vertical") {
+    if (
+      tool === "horizontal" ||
+      tool === "horizontal_ray" ||
+      tool === "vertical"
+    ) {
       finish([point], tool);
       return;
     }
@@ -217,13 +228,17 @@ export function DrawingOverlay({
       setCursor(null);
       onSelectDrawing?.(null);
     }
-    if ((e.key === "Delete" || e.key === "Backspace") && selectedId) {
+    if (
+      (e.key === "Delete" || e.key === "Backspace") &&
+      selectedId &&
+      !locked
+    ) {
       onDeleteDrawing?.(selectedId);
       onSelectDrawing?.(null);
     }
   };
 
-  const active = tool !== "none";
+  const active = tool !== "none" && !locked;
 
   return (
     <canvas
@@ -269,6 +284,27 @@ function paintDrawing(
     ctx.moveTo(0, y);
     ctx.lineTo(width, y);
     ctx.stroke();
+    ctx.restore();
+    return;
+  }
+
+  // Feature ID: draw.horizontal_ray — from anchor time rightward at price
+  if (d.tool === "horizontal_ray" && d.points[0]) {
+    const y = api.series.priceToCoordinate(d.points[0].price);
+    const x = api.chart.timeScale().timeToCoordinate(d.points[0].time as Time);
+    if (y == null) {
+      ctx.restore();
+      return;
+    }
+    const startX = x == null ? 0 : x;
+    ctx.setLineDash([8, 4]);
+    ctx.beginPath();
+    ctx.moveTo(startX, y);
+    ctx.lineTo(width + 40, y);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(startX, y, 3.5, 0, Math.PI * 2);
+    ctx.fill();
     ctx.restore();
     return;
   }

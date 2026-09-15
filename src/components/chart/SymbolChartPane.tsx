@@ -35,6 +35,8 @@ export function SymbolChartPane({
     setPriceWatches,
     setAlerts,
     alerts,
+    drawingsLocked,
+    chartSettings,
   } = useWorkspace();
   const [candles, setCandles] = useState<Candle[]>([]);
   const [compareCandles, setCompareCandles] = useState<Candle[]>([]);
@@ -88,35 +90,57 @@ export function SymbolChartPane({
     };
   }, [compareSymbolId, timeframe, interactive]);
 
-  // Fire price watches when last close crosses threshold
+  // Feature IDs: alert.price.* — evaluate watches (incl. crossing) server-synced
   useEffect(() => {
     if (!interactive || candles.length === 0) return;
     const last = candles[candles.length - 1];
+    const prev = candles.length > 1 ? candles[candles.length - 2] : null;
     const pending = priceWatches.filter(
       (w) => w.symbolId === symbolId && !w.triggered
     );
     if (!pending.length) return;
+
     const fired: string[] = [];
     for (const w of pending) {
-      const hit =
-        (w.op === "above" && last.close >= w.price) ||
-        (w.op === "below" && last.close <= w.price);
+      let hit = false;
+      if (w.op === "above") hit = last.close >= w.price;
+      else if (w.op === "below") hit = last.close <= w.price;
+      else if (w.op === "crossing" && prev) {
+        // Feature ID: alert.price.crossing — bar-to-bar cross of threshold
+        const before = prev.close;
+        const after = last.close;
+        hit =
+          (before < w.price && after >= w.price) ||
+          (before > w.price && after <= w.price);
+      }
       if (hit) fired.push(w.id);
     }
     if (!fired.length) return;
-    setPriceWatches(
-      priceWatches.map((w) =>
-        fired.includes(w.id) ? { ...w, triggered: true } : w
-      )
+
+    const nextWatches = priceWatches.map((w) =>
+      fired.includes(w.id)
+        ? { ...w, triggered: true, lastClose: last.close }
+        : w
     );
+    setPriceWatches(nextWatches);
+    void fetch("/api/watches", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ priceWatches: nextWatches }),
+    });
+
     for (const w of pending.filter((x) => fired.includes(x.id))) {
+      const opLabel =
+        w.op === "above" ? "이상" : w.op === "below" ? "이하" : "돌파";
       void fetch("/api/alerts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           type: "price",
-          title: `가격 알림 ${w.op === "above" ? "↑" : "↓"} ${w.price}`,
-          message: `${symbol?.ticker ?? symbolId} 종가 ${last.close.toFixed(2)} (${w.op} ${w.price})`,
+          title: `가격 알림 ${opLabel} ${w.price}`,
+          message:
+            w.message?.trim() ||
+            `${symbol?.ticker ?? symbolId} 종가 ${last.close.toFixed(2)} (${opLabel} ${w.price})`,
           symbolId,
         }),
       })
@@ -147,7 +171,7 @@ export function SymbolChartPane({
   };
 
   const onAddDrawing = async (draft: Omit<Drawing, "id" | "createdAt">) => {
-    if (!interactive) return;
+    if (!interactive || drawingsLocked) return;
     const next: Drawing = {
       ...draft,
       symbolId,
@@ -158,13 +182,22 @@ export function SymbolChartPane({
   };
 
   const onDeleteDrawing = async (id: string) => {
-    if (!interactive) return;
+    if (!interactive || drawingsLocked) return;
     await persist(localDrawings.filter((d) => d.id !== id));
   };
 
   return (
-    <div className={cn("relative flex min-h-0 flex-col bg-[var(--chart-bg)]", className)}>
-      <div className="flex items-center justify-between border-b border-[var(--workspace-border)] px-3 py-1.5 text-xs text-[var(--workspace-muted)]">
+    <div
+      className={cn(
+        "relative flex min-h-0 flex-col bg-[var(--chart-bg)]",
+        className
+      )}
+    >
+      {/* Feature ID: symbol.header */}
+      <div
+        className="flex items-center justify-between border-b border-[var(--workspace-border)] px-3 py-1.5 text-xs text-[var(--workspace-muted)]"
+        data-feature="symbol.header"
+      >
         <div className="flex items-baseline gap-2">
           <span className="font-semibold tracking-wide text-[var(--workspace-fg)]">
             {symbol?.ticker ?? symbolId}
@@ -205,6 +238,8 @@ export function SymbolChartPane({
         goToDate={interactive ? goToDate : null}
         height={height}
         className="w-full"
+        chartSettings={chartSettings}
+        locked={drawingsLocked}
       />
     </div>
   );

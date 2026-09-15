@@ -22,11 +22,13 @@ import {
 } from "@/components/chart/DrawingOverlay";
 import type {
   Candle,
+  ChartSettings,
   ChartStyle,
   Drawing,
   DrawingTool,
   PatternHit,
 } from "@/lib/types";
+import { DEFAULT_CHART_SETTINGS } from "@/lib/types";
 import {
   atr,
   bollinger,
@@ -56,6 +58,8 @@ interface ChartCanvasProps {
   goToDate?: string | null;
   height?: number;
   className?: string;
+  chartSettings?: ChartSettings;
+  locked?: boolean;
 }
 
 type AnySeries = ISeriesApi<SeriesType>;
@@ -85,6 +89,8 @@ export function ChartCanvas({
   goToDate = null,
   height = 420,
   className,
+  chartSettings = DEFAULT_CHART_SETTINGS,
+  locked = false,
 }: ChartCanvasProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -107,13 +113,20 @@ export function ChartCanvas({
     const chart = createChart(containerRef.current, {
       height,
       layout: {
-        background: { type: ColorType.Solid, color: "#0c1219" },
+        background: {
+          type: ColorType.Solid,
+          color: chartSettings.background,
+        },
         textColor: "#9aa7b5",
         fontFamily: "var(--font-chart-mono), ui-monospace, monospace",
       },
       grid: {
-        vertLines: { color: "#16202b" },
-        horzLines: { color: "#16202b" },
+        vertLines: {
+          color: chartSettings.showGrid ? chartSettings.gridColor : "transparent",
+        },
+        horzLines: {
+          color: chartSettings.showGrid ? chartSettings.gridColor : "transparent",
+        },
       },
       crosshair: {
         vertLine: { color: "#3d4f63", labelBackgroundColor: "#1c2836" },
@@ -148,7 +161,31 @@ export function ChartCanvas({
       mainSeriesRef.current = null;
       volumeRef.current = null;
     };
+    // chartSettings applied in separate effect after mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [height]);
+
+  // Feature ID: chart.settings — live apply colors/grid
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    chart.applyOptions({
+      layout: {
+        background: {
+          type: ColorType.Solid,
+          color: chartSettings.background,
+        },
+      },
+      grid: {
+        vertLines: {
+          color: chartSettings.showGrid ? chartSettings.gridColor : "transparent",
+        },
+        horzLines: {
+          color: chartSettings.showGrid ? chartSettings.gridColor : "transparent",
+        },
+      },
+    });
+  }, [chartSettings]);
 
   // Recreate main series when chart style changes
   useEffect(() => {
@@ -175,22 +212,22 @@ export function ChartCanvas({
       });
     } else if (chartStyle === "bar") {
       series = chart.addSeries(BarSeries, {
-        upColor: "#2dd4a8",
-        downColor: "#f07178",
+        upColor: chartSettings.upColor,
+        downColor: chartSettings.downColor,
       });
     } else {
       series = chart.addSeries(CandlestickSeries, {
-        upColor: "#2dd4a8",
-        downColor: "#f07178",
-        borderUpColor: "#2dd4a8",
-        borderDownColor: "#f07178",
-        wickUpColor: "#2dd4a8",
-        wickDownColor: "#f07178",
+        upColor: chartSettings.upColor,
+        downColor: chartSettings.downColor,
+        borderUpColor: chartSettings.upColor,
+        borderDownColor: chartSettings.downColor,
+        wickUpColor: chartSettings.upColor,
+        wickDownColor: chartSettings.downColor,
       });
     }
     mainSeriesRef.current = series;
     setChartApi({ chart, series: series as ISeriesApi<"Candlestick"> });
-  }, [chartStyle]);
+  }, [chartStyle, chartSettings.upColor, chartSettings.downColor]);
 
   // Data + indicators
   useEffect(() => {
@@ -454,7 +491,10 @@ export function ChartCanvas({
     >
       <div ref={containerRef} className="absolute inset-0" />
       {legend && (
-        <div className="pointer-events-none absolute left-2 top-2 z-20 rounded bg-black/55 px-2 py-1 font-mono text-[10px] text-[var(--workspace-muted)]">
+        <div
+          className="pointer-events-none absolute left-2 top-2 z-20 rounded bg-black/55 px-2 py-1 font-mono text-[10px] text-[var(--workspace-muted)]"
+          data-feature="chart.status_line"
+        >
           <span className="mr-2 text-[var(--workspace-fg)]">
             {new Date(legend.time * 1000).toLocaleString()}
           </span>
@@ -466,7 +506,28 @@ export function ChartCanvas({
             }
           >
             {legend.close.toFixed(2)}
-          </span>{" "}
+          </span>
+          {(() => {
+            const idx = displayCandles.findIndex((c) => c.time === legend.time);
+            const prev =
+              idx > 0
+                ? displayCandles[idx - 1]
+                : displayCandles.length > 1
+                  ? displayCandles[displayCandles.length - 2]
+                  : null;
+            if (!prev || !prev.close) return null;
+            const chg = ((legend.close - prev.close) / prev.close) * 100;
+            return (
+              <span
+                className={
+                  chg >= 0 ? "ml-1 text-emerald-300" : "ml-1 text-rose-300"
+                }
+              >
+                {chg >= 0 ? "+" : ""}
+                {chg.toFixed(3)}%
+              </span>
+            );
+          })()}{" "}
           V {(legend.volume / 1e6).toFixed(2)}M
           {compareLabel && (
             <span className="ml-2 text-pink-300">vs {compareLabel}</span>
@@ -484,11 +545,13 @@ export function ChartCanvas({
         onSelectDrawing={setSelectedId}
         candles={displayCandles}
         magnet={magnet}
+        locked={locked}
       />
       {drawingTool !== "none" && (
         <div className="pointer-events-none absolute bottom-2 left-2 z-20 rounded bg-black/55 px-2 py-1 text-[10px] text-[var(--workspace-muted)]">
           드로잉: {drawingTool}
-          {magnet ? " · 자석 ON" : ""} · Esc 취소 · Del 삭제
+          {magnet ? " · 자석 ON" : ""}
+          {locked ? " · 잠금" : ""} · Esc 취소 · Del 삭제
         </div>
       )}
     </div>

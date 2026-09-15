@@ -1,0 +1,181 @@
+# ChartDesk × TradingView — 구현 체크리스트  
+
+정본: [`TRADINGVIEW_FEATURES.md`](./TRADINGVIEW_FEATURES.md)   
+상태: `todo` / `doing` / `done` / `wont`  
+
+Phase 1 완료 = 첨부 ChartDesk 스크린샷과 같은 셸.  
+
+---  
+
+## Phase 1 — 스크린샷 패리티  
+
+| ID | 기능 | 상태 |  
+|----|------|------|  
+| `symbol.search` | 심볼 검색 (티커/한글명) | done |  
+| `symbol.header` | NVDA 엔비디아 NASDAQ | done |  
+| `symbol.recent` | 최근 탭 | done |  
+| `symbol.compare` | 비교 | done |  
+| `symbol.chips` | SPX500 SPY QQQ MAG7 SOX VNQ VNPA | done |  
+| `chart.interval` | 1/5/15/60/240/1D | done |  
+| `chart.type.candles` | 캔들 | done |  
+| `chart.type.line` | 라인 | done |  
+| `chart.type.heikin_ashi` | 하이킨 | done |  
+| `chart.status_line` | OHLC + 등락% | done |  
+| `chart.crosshair` | 크로스헤어 | done |  
+| `chart.undo` | 실행취소/재실행 | done |  
+| `scale.price` | 가격축 + 현재가 라벨/선 | done |  
+| `scale.time` | 시간축 | done |  
+| `data.session_status` | NYSE Closed (delayed) | done |  
+| `chart.timezone` | New York (UTC-4) 등 | done |  
+| `indicator.volume` | 볼륨 페인 | done |  
+| `indicator.overlay` | MA 오버레이 | done |  
+| `draw.trendline` | 추세선 | done |  
+| `draw.horizontal_line` | 수평선 | done |  
+| `draw.horizontal_ray` | 수평 레이 | done |  
+| `draw.fib.retracement` | 피보 되돌림 | done |  
+| `draw.rectangle` | 사각형 | done |  
+| `draw.text` | 텍스트 | done |  
+| `draw.measure` | 측정 | done |  
+| `draw.magnet.weak` | 자석 | done |  
+| `draw.lock_all` | 잠금 | done |  
+| `draw.object_tree` | 드로잉 탭 / 오브젝트 없음 | done |  
+| `draw.scope.symbol` | 드로잉 - {TICKER} | done |  
+| `watchlist` | 워치리스트 탭 | done |  
+| `alert.price` | 가격 알림 | done |  
+| `alert.price.greater_than` | 이상 | done |  
+| `alert.price.less_than` | 이하 | done |  
+| `alert.price.crossing` | 돌파 | done |  
+| `alert.message` | 노트 남김 | done |  
+| `layout.save` | 레이아웃 저장 | done |  
+| `chart.settings` | 설정 (최소: 색, 그리드) | done |  
+| `shell.brand` | ChartDesk 셸 / 탭 순서 | done |  
+
+탭 순서 고정: 워치리스트 · 뉴스 · 최근 · 패턴 · 포스트 · 알림 · 코멘터리  
+
+---  
+
+## Phase 2 — 매일 쓰는 분석  
+
+| ID | 기능 | 상태 |  
+|----|------|------|  
+| `indicator.dialog` | 지표 검색 `/` | todo |  
+| `indicator.template` | 지표 템플릿 | todo |  
+| `chart.type.bars` | 바 | todo |  
+| `chart.type.hollow_candles` | 중공 캔들 | todo |  
+| `chart.type.area` | 에어리어 | todo |  
+| `chart.type.baseline` | 베이스라인 | todo |  
+| `chart.interval.full` | 전체 인터벌 + 커스텀 | todo |  
+| `chart.interval.custom` | 7분 등 리샘플 | todo |  
+| `chart.range_preset` | 1D/5D/1M/1Y/All | todo |  
+| `chart.goto` | 날짜 이동 | todo |  
+| `chart.date_format` | mm/dd/yyyy | todo |  
+| `chart.extended_hours` | 프리/애프터 | todo |  
+| `chart.snapshot` | 스냅샷 | todo |  
+| `chart.canvas` | 배경/그리드/워터마크 | todo |  
+| `scale.log` | 로그축 | todo |  
+| `scale.percent` | %축 | todo |  
+| `scale.indexed_100` | Indexed 100 | todo |  
+| `scale.countdown` | 봉 마감 카운트다운 | todo |  
+| `layout.grid` | 2~4분할 | todo |  
+| `layout.sync.symbol` | 심볼 동기 | todo |  
+| `layout.sync.interval` | 인터벌 동기 | todo |  
+| `layout.sync.crosshair` | 크로스헤어 동기 | todo |  
+| `layout.sync.drawings` | 드로잉 동기 | todo |  
+| `draw.ray` | 레이 | todo |  
+| `draw.extended_line` | 연장선 | todo |  
+| `draw.parallel_channel` | 평행 채널 | todo |  
+| `draw.vertical_line` | 수직선 | todo |  
+| `draw.long_position` | 롱 포지션 | todo |  
+| `draw.short_position` | 숏 포지션 | todo |  
+| `draw.vp.fixed_range` | 고정 VP | todo |  
+| `draw.anchored_vwap` | 앵커 VWAP | todo |  
+| `draw.favorites` | 즐겨찾는 도구 | todo |  
+| `draw.stay_in_mode` | 연속 그리기 | todo |  
+| `draw.sync.layout` | 레이아웃 동기 | todo |  
+| `alert.technical.drawing` | 선 알림 | todo |  
+| `alert.technical.indicator` | 지표 알림 | todo |  
+| `alert.webhook` | 웹훅 | todo |  
+| `news` | 뉴스 탭 | todo |  
+| `pattern.candlestick` | 캔들 패턴 | todo |  
+| `pattern.auto_chart` | 자동 차트 패턴 | todo |  
+| `note` | 코멘터리 | todo |  
+| `calendar.eco` | 경제 캘린더 | todo |  
+| `calendar.earnings` | 실적 캘린더 | todo |  
+| `events.earnings` | 실적 마커 | todo |  
+| `events.dividends` | 배당 마커 | todo |  
+| `events.splits` | 분할 마커 | todo |  
+| `events.news` | 뉴스 마커 | todo |  
+| `replay` | 바 리플레이 | todo |  
+| `shell.command_palette` | 빠른 검색 | todo |  
+
+내장 지표 전수는 정본 §7.2. 최소 즐겨찾기:  
+
+| ID | 상태 |  
+|----|------|  
+| SMA / EMA / WMA | todo |  
+| EMA 20/50/200 템플릿 | todo |  
+| Bollinger Bands | todo |  
+| Ichimoku | todo |  
+| SuperTrend | todo |  
+| VWAP | todo |  
+| RSI | todo |  
+| MACD | todo |  
+| Stochastic | todo |  
+| ATR | todo |  
+| Volume | todo |  
+
+---  
+
+## Phase 3 — 파워  
+
+| ID | 기능 | 상태 |  
+|----|------|------|  
+| `chart.type.renko` | 렌코 | todo |  
+| `chart.type.kagi` | 카기 | todo |  
+| `chart.type.line_break` | 라인브레이크 | todo |  
+| `chart.type.point_figure` | 점숫자 | todo |  
+| `chart.type.range` | 레인지 | todo |  
+| `chart.type.volume_candles` | 볼륨 캔들 | todo |  
+| `draw.pitchfork` | 피치포크 패밀리 | todo |  
+| `draw.fib.*` | 피보 나머지 | todo |  
+| `draw.gann.*` | 간 | todo |  
+| `draw.pattern.*` | 하모닉/엘리엇 | todo |  
+| `draw.brush` | 브러시 | todo |  
+| `screener.stock` | 주식 스크리너 | todo |  
+| `heatmap` | 히트맵 | todo |  
+| `alert.watchlist` | 워치 일괄 알림 | todo |  
+| `alert.multi_condition` | 멀티조건 | todo |  
+| `trade.paper` | 페이퍼 | todo |  
+| `social.posts` | 포스트 | todo |  
+| `social.publish` | 게시 | todo |  
+| `fund.graphs` | 펀더멘털 그래프 | todo |  
+| `portfolio` | 포트폴리오 | todo |  
+| `indicator.on_indicator` | 지표 위 지표 | todo |  
+| `chart.seasonals` | 시즈널 | todo |  
+| JS 커스텀 지표 | | todo |  
+
+---  
+
+## Phase 4 — 플랫폼 (차트 코어와 분리)  
+
+| ID | 기능 | 상태 |  
+|----|------|------|  
+| Pine 런타임 | 없음. 약속 금지 | wont (1.x) |  
+| `screener.pine` | Pine 스크리너 | todo |  
+| `chart.type.volume_footprint` | 풋프린트 | todo |  
+| `chart.type.tpo` | TPO | todo |  
+| `options.*` | 옵션 | todo |  
+| `yield_curves` | 금리곡선 | todo |  
+| `macro.maps` | 매크로맵 | todo |  
+| `trade.broker` | 브로커 | todo |  
+| `dom` | 호가창 | todo |  
+| `chart.interval.tick` | 틱봉 | todo |  
+
+---  
+
+## 라벨 스모크 (한국어)  
+
+- [x] 워치리스트 뉴스 최근 패턴 포스트 알림 코멘터리  
+- [x] 드로잉 - NVDA / 오브젝트 없음  
+- [x] 가격 알림 - NVDA / 이상 / 가격 / 노트 남김  
+- [x] 일봉 캔들 라인 하이킨 비교  

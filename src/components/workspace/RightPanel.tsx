@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useWorkspace } from "@/lib/store";
+import { useWorkspace, type RightTab } from "@/lib/store";
 import {
   CATEGORY_LABELS,
   DIRECTION_LABELS,
   type PostCategory,
+  type PriceWatchOp,
 } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,27 +14,33 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
+/** Feature ID: shell.brand — tab order fixed */
+const TABS: { id: RightTab; label: string }[] = [
+  { id: "watchlist", label: "워치리스트" },
+  { id: "news", label: "뉴스" },
+  { id: "recent", label: "최근" },
+  { id: "patterns", label: "패턴" },
+  { id: "posts", label: "포스트" },
+  { id: "alerts", label: "알림" },
+  { id: "commentary", label: "코멘터리" },
+];
+
 export function RightPanel() {
   const { rightTab, setRightTab } = useWorkspace();
-  const tabs = [
-    ["watchlist", "워치"],
-    ["opinions", "의견"],
-    ["patterns", "패턴"],
-    ["posts", "포스트"],
-    ["alerts", "알림"],
-    ["objects", "오브젝트"],
-  ] as const;
 
   return (
-    <aside className="flex h-full w-full flex-col border-l border-[var(--workspace-border)] bg-[var(--workspace-panel)]">
+    <aside
+      className="flex h-full w-full flex-col border-l border-[var(--workspace-border)] bg-[var(--workspace-panel)]"
+      data-feature="shell.brand"
+    >
       <div className="flex border-b border-[var(--workspace-border)]">
-        {tabs.map(([id, label]) => (
+        {TABS.map(({ id, label }) => (
           <button
             key={id}
             type="button"
             onClick={() => setRightTab(id)}
             className={cn(
-              "flex-1 px-0.5 py-2 text-[10px] font-medium",
+              "flex-1 px-0.5 py-2 text-[9px] font-medium leading-tight",
               rightTab === id
                 ? "border-b-2 border-[var(--brand-accent)] text-[var(--workspace-fg)]"
                 : "text-[var(--workspace-muted)] hover:text-[var(--workspace-fg)]"
@@ -45,11 +52,12 @@ export function RightPanel() {
       </div>
       <ScrollArea className="flex-1">
         {rightTab === "watchlist" && <WatchlistTab />}
-        {rightTab === "opinions" && <OpinionsTab />}
+        {rightTab === "news" && <NewsTab />}
+        {rightTab === "recent" && <RecentTab />}
         {rightTab === "patterns" && <PatternsTab />}
         {rightTab === "posts" && <PostsTab />}
         {rightTab === "alerts" && <AlertsTab />}
-        {rightTab === "objects" && <ObjectsTab />}
+        {rightTab === "commentary" && <CommentaryTab />}
       </ScrollArea>
     </aside>
   );
@@ -79,7 +87,7 @@ function WatchlistTab() {
   };
 
   return (
-    <div className="space-y-1 p-2">
+    <div className="space-y-1 p-2" data-feature="watchlist">
       {symbols.map((s) => {
         const on = watchlist.includes(s.id);
         return (
@@ -98,18 +106,21 @@ function WatchlistTab() {
               <div className="truncate text-sm font-medium text-[var(--workspace-fg)]">
                 {s.ticker}
               </div>
-              <div className="truncate text-[11px] text-[var(--workspace-muted)]">
+              <div className="truncate text-[10px] text-[var(--workspace-muted)]">
                 {s.nameKo} · {s.exchange}
               </div>
             </button>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-7 px-2 text-[11px]"
+            <button
+              type="button"
+              className={cn(
+                "text-xs",
+                on ? "text-amber-300" : "text-[var(--workspace-faint)]"
+              )}
               onClick={() => toggle(s.id)}
+              title="워치리스트"
             >
               {on ? "★" : "☆"}
-            </Button>
+            </button>
           </div>
         );
       })}
@@ -117,117 +128,64 @@ function WatchlistTab() {
   );
 }
 
-function OpinionsTab() {
-  const {
-    opinions,
-    symbols,
-    posts,
-    setActiveSymbol,
-    setOpinions,
-    setRightTab,
-  } = useWorkspace();
+function NewsTab() {
+  const { news, setActiveSymbol } = useWorkspace();
+  return (
+    <div className="space-y-2 p-2" data-feature="news">
+      {news.length === 0 && <Empty>뉴스가 없습니다.</Empty>}
+      {news.map((n) => (
+        <button
+          key={n.id}
+          type="button"
+          className="w-full rounded-md border border-[var(--workspace-border)] bg-[var(--workspace-elevated)] p-2 text-left"
+          onClick={() => n.symbolId && setActiveSymbol(n.symbolId)}
+        >
+          <div className="text-sm font-medium text-[var(--workspace-fg)]">
+            {n.title}
+          </div>
+          <div className="mt-1 text-[11px] text-[var(--workspace-muted)]">
+            {n.summary}
+          </div>
+          <div className="mt-1 text-[10px] text-[var(--workspace-faint)]">
+            {n.source} · {new Date(n.publishedAt).toLocaleString()}
+          </div>
+        </button>
+      ))}
+    </div>
+  );
+}
 
-  const review = async (id: string, status: "approved" | "rejected") => {
-    const res = await fetch("/api/opinions", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, status }),
-    });
-    if (!res.ok) return;
-    const data = await res.json();
-    setOpinions(
-      opinions.map((o) => (o.id === id ? data.opinion : o))
-    );
-  };
+/** Feature ID: symbol.recent */
+function RecentTab() {
+  const { recentSymbolIds, symbols, setActiveSymbol, activeSymbolId } =
+    useWorkspace();
+  const items = recentSymbolIds
+    .map((id) => symbols.find((s) => s.id === id))
+    .filter(Boolean);
 
   return (
-    <div className="space-y-2 p-2">
-      <p className="px-1 text-[11px] leading-relaxed text-[var(--workspace-muted)]">
-        학습·연구 보조 의견이며 투자 권유가 아닙니다. 초안은 승인 후에만
-        게시됩니다.
-      </p>
-      {opinions.length === 0 && (
-        <Empty>의견이 없습니다. 포스트를 인제스트하세요.</Empty>
-      )}
-      {opinions.map((op) => {
-        const sym = symbols.find((s) => s.id === op.symbolId);
-        const post = posts.find((p) => p.id === op.sourcePostId);
-        return (
-          <div
-            key={op.id}
-            className="rounded-md border border-[var(--workspace-border)] bg-[var(--workspace-elevated)] p-2"
+    <div className="space-y-1 p-2" data-feature="symbol.recent">
+      {items.length === 0 && <Empty>최근 본 심볼이 없습니다.</Empty>}
+      {items.map((s) =>
+        s ? (
+          <button
+            key={s.id}
+            type="button"
+            className={cn(
+              "flex w-full flex-col rounded-md px-2 py-1.5 text-left",
+              activeSymbolId === s.id && "bg-[var(--workspace-elevated)]"
+            )}
+            onClick={() => setActiveSymbol(s.id)}
           >
-            <div className="mb-1 flex items-center gap-1.5">
-              <Badge
-                className={cn(
-                  "text-[10px]",
-                  op.direction === "buy" && "bg-emerald-500/20 text-emerald-300",
-                  op.direction === "sell" && "bg-rose-500/20 text-rose-300",
-                  op.direction === "watch" && "bg-amber-500/20 text-amber-200",
-                  op.direction === "unclear" && "bg-slate-500/20 text-slate-300"
-                )}
-              >
-                {DIRECTION_LABELS[op.direction]}
-              </Badge>
-              <Badge variant="outline" className="text-[10px]">
-                {op.status}
-              </Badge>
-              <Badge variant="outline" className="text-[10px]">
-                {op.confidence}
-              </Badge>
-            </div>
-            <button
-              type="button"
-              className="mb-1 text-left text-sm font-medium text-[var(--workspace-fg)] hover:underline"
-              onClick={() => {
-                setActiveSymbol(op.symbolId);
-                setRightTab("opinions");
-              }}
-            >
-              {op.summary}
-            </button>
-            <ul className="mb-2 space-y-1 text-[11px] text-[var(--workspace-muted)]">
-              {op.rationale.slice(0, 3).map((r) => (
-                <li key={r}>· {r}</li>
-              ))}
-            </ul>
-            {post && (
-              <div className="mb-2 text-[10px] text-[var(--workspace-faint)]">
-                출처: {CATEGORY_LABELS[post.category]} · {post.title}
-              </div>
-            )}
-            {op.status === "draft" && (
-              <div className="flex gap-1">
-                <Button
-                  size="sm"
-                  className="h-7 bg-[var(--brand-accent)] text-[#0b1016] hover:bg-[var(--brand-accent)]/90"
-                  onClick={() => review(op.id, "approved")}
-                >
-                  승인
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-7"
-                  onClick={() => review(op.id, "rejected")}
-                >
-                  기각
-                </Button>
-              </div>
-            )}
-            {sym && (
-              <Button
-                size="sm"
-                variant="link"
-                className="h-auto px-0 text-[11px] text-[var(--brand-accent)]"
-                onClick={() => setActiveSymbol(sym.id)}
-              >
-                {sym.ticker} 차트 열기 →
-              </Button>
-            )}
-          </div>
-        );
-      })}
+            <span className="text-sm font-medium text-[var(--workspace-fg)]">
+              {s.ticker}
+            </span>
+            <span className="text-[10px] text-[var(--workspace-muted)]">
+              {s.nameKo} · {s.exchange}
+            </span>
+          </button>
+        ) : null
+      )}
     </div>
   );
 }
@@ -236,136 +194,75 @@ function PatternsTab() {
   const {
     patterns,
     patternHits,
-    activeSymbolId,
-    timeframe,
     setPatterns,
-    setPatternHits,
-    setAlerts,
+    setActiveSymbol,
+    setTimeframe,
   } = useWorkspace();
-
-  const scan = async () => {
-    const res = await fetch("/api/patterns", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "scan",
-        symbolId: activeSymbolId,
-        timeframe,
-      }),
-    });
-    const data = await res.json();
-    setPatternHits(data.hits ?? []);
-    const alertsRes = await fetch("/api/alerts");
-    const alertsData = await alertsRes.json();
-    setAlerts(alertsData.alerts ?? []);
-  };
 
   const toggle = async (id: string, enabled: boolean) => {
     const res = await fetch("/api/patterns", {
-      method: "POST",
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "toggle", patternId: id, enabled }),
+      body: JSON.stringify({ id, enabled }),
     });
     const data = await res.json();
     if (data.pattern) {
-      setPatterns(patterns.map((p) => (p.id === id ? data.pattern : p)));
+      setPatterns(
+        patterns.map((p) => (p.id === data.pattern.id ? data.pattern : p))
+      );
     }
   };
 
-  const feedback = async (hitId: string, value: "correct" | "incorrect") => {
-    await fetch("/api/patterns", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "feedback", hitId, feedback: value }),
-    });
-    setPatternHits(
-      patternHits.map((h) =>
-        h.id === hitId ? { ...h, feedback: value } : h
-      )
-    );
-  };
-
-  const hits = patternHits.filter((h) => h.symbolId === activeSymbolId);
-
   return (
     <div className="space-y-3 p-2">
-      <div className="flex items-center justify-between px-1">
-        <span className="text-xs text-[var(--workspace-muted)]">
-          시드 패턴 {patterns.length}개
-        </span>
-        <Button
-          size="sm"
-          className="h-7 bg-[var(--brand-accent)] text-[#0b1016] hover:bg-[var(--brand-accent)]/90"
-          onClick={scan}
-        >
-          현재 심볼 스캔
-        </Button>
-      </div>
-      {patterns.map((p) => (
-        <div
-          key={p.id}
-          className="rounded-md border border-[var(--workspace-border)] bg-[var(--workspace-elevated)] p-2"
-        >
-          <div className="mb-1 flex items-center justify-between gap-2">
-            <div className="text-sm font-medium text-[var(--workspace-fg)]">
-              {p.name}
+      <div className="space-y-2">
+        {patterns.map((p) => (
+          <div
+            key={p.id}
+            className="rounded-md border border-[var(--workspace-border)] p-2"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <div className="text-sm font-medium text-[var(--workspace-fg)]">
+                  {p.name}
+                </div>
+                <div className="text-[10px] text-[var(--workspace-muted)]">
+                  {p.description}
+                </div>
+              </div>
+              <Switch
+                checked={p.enabled}
+                onCheckedChange={(v) => toggle(p.id, v)}
+              />
             </div>
-            <Switch
-              checked={p.enabled}
-              onCheckedChange={(v) => toggle(p.id, Boolean(v))}
-            />
+            {p.dsl && (
+              <code className="mt-1.5 block rounded bg-black/30 px-1.5 py-1 text-[10px] text-[var(--brand-accent)]">
+                {p.dsl}
+              </code>
+            )}
           </div>
-          <p className="mb-1 text-[11px] text-[var(--workspace-muted)]">
-            {p.description}
-          </p>
-          {p.dsl && (
-            <code className="block rounded bg-black/30 px-1.5 py-1 text-[10px] text-[var(--brand-accent)]">
-              {p.dsl}
-            </code>
-          )}
-        </div>
-      ))}
-      <div className="border-t border-[var(--workspace-border)] pt-2">
-        <div className="mb-1 px-1 text-xs font-medium text-[var(--workspace-fg)]">
+        ))}
+      </div>
+      <div>
+        <div className="mb-1 px-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--workspace-faint)]">
           최근 히트
         </div>
-        {hits.length === 0 && <Empty>스캔 결과가 없습니다.</Empty>}
-        {hits.map((h) => (
-          <div
+        {patternHits.length === 0 && <Empty>히트 없음</Empty>}
+        {patternHits.slice(0, 12).map((h) => (
+          <button
             key={h.id}
-            className="mb-2 rounded-md border border-[var(--workspace-border)] p-2 text-[11px]"
+            type="button"
+            className="mb-1 w-full rounded-md border border-[var(--workspace-border)] px-2 py-1.5 text-left"
+            onClick={() => {
+              setActiveSymbol(h.symbolId);
+              setTimeframe(h.timeframe);
+            }}
           >
-            <div className="font-medium text-[var(--workspace-fg)]">
-              {h.label} · score {h.score.toFixed(2)}
+            <div className="text-xs text-[var(--workspace-fg)]">{h.label}</div>
+            <div className="text-[10px] text-[var(--workspace-faint)]">
+              score {h.score.toFixed(2)} · {h.timeframe}
             </div>
-            <div className="mb-1 text-[var(--workspace-muted)]">
-              {new Date(h.fromTs * 1000).toLocaleString()} →{" "}
-              {new Date(h.toTs * 1000).toLocaleString()}
-            </div>
-            <div className="flex gap-1">
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-6 px-2"
-                onClick={() => feedback(h.id, "correct")}
-              >
-                맞음
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-6 px-2"
-                onClick={() => feedback(h.id, "incorrect")}
-              >
-                틀림
-              </Button>
-              {h.feedback && (
-                <span className="self-center text-[var(--workspace-faint)]">
-                  ({h.feedback})
-                </span>
-              )}
-            </div>
-          </div>
+          </button>
         ))}
       </div>
     </div>
@@ -374,29 +271,28 @@ function PatternsTab() {
 
 function PostsTab() {
   const { posts, setActiveSymbol, setRightTab } = useWorkspace();
-  const categories = Object.keys(CATEGORY_LABELS) as PostCategory[];
+  const byCat = (Object.keys(CATEGORY_LABELS) as PostCategory[]).map((cat) => ({
+    cat,
+    items: posts.filter((p) => p.category === cat),
+  }));
 
   return (
     <div className="space-y-3 p-2">
-      {categories.map((cat) => {
-        const list = posts.filter((p) => p.category === cat);
+      {byCat.map(({ cat, items }) => {
+        if (!items.length) return null;
         return (
           <div key={cat}>
-            <div className="mb-1 px-1 text-xs font-semibold text-[var(--brand-accent)]">
-              {CATEGORY_LABELS[cat]}{" "}
-              <span className="text-[var(--workspace-faint)]">({list.length})</span>
+            <div className="mb-1 px-1 text-[10px] font-semibold text-[var(--workspace-faint)]">
+              {CATEGORY_LABELS[cat]}
             </div>
-            {list.length === 0 && <Empty>포스트 없음</Empty>}
-            {list.map((p) => (
+            {items.map((p) => (
               <button
                 key={p.id}
                 type="button"
-                className="mb-1.5 w-full rounded-md border border-[var(--workspace-border)] bg-[var(--workspace-elevated)] p-2 text-left"
+                className="mb-1 w-full rounded-md border border-[var(--workspace-border)] p-2 text-left"
                 onClick={() => {
-                  if (p.symbolIds[0]) {
-                    setActiveSymbol(p.symbolIds[0]);
-                    setRightTab("opinions");
-                  }
+                  if (p.symbolIds[0]) setActiveSymbol(p.symbolIds[0]);
+                  setRightTab("commentary");
                 }}
               >
                 <div className="text-sm text-[var(--workspace-fg)]">{p.title}</div>
@@ -415,6 +311,7 @@ function PostsTab() {
   );
 }
 
+/** Feature IDs: alert.price, alert.price.*, alert.message */
 function AlertsTab() {
   const {
     alerts,
@@ -424,11 +321,12 @@ function AlertsTab() {
     activeSymbolId,
     symbols,
     priceWatches,
-    addPriceWatch,
     setPriceWatches,
   } = useWorkspace();
   const [price, setPrice] = useState("");
-  const [op, setOp] = useState<"above" | "below">("above");
+  const [op, setOp] = useState<PriceWatchOp>("above");
+  const [message, setMessage] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const markAll = async () => {
     const res = await fetch("/api/alerts", {
@@ -440,17 +338,48 @@ function AlertsTab() {
     setAlerts(data.alerts ?? []);
   };
 
-  const createWatch = () => {
+  const createWatch = async () => {
     const n = Number(price);
     if (!Number.isFinite(n) || n <= 0) return;
-    addPriceWatch({ symbolId: activeSymbolId, price: n, op });
-    setPrice("");
+    setSaving(true);
+    try {
+      const res = await fetch("/api/watches", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          symbolId: activeSymbolId,
+          price: n,
+          op,
+          message: message.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (data.priceWatch) {
+        setPriceWatches([data.priceWatch, ...priceWatches]);
+        setPrice("");
+        setMessage("");
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const removeWatch = async (id: string) => {
+    const next = priceWatches.filter((x) => x.id !== id);
+    setPriceWatches(next);
+    await fetch("/api/watches", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ priceWatches: next }),
+    });
   };
 
   const active = symbols.find((s) => s.id === activeSymbolId);
+  const opLabel = (o: PriceWatchOp) =>
+    o === "above" ? "이상" : o === "below" ? "이하" : "돌파";
 
   return (
-    <div className="space-y-2 p-2">
+    <div className="space-y-2 p-2" data-feature="alert.price">
       <div className="rounded-md border border-[var(--workspace-border)] bg-[var(--workspace-elevated)] p-2">
         <div className="mb-1.5 text-xs font-semibold text-[var(--workspace-fg)]">
           가격 알림 · {active?.ticker ?? activeSymbolId}
@@ -458,11 +387,13 @@ function AlertsTab() {
         <div className="flex gap-1">
           <select
             value={op}
-            onChange={(e) => setOp(e.target.value as "above" | "below")}
+            onChange={(e) => setOp(e.target.value as PriceWatchOp)}
             className="h-8 rounded border border-[var(--workspace-border)] bg-[var(--workspace-panel)] px-1 text-xs text-[var(--workspace-fg)]"
+            data-feature="alert.price.greater_than"
           >
             <option value="above">이상</option>
             <option value="below">이하</option>
+            <option value="crossing">돌파</option>
           </select>
           <input
             type="number"
@@ -475,10 +406,18 @@ function AlertsTab() {
             size="sm"
             className="h-8 bg-[var(--brand-accent)] px-2 text-xs text-[#0b1016]"
             onClick={createWatch}
+            disabled={saving}
           >
             등록
           </Button>
         </div>
+        <input
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          placeholder="노트 남김"
+          data-feature="alert.message"
+          className="mt-1.5 h-8 w-full rounded border border-[var(--workspace-border)] bg-[var(--workspace-panel)] px-2 text-xs text-[var(--workspace-fg)]"
+        />
         {priceWatches.filter((w) => w.symbolId === activeSymbolId).length >
           0 && (
           <div className="mt-2 space-y-1">
@@ -487,18 +426,17 @@ function AlertsTab() {
               .map((w) => (
                 <div
                   key={w.id}
-                  className="flex items-center justify-between text-[11px] text-[var(--workspace-muted)]"
+                  className="flex items-center justify-between gap-2 text-[11px] text-[var(--workspace-muted)]"
                 >
-                  <span>
-                    {w.op === "above" ? "↑" : "↓"} {w.price}
+                  <span className="min-w-0 truncate">
+                    {opLabel(w.op)} {w.price}
+                    {w.message ? ` · ${w.message}` : ""}
                     {w.triggered ? " · 발화됨" : ""}
                   </span>
                   <button
                     type="button"
-                    className="text-rose-300"
-                    onClick={() =>
-                      setPriceWatches(priceWatches.filter((x) => x.id !== w.id))
-                    }
+                    className="shrink-0 text-rose-300"
+                    onClick={() => removeWatch(w.id)}
                   >
                     삭제
                   </button>
@@ -524,7 +462,7 @@ function AlertsTab() {
           )}
           onClick={() => {
             if (a.symbolId) setActiveSymbol(a.symbolId);
-            if (a.type === "opinion") setRightTab("opinions");
+            if (a.type === "opinion") setRightTab("commentary");
             if (a.type === "pattern") setRightTab("patterns");
           }}
         >
@@ -548,89 +486,122 @@ function AlertsTab() {
   );
 }
 
-function ObjectsTab() {
+function CommentaryTab() {
   const {
-    drawings,
-    setDrawings,
+    comments,
+    setComments,
+    opinions,
+    setOpinions,
     activeSymbolId,
     symbols,
     setActiveSymbol,
   } = useWorkspace();
-  const local = drawings.filter((d) => d.symbolId === activeSymbolId);
+  const [body, setBody] = useState("");
   const active = symbols.find((s) => s.id === activeSymbolId);
+  const local = comments.filter((c) => c.symbolId === activeSymbolId);
 
-  const remove = async (id: string) => {
-    const nextLocal = local.filter((d) => d.id !== id);
-    const merged = [
-      ...drawings.filter((d) => d.symbolId !== activeSymbolId),
-      ...nextLocal,
-    ];
-    setDrawings(merged);
-    await fetch("/api/drawings", {
-      method: "PUT",
+  const submit = async () => {
+    if (!body.trim()) return;
+    const res = await fetch("/api/comments", {
+      method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ symbolId: activeSymbolId, drawings: nextLocal }),
+      body: JSON.stringify({ symbolId: activeSymbolId, body: body.trim() }),
     });
+    const data = await res.json();
+    if (data.comment) {
+      setComments([data.comment, ...comments]);
+      setBody("");
+    }
   };
 
-  const clearAll = async () => {
-    const merged = drawings.filter((d) => d.symbolId !== activeSymbolId);
-    setDrawings(merged);
-    await fetch("/api/drawings", {
-      method: "PUT",
+  const review = async (id: string, status: "approved" | "rejected") => {
+    const res = await fetch("/api/opinions", {
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ symbolId: activeSymbolId, drawings: [] }),
+      body: JSON.stringify({ id, status }),
     });
+    const data = await res.json();
+    if (data.opinion) {
+      setOpinions(
+        opinions.map((o) => (o.id === data.opinion.id ? data.opinion : o))
+      );
+    }
   };
 
   return (
-    <div className="space-y-2 p-2">
-      <div className="flex items-center justify-between px-1">
-        <div className="text-xs font-semibold text-[var(--workspace-fg)]">
-          드로잉 · {active?.ticker ?? activeSymbolId}
+    <div className="space-y-3 p-2" data-feature="note">
+      <div className="rounded-md border border-[var(--workspace-border)] bg-[var(--workspace-elevated)] p-2">
+        <div className="mb-1.5 text-xs font-semibold text-[var(--workspace-fg)]">
+          코멘터리 · {active?.ticker ?? activeSymbolId}
         </div>
-        {local.length > 0 && (
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-6 text-[10px] text-rose-300"
-            onClick={clearAll}
-          >
-            전부 삭제
-          </Button>
-        )}
-      </div>
-      {local.length === 0 && <Empty>오브젝트 없음</Empty>}
-      {local.map((d) => (
-        <div
-          key={d.id}
-          className="flex items-center gap-2 rounded-md border border-[var(--workspace-border)] bg-[var(--workspace-elevated)] px-2 py-1.5"
+        <textarea
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          rows={3}
+          placeholder="차트에 대한 메모…"
+          className="w-full rounded border border-[var(--workspace-border)] bg-[var(--workspace-panel)] px-2 py-1.5 text-xs text-[var(--workspace-fg)]"
+        />
+        <Button
+          size="sm"
+          className="mt-1.5 h-7 bg-[var(--brand-accent)] text-xs text-[#0b1016]"
+          onClick={submit}
         >
-          <span
-            className="h-2.5 w-2.5 shrink-0 rounded-full"
-            style={{ background: d.color }}
-          />
-          <button
-            type="button"
-            className="min-w-0 flex-1 text-left text-xs text-[var(--workspace-fg)]"
-            onClick={() => setActiveSymbol(d.symbolId)}
-          >
-            <div className="font-medium capitalize">{d.tool}</div>
-            <div className="truncate text-[10px] text-[var(--workspace-faint)]">
-              {d.text?.trim() ||
-                d.points.map((p) => p.price.toFixed(1)).join(" → ") ||
-                d.id}
-            </div>
-          </button>
-          <button
-            type="button"
-            className="text-[10px] text-rose-300"
-            onClick={() => remove(d.id)}
-          >
-            삭제
-          </button>
+          남기기
+        </Button>
+      </div>
+      {local.length === 0 && <Empty>코멘트가 없습니다.</Empty>}
+      {local.map((c) => (
+        <div
+          key={c.id}
+          className="rounded-md border border-[var(--workspace-border)] p-2"
+        >
+          <div className="text-sm text-[var(--workspace-fg)]">{c.body}</div>
+          <div className="mt-1 text-[10px] text-[var(--workspace-faint)]">
+            {c.author} · {new Date(c.createdAt).toLocaleString()}
+          </div>
         </div>
       ))}
+      <div>
+        <div className="mb-1 px-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--workspace-faint)]">
+          의견 초안
+        </div>
+        {opinions.slice(0, 8).map((o) => (
+          <div
+            key={o.id}
+            className="mb-1 rounded-md border border-[var(--workspace-border)] p-2"
+          >
+            <button
+              type="button"
+              className="text-left text-sm font-medium text-[var(--workspace-fg)]"
+              onClick={() => setActiveSymbol(o.symbolId)}
+            >
+              {o.summary}
+            </button>
+            <div className="mt-0.5 text-[10px] text-[var(--workspace-muted)]">
+              {DIRECTION_LABELS[o.direction]} · {o.status}
+            </div>
+            {o.status === "draft" && (
+              <div className="mt-1.5 flex gap-1">
+                <Button
+                  size="sm"
+                  className="h-6 text-[10px]"
+                  onClick={() => review(o.id, "approved")}
+                >
+                  승인
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 text-[10px]"
+                  onClick={() => review(o.id, "rejected")}
+                >
+                  반려
+                </Button>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

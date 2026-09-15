@@ -1,11 +1,14 @@
 import type {
   AlertItem,
   AppStoreData,
+  ChartComment,
   Drawing,
+  NewsItem,
   Opinion,
   PatternDef,
   PatternHit,
   Post,
+  PriceWatch,
   SymbolMeta,
 } from "@/lib/types";
 import { defaultColor } from "@/lib/drawings";
@@ -165,7 +168,109 @@ export const SEED_SYMBOLS: SymbolMeta[] = [
     assetClass: "crypto",
     aliases: ["이더리움", "ETH", "Ethereum"],
   },
+  // Feature ID: symbol.chips — benchmark / thematic pins
+  {
+    id: "idx_SPX500",
+    ticker: "SPX500",
+    exchange: "CBOE",
+    nameKo: "S&P 500",
+    nameEn: "S&P 500",
+    assetClass: "us_stock",
+    aliases: ["SPX", "S&P500"],
+  },
+  {
+    id: "us_SPY",
+    ticker: "SPY",
+    exchange: "NYSE",
+    nameKo: "SPDR S&P 500",
+    nameEn: "SPDR S&P 500 ETF",
+    assetClass: "us_stock",
+    aliases: ["SPY"],
+  },
+  {
+    id: "us_QQQ",
+    ticker: "QQQ",
+    exchange: "NASDAQ",
+    nameKo: "인베스코 QQQ",
+    nameEn: "Invesco QQQ",
+    assetClass: "us_stock",
+    aliases: ["QQQ"],
+  },
+  {
+    id: "idx_MAG7",
+    ticker: "MAG7",
+    exchange: "INDEX",
+    nameKo: "매그니피센트7",
+    nameEn: "Magnificent 7 Basket",
+    assetClass: "us_stock",
+    aliases: ["MAG7", "Magnificent7"],
+  },
+  {
+    id: "idx_SOX",
+    ticker: "SOX",
+    exchange: "NYSE",
+    nameKo: "필라델피아 반도체",
+    nameEn: "PHLX Semiconductor",
+    assetClass: "us_stock",
+    aliases: ["SOX"],
+  },
+  {
+    id: "us_VNQ",
+    ticker: "VNQ",
+    exchange: "NYSE",
+    nameKo: "뱅가드 리츠",
+    nameEn: "Vanguard Real Estate ETF",
+    assetClass: "us_stock",
+    aliases: ["VNQ"],
+  },
+  {
+    id: "us_VNPA",
+    ticker: "VNPA",
+    exchange: "OTC",
+    nameKo: "VNPA",
+    nameEn: "VNPA",
+    assetClass: "us_stock",
+    aliases: ["VNPA"],
+  },
 ];
+
+export const SEED_NEWS: NewsItem[] = [
+  {
+    id: "news_01",
+    symbolId: "us_NVDA",
+    title: "엔비디아, AI 인프라 수요 지속 전망",
+    summary: "데이터센터 GPU 수요가 분기 가이던스를 상회할 수 있다는 분석 보고서.",
+    source: "ChartDesk Wire (delayed)",
+    publishedAt: "2026-09-14T14:30:00.000Z",
+  },
+  {
+    id: "news_02",
+    symbolId: "kr_005930",
+    title: "삼성전자, HBM 생산 라인 증설 검토",
+    summary: "메모리 사이클 회복에 대비한 설비 투자 논의가 재개됐다는 보도.",
+    source: "ChartDesk Wire (delayed)",
+    publishedAt: "2026-09-13T01:00:00.000Z",
+  },
+  {
+    id: "news_03",
+    title: "미 증시 마감 — 나스닥 소폭 상승",
+    summary: "기술주 중심 반등. 거래량은 평균 이하 (지연 시세).",
+    source: "ChartDesk Wire (delayed)",
+    publishedAt: "2026-09-12T20:05:00.000Z",
+  },
+];
+
+export const SEED_COMMENTS: ChartComment[] = [
+  {
+    id: "cmt_01",
+    symbolId: "crypto_BTCUSDT",
+    body: "BTCUSDT 호수 조정이 모두 반해 있습니다.",
+    author: "김수내기",
+    createdAt: "2026-09-12T06:56:00.000Z",
+  },
+];
+
+export const SEED_PRICE_WATCHES: PriceWatch[] = [];
 
 export const SEED_POSTS: Post[] = [
   {
@@ -374,5 +479,8 @@ export function createSeedStore(): AppStoreData {
     drawings: buildDemoDrawings(),
     alerts: SEED_ALERTS,
     watchlist: ["kr_005930", "us_NVDA", "crypto_BTCUSDT", "kr_000660"],
+    priceWatches: SEED_PRICE_WATCHES,
+    comments: SEED_COMMENTS,
+    news: SEED_NEWS,
   };
 }

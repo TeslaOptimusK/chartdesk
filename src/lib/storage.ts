@@ -4,11 +4,13 @@ import { randomUUID } from "crypto";
 import type {
   AlertItem,
   AppStoreData,
+  ChartComment,
   Drawing,
   Opinion,
   PatternDef,
   PatternHit,
   Post,
+  PriceWatch,
 } from "@/lib/types";
 import { createSeedStore } from "@/lib/seed";
 
@@ -17,11 +19,20 @@ const STORE_PATH = path.join(DATA_DIR, "store.json");
 
 let writeQueue: Promise<unknown> = Promise.resolve();
 
+function migrateStore(raw: AppStoreData): AppStoreData {
+  return {
+    ...raw,
+    priceWatches: raw.priceWatches ?? [],
+    comments: raw.comments ?? [],
+    news: raw.news ?? [],
+  };
+}
+
 async function ensureStore(): Promise<AppStoreData> {
   await fs.mkdir(DATA_DIR, { recursive: true });
   try {
     const raw = await fs.readFile(STORE_PATH, "utf8");
-    return JSON.parse(raw) as AppStoreData;
+    return migrateStore(JSON.parse(raw) as AppStoreData);
   } catch {
     const seed = createSeedStore();
     await fs.writeFile(STORE_PATH, JSON.stringify(seed, null, 2), "utf8");
@@ -156,6 +167,44 @@ export async function markAlertsRead(ids?: string[]): Promise<AppStoreData> {
       if (!ids || ids.includes(a.id)) a.read = true;
     }
   });
+}
+
+/** Feature ID: alert.price — persist watch definitions server-side */
+export async function savePriceWatches(
+  watches: PriceWatch[]
+): Promise<PriceWatch[]> {
+  await mutate((d) => {
+    d.priceWatches = watches;
+  });
+  return watches;
+}
+
+export async function addPriceWatchServer(
+  watch: Omit<PriceWatch, "id" | "createdAt">
+): Promise<PriceWatch> {
+  const created: PriceWatch = {
+    ...watch,
+    id: `pw_${randomUUID().slice(0, 8)}`,
+    createdAt: new Date().toISOString(),
+  };
+  await mutate((d) => {
+    d.priceWatches = [created, ...(d.priceWatches ?? [])];
+  });
+  return created;
+}
+
+export async function addComment(
+  comment: Omit<ChartComment, "id" | "createdAt">
+): Promise<ChartComment> {
+  const created: ChartComment = {
+    ...comment,
+    id: `cmt_${randomUUID().slice(0, 8)}`,
+    createdAt: new Date().toISOString(),
+  };
+  await mutate((d) => {
+    d.comments = [created, ...(d.comments ?? [])];
+  });
+  return created;
 }
 
 export async function setPatternEnabled(

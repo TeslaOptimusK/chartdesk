@@ -1,12 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ChartToolbar } from "@/components/workspace/ChartToolbar";
 import { IngestDialog } from "@/components/workspace/IngestDialog";
 import { RightPanel } from "@/components/workspace/RightPanel";
 import { SymbolChartPane } from "@/components/chart/SymbolChartPane";
 import { useWorkspace } from "@/lib/store";
 import type { DrawingTool, Timeframe } from "@/lib/types";
+import {
+  TIMEZONE_OPTIONS,
+  getSessionStatus,
+  timezoneDisplay,
+} from "@/lib/session";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -23,6 +28,7 @@ const TOOL_KEYS: Record<string, DrawingTool> = {
   t: "trend",
   r: "ray",
   h: "horizontal",
+  y: "horizontal_ray",
   v: "vertical",
   c: "channel",
   b: "fibonacci",
@@ -44,12 +50,19 @@ export function WorkspaceShell() {
     fullscreen,
     setFullscreen,
     timezone,
+    setTimezone,
     setTimeframe,
     setDrawingTool,
     setMagnet,
     magnet,
     setRightTab,
     drawingTool,
+    symbols,
+    undoDrawings,
+    redoDrawings,
+    setObjectTreeOpen,
+    drawingsLocked,
+    setDrawingsLocked,
   } = useWorkspace();
   const [ingestOpen, setIngestOpen] = useState(false);
   const [bootError, setBootError] = useState<string | null>(null);
@@ -83,6 +96,13 @@ export function WorkspaceShell() {
         return;
       }
 
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        if (e.shiftKey) redoDrawings();
+        else undoDrawings();
+        return;
+      }
+
       if (e.key === "Escape") {
         if (fullscreen) {
           setFullscreen(false);
@@ -106,6 +126,12 @@ export function WorkspaceShell() {
         return;
       }
 
+      if (e.key === "l" || e.key === "L") {
+        e.preventDefault();
+        setDrawingsLocked(!drawingsLocked);
+        return;
+      }
+
       if (e.key === "a" || e.key === "A") {
         e.preventDefault();
         setRightTab("alerts");
@@ -114,7 +140,7 @@ export function WorkspaceShell() {
 
       if (e.key === "o" || e.key === "O") {
         e.preventDefault();
-        setRightTab("objects");
+        setObjectTreeOpen(true);
         return;
       }
 
@@ -141,7 +167,18 @@ export function WorkspaceShell() {
     setMagnet,
     setTimeframe,
     setRightTab,
+    undoDrawings,
+    redoDrawings,
+    setObjectTreeOpen,
+    drawingsLocked,
+    setDrawingsLocked,
   ]);
+
+  const active = symbols.find((s) => s.id === activeSymbolId);
+  const session = useMemo(
+    () => getSessionStatus(active?.exchange, clock),
+    [active?.exchange, clock]
+  );
 
   const paneSymbols =
     layoutMode === "single"
@@ -212,7 +249,7 @@ export function WorkspaceShell() {
       {fullscreen && (
         <div className="flex items-center justify-between border-b border-[var(--workspace-border)] bg-[var(--workspace-panel)] px-3 py-1.5 text-xs">
           <span className="text-[var(--workspace-muted)]">
-            전체화면 · Esc 또는 F로 종료 · 핫키: 1/5/6/7/8/9 TF · T/R/H/V 드로잉
+            전체화면 · Esc 또는 F로 종료 · Ctrl+Z 실행취소
           </span>
           <Button
             size="sm"
@@ -253,20 +290,38 @@ export function WorkspaceShell() {
           ))}
         </main>
         {!fullscreen && (
-          <div className="hidden w-[340px] shrink-0 lg:block">
+          <div className="hidden w-[360px] shrink-0 lg:block">
             <RightPanel />
           </div>
         )}
       </div>
 
       <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--workspace-border)] bg-[var(--workspace-panel)] px-3 py-1.5 text-[10px] text-[var(--workspace-faint)]">
-        <span>
-          시세: mock/delayed · 세션 {timezone} · {tzNow}
+        <span className="flex flex-wrap items-center gap-2">
+          <span data-feature="data.session_status">{session.label}</span>
+          <span>·</span>
+          <label
+            className="inline-flex items-center gap-1"
+            data-feature="chart.timezone"
+          >
+            <select
+              value={timezone}
+              onChange={(e) => setTimezone(e.target.value)}
+              className="h-5 rounded border border-[var(--workspace-border)] bg-[var(--workspace-elevated)] px-1 text-[10px] text-[var(--workspace-muted)]"
+            >
+              {TIMEZONE_OPTIONS.map((tz) => (
+                <option key={tz} value={tz}>
+                  {timezoneDisplay(tz, clock)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <span>· {tzNow}</span>
           {magnet ? " · 자석 ON" : " · 자석 OFF"}
+          {drawingsLocked ? " · 잠금" : ""}
         </span>
         <span>
-          핫키 1/5/6/7/8/9 TF · T/R/H/V/C/B/Q/M 드로잉 · N 자석 · F 전체화면 · A
-          알림 · O 오브젝트
+          Ctrl+Z 실행취소 · Y 수평레이 · L 잠금 · A 알림 · O 오브젝트
         </span>
       </footer>
 
