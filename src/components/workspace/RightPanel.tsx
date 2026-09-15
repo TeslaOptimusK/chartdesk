@@ -16,6 +16,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
+import { PublishPostForm } from "@/components/workspace/Phase3Panels";
+import type { MultiAlertCondition, MultiAlertLogic } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 /** Feature ID: shell.brand — tab order fixed */
@@ -378,7 +380,8 @@ function PostsTab() {
   }));
 
   return (
-    <div className="space-y-3 p-2">
+    <div className="space-y-3 p-2" data-feature="social.posts">
+      <PublishPostForm onPublished={() => undefined} />
       {byCat.map(({ cat, items }) => {
         if (!items.length) return null;
         return (
@@ -423,12 +426,15 @@ function AlertsTab() {
     symbols,
     priceWatches,
     setPriceWatches,
+    watchlist,
     drawings,
     indicators,
     technicalAlerts,
     setTechnicalAlerts,
     webhookConfig,
     setWebhookConfig,
+    multiConditionAlerts,
+    setMultiConditionAlerts,
   } = useWorkspace();
   const [price, setPrice] = useState("");
   const [op, setOp] = useState<PriceWatchOp>("above");
@@ -442,7 +448,28 @@ function AlertsTab() {
     [drawings, activeSymbolId]
   );
 
+  const [multiLogic, setMultiLogic] = useState<MultiAlertLogic>("and");
+  const [condA, setCondA] = useState<MultiAlertCondition>({
+    kind: "price",
+    op: "above",
+    threshold: 0,
+  });
+  const [condB, setCondB] = useState<MultiAlertCondition>({
+    kind: "indicator",
+    op: "below",
+    threshold: 30,
+    indicatorId: "rsi",
+  });
+  const [bulkPrice, setBulkPrice] = useState("");
+  const [bulkOp, setBulkOp] = useState<PriceWatchOp>("above");
+
   useEffect(() => {
+    fetch("/api/multi-alerts")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.multiConditionAlerts) setMultiConditionAlerts(d.multiConditionAlerts);
+      })
+      .catch(() => undefined);
     fetch("/api/technical-alerts")
       .then((r) => r.json())
       .then((d) => {
@@ -537,8 +564,122 @@ function AlertsTab() {
     });
   };
 
+  const createWatchlistBulk = async () => {
+    const n = Number(bulkPrice);
+    if (!Number.isFinite(n) || n <= 0 || !watchlist.length) return;
+    const res = await fetch("/api/watches", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        watchlistBulk: true,
+        symbolIds: watchlist,
+        price: n,
+        bulkOp,
+        bulkMessage: "워치리스트 일괄",
+      }),
+    });
+    const data = await res.json();
+    if (data.priceWatches) {
+      setPriceWatches([...data.priceWatches, ...priceWatches]);
+      setBulkPrice("");
+    }
+  };
+
+  const createMultiAlert = async () => {
+    const res = await fetch("/api/multi-alerts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        symbolId: activeSymbolId,
+        logic: multiLogic,
+        conditions: [condA, condB],
+        message: message.trim() || undefined,
+      }),
+    });
+    const data = await res.json();
+    if (data.multiConditionAlert) {
+      setMultiConditionAlerts([
+        data.multiConditionAlert,
+        ...multiConditionAlerts,
+      ]);
+    }
+  };
+
   return (
     <div className="space-y-2 p-2" data-feature="alert.price">
+      <div
+        className="rounded-md border border-[var(--workspace-border)] bg-[var(--workspace-elevated)] p-2"
+        data-feature="alert.watchlist"
+      >
+        <div className="mb-1 text-xs font-semibold">워치 일괄 알림</div>
+        <div className="flex gap-1">
+          <select
+            value={bulkOp}
+            onChange={(e) => setBulkOp(e.target.value as PriceWatchOp)}
+            className="h-8 rounded border px-1 text-xs"
+          >
+            <option value="above">이상</option>
+            <option value="below">이하</option>
+            <option value="crossing">돌파</option>
+          </select>
+          <input
+            type="number"
+            value={bulkPrice}
+            onChange={(e) => setBulkPrice(e.target.value)}
+            placeholder="가격"
+            className="h-8 min-w-0 flex-1 rounded border px-2 text-xs"
+          />
+          <Button size="sm" className="h-8 text-xs" onClick={createWatchlistBulk}>
+            {watchlist.length}종목
+          </Button>
+        </div>
+      </div>
+
+      <div
+        className="rounded-md border border-[var(--workspace-border)] bg-[var(--workspace-elevated)] p-2"
+        data-feature="alert.multi_condition"
+      >
+        <div className="mb-1 text-xs font-semibold">멀티조건 알림</div>
+        <select
+          value={multiLogic}
+          onChange={(e) => setMultiLogic(e.target.value as MultiAlertLogic)}
+          className="mb-1 h-8 w-full rounded border px-1 text-xs"
+        >
+          <option value="and">AND</option>
+          <option value="or">OR</option>
+        </select>
+        <div className="mb-1 text-[10px] text-[var(--workspace-muted)]">
+          가격 {condA.op} {condA.threshold} · RSI {condB.op} {condB.threshold}
+        </div>
+        <div className="flex gap-1">
+          <input
+            type="number"
+            value={condA.threshold}
+            onChange={(e) =>
+              setCondA({ ...condA, threshold: Number(e.target.value) })
+            }
+            className="h-8 w-full rounded border px-2 text-xs"
+          />
+          <input
+            type="number"
+            value={condB.threshold}
+            onChange={(e) =>
+              setCondB({ ...condB, threshold: Number(e.target.value) })
+            }
+            className="h-8 w-full rounded border px-2 text-xs"
+          />
+        </div>
+        <Button size="sm" className="mt-1 h-7 text-xs" onClick={createMultiAlert}>
+          등록
+        </Button>
+        {multiConditionAlerts
+          .filter((m) => m.symbolId === activeSymbolId)
+          .map((m) => (
+            <div key={m.id} className="mt-1 text-[10px] text-[var(--workspace-muted)]">
+              {m.logic.toUpperCase()} · {m.conditions.length}조건
+            </div>
+          ))}
+      </div>
       <div
         className="rounded-md border border-[var(--workspace-border)] bg-[var(--workspace-elevated)] p-2"
         data-feature="alert.webhook"

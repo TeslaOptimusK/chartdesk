@@ -66,6 +66,76 @@ export const DRAWING_TOOL_META: {
     featureId: "draw.fib.retracement",
   },
   {
+    id: "fib_extension",
+    label: "피보나치 확장",
+    clicks: 2,
+    hint: "스윙 2점",
+    featureId: "draw.fib.extension",
+  },
+  {
+    id: "fib_fan",
+    label: "피보나치 부채",
+    clicks: 2,
+    hint: "원점 → 끝",
+    featureId: "draw.fib.fan",
+  },
+  {
+    id: "fib_arc",
+    label: "피보나치 호",
+    clicks: 2,
+    hint: "반경 2점",
+    featureId: "draw.fib.arc",
+  },
+  {
+    id: "fib_timezone",
+    label: "피보나치 시간",
+    clicks: 2,
+    hint: "구간 2점",
+    featureId: "draw.fib.timezone",
+  },
+  {
+    id: "gann_box",
+    label: "간 박스",
+    clicks: 2,
+    hint: "대각 2점",
+    featureId: "draw.gann.box",
+  },
+  {
+    id: "gann_fan",
+    label: "간 부채",
+    clicks: 2,
+    hint: "원점 → 각도",
+    featureId: "draw.gann.fan",
+  },
+  {
+    id: "pattern_harmonic",
+    label: "하모닉",
+    clicks: 5,
+    hint: "XABCD 5점",
+    featureId: "draw.pattern.harmonic",
+  },
+  {
+    id: "pattern_elliott",
+    label: "엘리엇",
+    clicks: 5,
+    hint: "5파 5점",
+    featureId: "draw.pattern.elliott",
+  },
+  {
+    id: "pitchfork",
+    label: "피치포크",
+    clicks: 3,
+    hint: "A → B → C",
+    featureId: "draw.pitchfork",
+  },
+  {
+    id: "brush",
+    label: "브러시",
+    clicks: 999,
+    hint: "드래그로 자유곡선",
+    featureId: "draw.brush",
+  },
+  {
     id: "rectangle",
     label: "사각형",
     clicks: 2,
@@ -117,7 +187,13 @@ export const DRAWING_TOOL_META: {
 ];
 
 export function clicksRequired(tool: DrawingKind): number {
-  return DRAWING_TOOL_META.find((t) => t.id === tool)?.clicks ?? 1;
+  const meta = DRAWING_TOOL_META.find((t) => t.id === tool);
+  if (tool === "brush") return 999;
+  return meta?.clicks ?? 1;
+}
+
+export function isBrushTool(tool: DrawingKind): boolean {
+  return tool === "brush";
 }
 
 export function defaultColor(tool: DrawingKind): string {
@@ -136,7 +212,21 @@ export function defaultColor(tool: DrawingKind): string {
     case "channel":
       return "#34d399";
     case "fibonacci":
+    case "fib_extension":
+    case "fib_fan":
+    case "fib_arc":
+    case "fib_timezone":
       return "#c084fc";
+    case "gann_box":
+    case "gann_fan":
+      return "#818cf8";
+    case "pattern_harmonic":
+    case "pattern_elliott":
+      return "#2dd4bf";
+    case "pitchfork":
+      return "#f472b6";
+    case "brush":
+      return "#94a3b8";
     case "rectangle":
       return "#fb7185";
     case "long_position":
@@ -151,6 +241,8 @@ export function defaultColor(tool: DrawingKind): string {
       return "#a3e635";
     case "text":
       return "#e8b86d";
+    default:
+      return "#94a3b8";
   }
 }
 
@@ -179,6 +271,7 @@ export function fibPrices(p0: DrawingPoint, p1: DrawingPoint): number[] {
 export function isCompleteDrawing(
   d: Pick<Drawing, "tool" | "points" | "text">
 ): boolean {
+  if (d.tool === "brush") return d.points.length >= 2;
   if (d.points.length < clicksRequired(d.tool)) return false;
   if (d.tool === "text" && !d.text?.trim()) return false;
   return true;

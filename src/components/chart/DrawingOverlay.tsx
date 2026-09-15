@@ -15,6 +15,7 @@ import {
   defaultColor,
   fibPrices,
   FIB_LEVELS,
+  isBrushTool,
 } from "@/lib/drawings";
 import { snapToCandle } from "@/lib/indicators";
 import { anchoredVwap, volumeProfile } from "@/lib/indicators-extra";
@@ -77,6 +78,8 @@ export function DrawingOverlay({
   const [pending, setPending] = useState<DrawingPoint[]>([]);
   const [cursor, setCursor] = useState<DrawingPoint | null>(null);
   const [tick, setTick] = useState(0);
+  const brushingRef = useRef(false);
+  const brushPointsRef = useRef<DrawingPoint[]>([]);
 
   useEffect(() => {
     pendingRef.current = [];
@@ -202,12 +205,36 @@ export function DrawingOverlay({
     }
   };
 
+  const onMouseDown = (e: React.MouseEvent) => {
+    if (locked || tool === "none" || !isBrushTool(tool)) return;
+    const point = eventToPoint(e);
+    if (!point) return;
+    brushingRef.current = true;
+    brushPointsRef.current = [point];
+    setPending([point]);
+  };
+
+  const onMouseUp = (e: React.MouseEvent) => {
+    if (!brushingRef.current || tool !== "brush" || locked) return;
+    brushingRef.current = false;
+    const point = eventToPoint(e);
+    const pts = brushPointsRef.current;
+    if (point && pts.length) pts.push(point);
+    if (pts.length >= 2) {
+      finish(pts, "brush");
+    }
+    brushPointsRef.current = [];
+    setPending([]);
+    setCursor(null);
+  };
+
   const onClick = (e: React.MouseEvent) => {
     if (locked) return;
     if (tool === "none") {
       onSelectDrawing?.(null);
       return;
     }
+    if (isBrushTool(tool)) return;
     const point = eventToPoint(e);
     if (!point) return;
 
@@ -237,7 +264,19 @@ export function DrawingOverlay({
   };
 
   const onMove = (e: React.MouseEvent) => {
-    if (tool === "none" || pendingRef.current.length === 0) {
+    if (tool === "none") {
+      setCursor(null);
+      return;
+    }
+    if (tool === "brush" && brushingRef.current) {
+      const point = eventToPoint(e);
+      if (point) {
+        brushPointsRef.current = [...brushPointsRef.current, point];
+        setPending([...brushPointsRef.current]);
+      }
+      return;
+    }
+    if (pendingRef.current.length === 0) {
       setCursor(null);
       return;
     }
@@ -272,8 +311,20 @@ export function DrawingOverlay({
         cursor: active ? "crosshair" : "default",
       }}
       onClick={onClick}
+      onMouseDown={onMouseDown}
+      onMouseUp={onMouseUp}
       onMouseMove={onMove}
-      onMouseLeave={() => setCursor(null)}
+      onMouseLeave={() => {
+        setCursor(null);
+        if (brushingRef.current && tool === "brush") {
+          brushingRef.current = false;
+          if (brushPointsRef.current.length >= 2) {
+            finish(brushPointsRef.current, "brush");
+          }
+          brushPointsRef.current = [];
+          setPending([]);
+        }
+      }}
       onKeyDown={onKeyDown}
       tabIndex={0}
       data-testid="drawing-overlay"
@@ -457,6 +508,164 @@ function paintDrawing(
         }
       }
     }
+    ctx.restore();
+    return;
+  }
+
+  // Feature ID: draw.pitchfork
+  if (d.tool === "pitchfork" && d.points.length >= 2) {
+    const [p0, p1, p2] = d.points;
+    const a = pointToXY(api, p0);
+    const b = pointToXY(api, p1);
+    const c = pointToXY(api, p2 ?? p1);
+    if (a && b && c) {
+      const mid = { x: (b.x + c.x) / 2, y: (b.y + c.y) / 2 };
+      const lines = [
+        [a, mid],
+        [a, b],
+        [a, c],
+      ] as const;
+      ctx.setLineDash([5, 4]);
+      for (const [s, e] of lines) {
+        const dx = e.x - s.x;
+        const dy = e.y - s.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const scale = Math.max(width, 900) / len;
+        ctx.beginPath();
+        ctx.moveTo(s.x, s.y);
+        ctx.lineTo(s.x + dx * scale, s.y + dy * scale);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+    return;
+  }
+
+  if (
+    (d.tool === "fib_extension" || d.tool === "fib_fan" || d.tool === "fib_arc" || d.tool === "fib_timezone") &&
+    d.points.length >= 2
+  ) {
+    const [p0, p1] = d.points;
+    const prices = fibPrices(p0, p1);
+    const a = pointToXY(api, p0);
+    const b = pointToXY(api, p1);
+    if (a && b) {
+      if (d.tool === "fib_fan") {
+        FIB_LEVELS.slice(1, 5).forEach((lvl) => {
+          const y = a.y + (b.y - a.y) * lvl;
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(width, y);
+          ctx.stroke();
+        });
+      } else if (d.tool === "fib_arc") {
+        const r = Math.hypot(b.x - a.x, b.y - a.y);
+        ctx.beginPath();
+        ctx.arc(a.x, a.y, r, 0, Math.PI * 2);
+        ctx.stroke();
+      } else if (d.tool === "fib_timezone") {
+        const t0 = p0.time;
+        const t1 = p1.time;
+        const span = Math.abs(t1 - t0) || 86400;
+        FIB_LEVELS.forEach((lvl) => {
+          const t = p0.time + span * lvl;
+          const x = api.chart.timeScale().timeToCoordinate(t as Time);
+          if (x == null) return;
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, ctx.canvas.clientHeight || 400);
+          ctx.stroke();
+        });
+      } else {
+        const ext = [1, 1.272, 1.618, 2.618];
+        ext.forEach((lvl) => {
+          const price = p0.price + (p1.price - p0.price) * lvl;
+          const y = api.series.priceToCoordinate(price);
+          if (y == null) return;
+          ctx.beginPath();
+          ctx.moveTo(a.x, y);
+          ctx.lineTo(width, y);
+          ctx.stroke();
+        });
+      }
+    }
+    ctx.restore();
+    return;
+  }
+
+  if (d.tool === "gann_box" && d.points.length >= 2) {
+    const [p0, p1] = d.points;
+    const a = pointToXY(api, p0);
+    const c = pointToXY(api, p1);
+    if (a && c) {
+      const b = pointToXY(api, { time: p1.time, price: p0.price });
+      const e = pointToXY(api, { time: p0.time, price: p1.price });
+      if (b && e) {
+        ctx.strokeRect(
+          Math.min(a.x, c.x),
+          Math.min(a.y, c.y),
+          Math.abs(c.x - a.x),
+          Math.abs(c.y - a.y)
+        );
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(c.x, c.y);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+    return;
+  }
+
+  if (d.tool === "gann_fan" && d.points.length >= 2) {
+    const a = pointToXY(api, d.points[0]);
+    const b = pointToXY(api, d.points[1]);
+    if (a && b) {
+      [1, 2, 3, 4].forEach((n) => {
+        const y = a.y + ((b.y - a.y) / 4) * n;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(width, y);
+        ctx.stroke();
+      });
+    }
+    ctx.restore();
+    return;
+  }
+
+  if (
+    (d.tool === "pattern_harmonic" || d.tool === "pattern_elliott") &&
+    d.points.length >= 2
+  ) {
+    ctx.setLineDash([]);
+    for (let i = 0; i < d.points.length - 1; i++) {
+      const a = pointToXY(api, d.points[i]);
+      const b = pointToXY(api, d.points[i + 1]);
+      if (!a || !b) continue;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+      ctx.font = "10px ui-monospace";
+      ctx.fillText(String.fromCharCode(88 + i), a.x + 4, a.y - 4);
+    }
+    ctx.restore();
+    return;
+  }
+
+  if (d.tool === "brush" && d.points.length >= 2) {
+    ctx.lineWidth = 2;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    d.points.forEach((p, i) => {
+      const xy = pointToXY(api, p);
+      if (!xy) return;
+      if (i === 0) ctx.moveTo(xy.x, xy.y);
+      else ctx.lineTo(xy.x, xy.y);
+    });
+    ctx.stroke();
     ctx.restore();
     return;
   }

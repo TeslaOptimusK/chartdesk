@@ -174,6 +174,9 @@ export function CommandPalette() {
               ["baseline", "베이스라인"],
               ["area", "에어리어"],
               ["bar", "바"],
+              ["renko", "렌코"],
+              ["kagi", "카기"],
+              ["volume_candles", "볼륨 캔들"],
             ] as const
           ).map(([id, label]) => (
             <CommandItem

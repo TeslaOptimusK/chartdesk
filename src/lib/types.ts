@@ -46,6 +46,16 @@ export type DrawingKind =
   | "horizontal_ray" // Feature ID: draw.horizontal_ray
   | "channel" // Feature ID: draw.parallel_channel
   | "fibonacci"
+  | "fib_extension" // draw.fib.extension
+  | "fib_arc" // draw.fib.arc
+  | "fib_fan" // draw.fib.fan
+  | "fib_timezone" // draw.fib.timezone
+  | "gann_box" // draw.gann.box
+  | "gann_fan" // draw.gann.fan
+  | "pattern_harmonic" // draw.pattern.harmonic
+  | "pattern_elliott" // draw.pattern.elliott
+  | "pitchfork" // draw.pitchfork
+  | "brush" // draw.brush
   | "rectangle"
   | "text"
   | "vertical" // Feature ID: draw.vertical_line
@@ -72,7 +82,13 @@ export type ChartStyle =
   | "line"
   | "area" // Feature ID: chart.type.area
   | "baseline" // Feature ID: chart.type.baseline
-  | "heikin_ashi";
+  | "heikin_ashi"
+  | "renko" // chart.type.renko
+  | "kagi" // chart.type.kagi
+  | "line_break" // chart.type.line_break
+  | "point_figure" // chart.type.point_figure
+  | "range" // chart.type.range
+  | "volume_candles"; // chart.type.volume_candles
 
 /** Feature ID: scale.log / scale.percent / scale.indexed_100 */
 export type PriceScaleMode = "linear" | "log" | "percent" | "indexed_100";
@@ -301,6 +317,61 @@ export interface AlertItem {
   read: boolean;
 }
 
+/** Feature ID: alert.multi_condition */
+export type MultiAlertLogic = "and" | "or";
+
+export interface MultiAlertCondition {
+  kind: "price" | "indicator";
+  op: "above" | "below";
+  threshold: number;
+  indicatorId?: string;
+}
+
+export interface MultiConditionAlert {
+  id: string;
+  symbolId: string;
+  logic: MultiAlertLogic;
+  conditions: MultiAlertCondition[];
+  message?: string;
+  createdAt: string;
+  triggered?: boolean;
+}
+
+/** Feature ID: trade.paper */
+export type PaperOrderType = "market" | "limit";
+export type PaperOrderSide = "buy" | "sell";
+
+export interface PaperOrder {
+  id: string;
+  symbolId: string;
+  side: PaperOrderSide;
+  type: PaperOrderType;
+  qty: number;
+  limitPrice?: number;
+  status: "open" | "filled" | "cancelled";
+  fillPrice?: number;
+  createdAt: string;
+}
+
+export interface PaperPosition {
+  symbolId: string;
+  qty: number;
+  avgCost: number;
+}
+
+export interface PaperAccount {
+  cash: number;
+  positions: PaperPosition[];
+  orders: PaperOrder[];
+}
+
+export interface CustomIndicatorScript {
+  id: string;
+  name: string;
+  source: string;
+  updatedAt: string;
+}
+
 export interface AppStoreData {
   symbols: SymbolMeta[];
   posts: Post[];
@@ -319,7 +390,19 @@ export interface AppStoreData {
   technicalAlerts: TechnicalAlert[];
   /** Feature ID: alert.webhook */
   webhookConfig: WebhookConfig;
+  /** Feature ID: alert.multi_condition */
+  multiConditionAlerts?: MultiConditionAlert[];
+  /** Feature ID: trade.paper */
+  paperAccount?: PaperAccount;
+  /** JS custom indicator scripts (server mirror) */
+  customIndicatorScripts?: CustomIndicatorScript[];
 }
+
+export const DEFAULT_PAPER_ACCOUNT: PaperAccount = {
+  cash: 100_000,
+  positions: [],
+  orders: [],
+};
 
 export const DEFAULT_WEBHOOK_CONFIG: WebhookConfig = {
   url: "",

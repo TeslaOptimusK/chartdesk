@@ -130,29 +130,29 @@ Phase 1 완료 = 첨부 ChartDesk 스크린샷과 같은 셸.
 
 | ID | 기능 | 상태 |  
 |----|------|------|  
-| `chart.type.renko` | 렌코 | todo |  
-| `chart.type.kagi` | 카기 | todo |  
-| `chart.type.line_break` | 라인브레이크 | todo |  
-| `chart.type.point_figure` | 점숫자 | todo |  
-| `chart.type.range` | 레인지 | todo |  
-| `chart.type.volume_candles` | 볼륨 캔들 | todo |  
-| `draw.pitchfork` | 피치포크 패밀리 | todo |  
-| `draw.fib.*` | 피보 나머지 | todo |  
-| `draw.gann.*` | 간 | todo |  
-| `draw.pattern.*` | 하모닉/엘리엇 | todo |  
-| `draw.brush` | 브러시 | todo |  
-| `screener.stock` | 주식 스크리너 | todo |  
-| `heatmap` | 히트맵 | todo |  
-| `alert.watchlist` | 워치 일괄 알림 | todo |  
-| `alert.multi_condition` | 멀티조건 | todo |  
-| `trade.paper` | 페이퍼 | todo |  
-| `social.posts` | 포스트 | todo |  
-| `social.publish` | 게시 | todo |  
-| `fund.graphs` | 펀더멘털 그래프 | todo |  
-| `portfolio` | 포트폴리오 | todo |  
-| `indicator.on_indicator` | 지표 위 지표 | todo |  
-| `chart.seasonals` | 시즈널 | todo |  
-| JS 커스텀 지표 | | todo |  
+| `chart.type.renko` | 렌코 | done |  
+| `chart.type.kagi` | 카기 | done |  
+| `chart.type.line_break` | 라인브레이크 | done |  
+| `chart.type.point_figure` | 점숫자 | done |  
+| `chart.type.range` | 레인지 | done |  
+| `chart.type.volume_candles` | 볼륨 캔들 | done |  
+| `draw.pitchfork` | 피치포크 패밀리 | done |  
+| `draw.fib.*` | 피보 나머지 | done |  
+| `draw.gann.*` | 간 | done |  
+| `draw.pattern.*` | 하모닉/엘리엇 | done |  
+| `draw.brush` | 브러시 | done |  
+| `screener.stock` | 주식 스크리너 | done |  
+| `heatmap` | 히트맵 | done |  
+| `alert.watchlist` | 워치 일괄 알림 | done |  
+| `alert.multi_condition` | 멀티조건 | done |  
+| `trade.paper` | 페이퍼 | done |  
+| `social.posts` | 포스트 | done |  
+| `social.publish` | 게시 | done |  
+| `fund.graphs` | 펀더멘털 그래프 | done |  
+| `portfolio` | 포트폴리오 | done |  
+| `indicator.on_indicator` | 지표 위 지표 | done |  
+| `chart.seasonals` | 시즈널 | done |  
+| JS 커스텀 지표 | | done |  
 
 ---  
 

@@ -73,6 +73,16 @@ const CHART_STYLES: { id: ChartStyle; label: string; feature?: string }[] = [
   { id: "area", label: "영역", feature: "chart.type.area" },
   { id: "baseline", label: "베이스", feature: "chart.type.baseline" },
   { id: "heikin_ashi", label: "하이킨" },
+  { id: "renko", label: "렌코", feature: "chart.type.renko" },
+  { id: "kagi", label: "카기", feature: "chart.type.kagi" },
+  { id: "line_break", label: "LB", feature: "chart.type.line_break" },
+  { id: "point_figure", label: "PnF", feature: "chart.type.point_figure" },
+  { id: "range", label: "레인지", feature: "chart.type.range" },
+  {
+    id: "volume_candles",
+    label: "Vol캔",
+    feature: "chart.type.volume_candles",
+  },
 ];
 
 const DRAWING_ICONS: Record<
@@ -94,6 +104,16 @@ const DRAWING_ICONS: Record<
   short_position: TrendingUp,
   vp_fixed: LayoutGrid,
   anchored_vwap: LineChart,
+  pitchfork: MoveDiagonal,
+  fib_extension: Percent,
+  fib_arc: Percent,
+  fib_fan: Percent,
+  fib_timezone: Percent,
+  gann_box: Square,
+  gann_fan: MoveDiagonal,
+  pattern_harmonic: TrendingUp,
+  pattern_elliott: TrendingUp,
+  brush: Minus,
 };
 
 export function ChartToolbar({ onOpenIngest }: { onOpenIngest: () => void }) {
@@ -165,6 +185,13 @@ export function ChartToolbar({ onOpenIngest }: { onOpenIngest: () => void }) {
     setReplayIndex,
     eventToggles,
     setEventToggles,
+    setScreenerOpen,
+    setHeatmapOpen,
+    setPaperOpen,
+    setFundGraphsOpen,
+    setPortfolioOpen,
+    setSeasonalsOpen,
+    setCustomIndicatorOpen,
   } = useWorkspace();
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -848,6 +875,72 @@ export function ChartToolbar({ onOpenIngest }: { onOpenIngest: () => void }) {
       >
         /
       </Button>
+
+      <div className="flex flex-wrap items-center gap-0.5 border-l border-[var(--workspace-border)] pl-2">
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 px-1.5 text-[10px]"
+          data-feature="screener.stock"
+          onClick={() => setScreenerOpen(true)}
+        >
+          Scr
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 px-1.5 text-[10px]"
+          data-feature="heatmap"
+          onClick={() => setHeatmapOpen(true)}
+        >
+          Heat
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 px-1.5 text-[10px]"
+          data-feature="trade.paper"
+          onClick={() => setPaperOpen(true)}
+        >
+          Paper
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 px-1.5 text-[10px]"
+          data-feature="fund.graphs"
+          onClick={() => setFundGraphsOpen(true)}
+        >
+          Fund
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 px-1.5 text-[10px]"
+          data-feature="portfolio"
+          onClick={() => setPortfolioOpen(true)}
+        >
+          Port
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 px-1.5 text-[10px]"
+          data-feature="chart.seasonals"
+          onClick={() => setSeasonalsOpen(true)}
+        >
+          Seasn
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 px-1.5 text-[10px]"
+          data-feature="indicator.custom_js"
+          onClick={() => setCustomIndicatorOpen(true)}
+        >
+          JS
+        </Button>
+      </div>
 
       <Popover>
         <PopoverTrigger

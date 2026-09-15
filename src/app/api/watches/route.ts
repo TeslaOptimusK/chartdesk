@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   addPriceWatchServer,
+  addPriceWatchesBulk,
   readStore,
   savePriceWatches,
 } from "@/lib/storage";
@@ -18,7 +19,25 @@ export async function POST(req: Request) {
     price?: number;
     op?: PriceWatchOp;
     message?: string;
+    /** Feature ID: alert.watchlist — bulk create for watchlist symbols */
+    watchlistBulk?: boolean;
+    symbolIds?: string[];
+    bulkOp?: PriceWatchOp;
+    bulkMessage?: string;
   };
+
+  if (body.watchlistBulk && body.symbolIds?.length && body.price != null && body.bulkOp) {
+    const watches = await addPriceWatchesBulk(
+      body.symbolIds.map((symbolId) => ({
+        symbolId,
+        price: body.price!,
+        op: body.bulkOp!,
+        message: body.bulkMessage?.trim() || undefined,
+      }))
+    );
+    return NextResponse.json({ priceWatches: watches, bulk: true });
+  }
+
   if (!body.symbolId || body.price == null || !body.op) {
     return NextResponse.json(
       { error: "symbolId, price, op required" },

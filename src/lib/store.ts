@@ -21,11 +21,14 @@ import type {
   PriceWatch,
   RangePreset,
   SymbolMeta,
+  MultiConditionAlert,
+  PaperAccount,
   TechnicalAlert,
   Timeframe,
   WebhookConfig,
   WorkspaceLayoutPreset,
 } from "@/lib/types";
+import { DEFAULT_PAPER_ACCOUNT } from "@/lib/types";
 import {
   DEFAULT_CHART_SETTINGS,
   DEFAULT_WEBHOOK_CONFIG,
@@ -79,6 +82,39 @@ const RECENT_KEY = "chartdesk-recent-v1";
 const SETTINGS_KEY = "chartdesk-settings-v1";
 const TZ_KEY = "chartdesk-timezone-v1";
 const PHASE2_KEY = "chartdesk-phase2-v1";
+const PHASE3_KEY = "chartdesk-phase3-v1";
+
+/** Feature ID: indicator.on_indicator */
+export interface IndicatorOnIndicatorConfig {
+  parent: "rsi";
+  child: "sma20";
+}
+
+export interface Phase3Prefs {
+  indicatorOnIndicator: IndicatorOnIndicatorConfig | null;
+  customIndicatorSource: string;
+  activeCustomScriptId: string | null;
+  screenerOpen: boolean;
+  heatmapOpen: boolean;
+  paperOpen: boolean;
+  fundGraphsOpen: boolean;
+  portfolioOpen: boolean;
+  seasonalsOpen: boolean;
+  customIndicatorOpen: boolean;
+}
+
+const DEFAULT_PHASE3: Phase3Prefs = {
+  indicatorOnIndicator: null,
+  customIndicatorSource: "",
+  activeCustomScriptId: null,
+  screenerOpen: false,
+  heatmapOpen: false,
+  paperOpen: false,
+  fundGraphsOpen: false,
+  portfolioOpen: false,
+  seasonalsOpen: false,
+  customIndicatorOpen: false,
+};
 
 export interface Phase2Prefs {
   priceScaleMode: PriceScaleMode;
@@ -195,6 +231,29 @@ interface WorkspaceState {
   sharedCrosshairTime: number | null;
   /** Feature ID: chart.snapshot — increment to trigger capture */
   snapshotTick: number;
+  /** Phase 3 */
+  indicatorOnIndicator: IndicatorOnIndicatorConfig | null;
+  customIndicatorSource: string;
+  multiConditionAlerts: MultiConditionAlert[];
+  paperAccount: PaperAccount;
+  screenerOpen: boolean;
+  heatmapOpen: boolean;
+  paperOpen: boolean;
+  fundGraphsOpen: boolean;
+  portfolioOpen: boolean;
+  seasonalsOpen: boolean;
+  customIndicatorOpen: boolean;
+  setIndicatorOnIndicator: (cfg: IndicatorOnIndicatorConfig | null) => void;
+  setCustomIndicatorSource: (src: string) => void;
+  setMultiConditionAlerts: (alerts: MultiConditionAlert[]) => void;
+  setPaperAccount: (account: PaperAccount) => void;
+  setScreenerOpen: (v: boolean) => void;
+  setHeatmapOpen: (v: boolean) => void;
+  setPaperOpen: (v: boolean) => void;
+  setFundGraphsOpen: (v: boolean) => void;
+  setPortfolioOpen: (v: boolean) => void;
+  setSeasonalsOpen: (v: boolean) => void;
+  setCustomIndicatorOpen: (v: boolean) => void;
   setReady: (v: boolean) => void;
   hydrate: (data: {
     symbols: SymbolMeta[];
@@ -210,6 +269,8 @@ interface WorkspaceState {
     news?: NewsItem[];
     technicalAlerts?: TechnicalAlert[];
     webhookConfig?: WebhookConfig;
+    multiConditionAlerts?: MultiConditionAlert[];
+    paperAccount?: PaperAccount;
   }) => void;
   setActiveSymbol: (id: string) => void;
   setTimeframe: (tf: Timeframe) => void;
@@ -337,6 +398,23 @@ function writePhase2(partial: Partial<Phase2Prefs>) {
   localStorage.setItem(PHASE2_KEY, JSON.stringify({ ...cur, ...partial }));
 }
 
+function readPhase3(): Phase3Prefs {
+  if (typeof window === "undefined") return DEFAULT_PHASE3;
+  try {
+    const raw = localStorage.getItem(PHASE3_KEY);
+    if (!raw) return DEFAULT_PHASE3;
+    return { ...DEFAULT_PHASE3, ...(JSON.parse(raw) as Partial<Phase3Prefs>) };
+  } catch {
+    return DEFAULT_PHASE3;
+  }
+}
+
+function writePhase3(partial: Partial<Phase3Prefs>) {
+  if (typeof window === "undefined") return;
+  const cur = readPhase3();
+  localStorage.setItem(PHASE3_KEY, JSON.stringify({ ...cur, ...partial }));
+}
+
 function readTimezone(): string {
   if (typeof window === "undefined") return "America/New_York";
   try {
@@ -405,9 +483,59 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   showCountdown: DEFAULT_PHASE2.showCountdown,
   sharedCrosshairTime: null,
   snapshotTick: 0,
+  indicatorOnIndicator: null,
+  customIndicatorSource: "",
+  multiConditionAlerts: [],
+  paperAccount: { ...DEFAULT_PAPER_ACCOUNT },
+  screenerOpen: false,
+  heatmapOpen: false,
+  paperOpen: false,
+  fundGraphsOpen: false,
+  portfolioOpen: false,
+  seasonalsOpen: false,
+  customIndicatorOpen: false,
+  setIndicatorOnIndicator: (cfg) => {
+    writePhase3({ indicatorOnIndicator: cfg });
+    set({ indicatorOnIndicator: cfg });
+  },
+  setCustomIndicatorSource: (src) => {
+    writePhase3({ customIndicatorSource: src });
+    set({ customIndicatorSource: src });
+  },
+  setMultiConditionAlerts: (multiConditionAlerts) => set({ multiConditionAlerts }),
+  setPaperAccount: (paperAccount) => set({ paperAccount }),
+  setScreenerOpen: (v) => {
+    writePhase3({ screenerOpen: v });
+    set({ screenerOpen: v });
+  },
+  setHeatmapOpen: (v) => {
+    writePhase3({ heatmapOpen: v });
+    set({ heatmapOpen: v });
+  },
+  setPaperOpen: (v) => {
+    writePhase3({ paperOpen: v });
+    set({ paperOpen: v });
+  },
+  setFundGraphsOpen: (v) => {
+    writePhase3({ fundGraphsOpen: v });
+    set({ fundGraphsOpen: v });
+  },
+  setPortfolioOpen: (v) => {
+    writePhase3({ portfolioOpen: v });
+    set({ portfolioOpen: v });
+  },
+  setSeasonalsOpen: (v) => {
+    writePhase3({ seasonalsOpen: v });
+    set({ seasonalsOpen: v });
+  },
+  setCustomIndicatorOpen: (v) => {
+    writePhase3({ customIndicatorOpen: v });
+    set({ customIndicatorOpen: v });
+  },
   setReady: (v) => set({ ready: v }),
   hydrate: (data) => {
     const p2 = readPhase2();
+    const p3 = readPhase3();
     set({
       ...data,
       priceWatches: data.priceWatches ?? [],
@@ -415,6 +543,17 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       news: data.news ?? [],
       technicalAlerts: data.technicalAlerts ?? [],
       webhookConfig: data.webhookConfig ?? DEFAULT_WEBHOOK_CONFIG,
+      multiConditionAlerts: data.multiConditionAlerts ?? [],
+      paperAccount: data.paperAccount ?? { ...DEFAULT_PAPER_ACCOUNT },
+      indicatorOnIndicator: p3.indicatorOnIndicator,
+      customIndicatorSource: p3.customIndicatorSource,
+      screenerOpen: p3.screenerOpen,
+      heatmapOpen: p3.heatmapOpen,
+      paperOpen: p3.paperOpen,
+      fundGraphsOpen: p3.fundGraphsOpen,
+      portfolioOpen: p3.portfolioOpen,
+      seasonalsOpen: p3.seasonalsOpen,
+      customIndicatorOpen: p3.customIndicatorOpen,
       activeSymbolId:
         data.watchlist.find((id) => id === "us_NVDA") ??
         data.watchlist[0] ??

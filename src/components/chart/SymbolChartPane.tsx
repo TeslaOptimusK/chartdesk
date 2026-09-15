@@ -58,6 +58,8 @@ export function SymbolChartPane({
     replayIndex,
     setReplayIndex,
     layoutMode,
+    indicatorOnIndicator,
+    customIndicatorSource,
   } = useWorkspace();
   const [candles, setCandles] = useState<Candle[]>([]);
   const [compareCandles, setCompareCandles] = useState<Candle[]>([]);
@@ -316,6 +318,8 @@ export function SymbolChartPane({
             : undefined
         }
         stayInDrawMode={stayInDrawMode}
+        indicatorOnIndicator={indicatorOnIndicator}
+        customIndicatorSource={customIndicatorSource}
       />
     </div>
   );

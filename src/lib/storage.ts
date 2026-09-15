@@ -10,11 +10,14 @@ import type {
   PatternDef,
   PatternHit,
   Post,
+  MultiConditionAlert,
+  PaperAccount,
+  CustomIndicatorScript,
   PriceWatch,
   TechnicalAlert,
   WebhookConfig,
 } from "@/lib/types";
-import { DEFAULT_WEBHOOK_CONFIG } from "@/lib/types";
+import { DEFAULT_PAPER_ACCOUNT, DEFAULT_WEBHOOK_CONFIG } from "@/lib/types";
 import { createSeedStore } from "@/lib/seed";
 
 const DATA_DIR = path.join(process.cwd(), "data");
@@ -30,6 +33,9 @@ function migrateStore(raw: AppStoreData): AppStoreData {
     news: raw.news ?? [],
     technicalAlerts: raw.technicalAlerts ?? [],
     webhookConfig: raw.webhookConfig ?? DEFAULT_WEBHOOK_CONFIG,
+    multiConditionAlerts: raw.multiConditionAlerts ?? [],
+    paperAccount: raw.paperAccount ?? { ...DEFAULT_PAPER_ACCOUNT },
+    customIndicatorScripts: raw.customIndicatorScripts ?? [],
   };
 }
 
@@ -275,6 +281,78 @@ export async function addTechnicalAlert(
   };
   await mutate((d) => {
     d.technicalAlerts = [created, ...(d.technicalAlerts ?? [])];
+  });
+  return created;
+}
+
+/** Feature ID: alert.multi_condition */
+export async function saveMultiConditionAlerts(
+  alerts: MultiConditionAlert[]
+): Promise<MultiConditionAlert[]> {
+  await mutate((d) => {
+    d.multiConditionAlerts = alerts;
+  });
+  return alerts;
+}
+
+export async function addMultiConditionAlert(
+  alert: Omit<MultiConditionAlert, "id" | "createdAt">
+): Promise<MultiConditionAlert> {
+  const created: MultiConditionAlert = {
+    ...alert,
+    id: `mc_${randomUUID().slice(0, 8)}`,
+    createdAt: new Date().toISOString(),
+  };
+  await mutate((d) => {
+    d.multiConditionAlerts = [created, ...(d.multiConditionAlerts ?? [])];
+  });
+  return created;
+}
+
+export async function addPriceWatchesBulk(
+  watches: Omit<PriceWatch, "id" | "createdAt">[]
+): Promise<PriceWatch[]> {
+  const created = watches.map((w) => ({
+    ...w,
+    id: `pw_${randomUUID().slice(0, 8)}`,
+    createdAt: new Date().toISOString(),
+  }));
+  await mutate((d) => {
+    d.priceWatches = [...created, ...(d.priceWatches ?? [])];
+  });
+  return created;
+}
+
+/** Feature ID: trade.paper */
+export async function savePaperAccount(
+  account: PaperAccount
+): Promise<PaperAccount> {
+  await mutate((d) => {
+    d.paperAccount = account;
+  });
+  return account;
+}
+
+export async function readPaperAccount(): Promise<PaperAccount> {
+  const d = await readStore();
+  return d.paperAccount ?? { ...DEFAULT_PAPER_ACCOUNT };
+}
+
+export async function upsertCustomIndicatorScript(
+  script: Omit<CustomIndicatorScript, "id" | "updatedAt"> & { id?: string }
+): Promise<CustomIndicatorScript> {
+  const created: CustomIndicatorScript = {
+    id: script.id ?? `ci_${randomUUID().slice(0, 8)}`,
+    name: script.name,
+    source: script.source,
+    updatedAt: new Date().toISOString(),
+  };
+  await mutate((d) => {
+    const list = d.customIndicatorScripts ?? [];
+    const idx = list.findIndex((s) => s.id === created.id);
+    if (idx >= 0) list[idx] = created;
+    else list.unshift(created);
+    d.customIndicatorScripts = list;
   });
   return created;
 }

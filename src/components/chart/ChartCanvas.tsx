@@ -38,6 +38,11 @@ import type {
 } from "@/lib/types";
 import { DEFAULT_CHART_SETTINGS } from "@/lib/types";
 import {
+  applyChartTransform,
+  volumeIntensity,
+} from "@/lib/chart-transforms";
+import { runCustomIndicator } from "@/lib/custom-indicator";
+import {
   atr,
   bollinger,
   ema,
@@ -94,6 +99,10 @@ interface ChartCanvasProps {
   sharedCrosshairTime?: number | null;
   onCrosshairTime?: (t: number | null) => void;
   stayInDrawMode?: boolean;
+  /** Feature ID: indicator.on_indicator */
+  indicatorOnIndicator?: { parent: string; child: string } | null;
+  /** JS custom indicator */
+  customIndicatorSource?: string | null;
 }
 
 type AnySeries = ISeriesApi<SeriesType>;
@@ -139,6 +148,8 @@ export function ChartCanvas({
   sharedCrosshairTime = null,
   onCrosshairTime,
   stayInDrawMode = false,
+  indicatorOnIndicator = null,
+  customIndicatorSource = null,
 }: ChartCanvasProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -177,12 +188,22 @@ export function ChartCanvas({
     return candles;
   }, [candles, priceScaleMode]);
 
+  const transformedCandles = useMemo(
+    () => applyChartTransform(chartStyle, scaledCandles),
+    [scaledCandles, chartStyle]
+  );
+
   const displayCandles = useMemo(
     () =>
       chartStyle === "heikin_ashi"
         ? toHeikinAshi(scaledCandles)
-        : scaledCandles,
-    [scaledCandles, chartStyle]
+        : transformedCandles,
+    [scaledCandles, chartStyle, transformedCandles]
+  );
+
+  const volumeWeights = useMemo(
+    () => volumeIntensity(displayCandles),
+    [displayCandles]
   );
 
   useEffect(() => {
@@ -393,6 +414,26 @@ export function ChartCanvas({
           };
         })
       );
+    } else if (chartStyle === "volume_candles") {
+      (main as ISeriesApi<"Candlestick">).setData(
+        displayCandles.map((c, i) => {
+          const up = c.close >= c.open;
+          const w = volumeWeights[i] ?? 0.5;
+          const alpha = 0.35 + w * 0.65;
+          const upCol = `rgba(38,166,154,${alpha})`;
+          const dnCol = `rgba(239,83,80,${alpha})`;
+          return {
+            time: c.time as Time,
+            open: c.open,
+            high: c.high,
+            low: c.low,
+            close: c.close,
+            color: up ? upCol : dnCol,
+            borderColor: up ? chartSettings.upColor : chartSettings.downColor,
+            wickColor: up ? chartSettings.upColor : chartSettings.downColor,
+          };
+        })
+      );
     } else {
       (main as ISeriesApi<"Candlestick">).setData(
         displayCandles.map((c) => ({
@@ -474,7 +515,16 @@ export function ChartCanvas({
       addLine(bb.lower, "#64748b");
     }
     if (indicators.includes("vwap")) addLine(vwap(displayCandles), "#e8b86d");
-    if (indicators.includes("rsi")) addLine(rsi(displayCandles, 14), "#c084fc", "rsi");
+    if (indicators.includes("rsi")) {
+      const rsiVals = rsi(displayCandles, 14);
+      addLine(rsiVals, "#c084fc", "rsi");
+      if (
+        indicatorOnIndicator?.parent === "rsi" &&
+        indicatorOnIndicator.child === "sma20"
+      ) {
+        addLine(sma(rsiVals.map((v) => v ?? 0), 14), "#fbbf24", "rsi");
+      }
+    }
     if (indicators.includes("atr")) addLine(atr(displayCandles, 14), "#fb7185", "atr");
     if (indicators.includes("macd")) {
       const m = macd(displayCandles);
@@ -513,6 +563,11 @@ export function ChartCanvas({
       addLine(st.k, "#f97316", "stoch");
       addLine(st.d, "#6366f1", "stoch");
     }
+    if (customIndicatorSource?.trim()) {
+      const vals = runCustomIndicator(customIndicatorSource, displayCandles);
+      addLine(vals, "#e879f9");
+    }
+
     if (indicators.includes("volMa")) {
       const vols = displayCandles.map((c) => c.volume);
       const ma = sma(vols, 20);
@@ -564,7 +619,13 @@ export function ChartCanvas({
       chartStyle === "candle" ||
       chartStyle === "heikin_ashi" ||
       chartStyle === "bar" ||
-      chartStyle === "hollow_candle"
+      chartStyle === "hollow_candle" ||
+      chartStyle === "volume_candles" ||
+      chartStyle === "renko" ||
+      chartStyle === "kagi" ||
+      chartStyle === "line_break" ||
+      chartStyle === "point_figure" ||
+      chartStyle === "range"
     ) {
       const markers: SeriesMarker<Time>[] = patternHits.map((h) => ({
         time: h.toTs as Time,
@@ -631,6 +692,9 @@ export function ChartCanvas({
     timeframe,
     eventMarkers,
     eventToggles,
+    volumeWeights,
+    indicatorOnIndicator,
+    customIndicatorSource,
   ]);
 
   // Crosshair legend + layout.sync.crosshair
@@ -718,7 +782,19 @@ export function ChartCanvas({
               ? "chart.type.bars"
               : chartStyle === "area"
                 ? "chart.type.area"
-                : undefined
+                : chartStyle === "renko"
+                  ? "chart.type.renko"
+                  : chartStyle === "kagi"
+                    ? "chart.type.kagi"
+                    : chartStyle === "line_break"
+                      ? "chart.type.line_break"
+                      : chartStyle === "point_figure"
+                        ? "chart.type.point_figure"
+                        : chartStyle === "range"
+                          ? "chart.type.range"
+                          : chartStyle === "volume_candles"
+                            ? "chart.type.volume_candles"
+                            : undefined
       }
     >
       <div ref={containerRef} className="absolute inset-0" />
