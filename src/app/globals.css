@@ -131,3 +131,16 @@
     @apply font-sans;
   }
 }
+
+/* Hide lightweight-charts TradingView attribution logo if it still mounts. */
+#tv-attr-logo,
+a#tv-attr-logo,
+.tv-lightweight-charts a[href*="tradingview.com"] {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  overflow: hidden !important;
+  opacity: 0 !important;
+}

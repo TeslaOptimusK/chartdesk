@@ -33,7 +33,17 @@ After clone, create a Desktop `ChartDesk` shortcut once:
 powershell -ExecutionPolicy Bypass -File scripts\create-desktop-shortcut.ps1
 ```
 
-Double-click the shortcut (or run `scripts\start-chartdesk.bat`) to install deps if needed, start the server on port **43127**, and open a **desktop-like app window** (Chrome/Edge `--app=` mode, falls back to the default browser). Keep the console window open while using the app.
+Double-click the shortcut (or run `scripts\start-chartdesk.bat`) to install deps if needed, start the server on port **43127**, wait until it responds, then open **Chrome or Edge with `--app=http://127.0.0.1:43127`** (desktop-like window, not a normal browser tab). Falls back to the default browser only if Chrome/Edge are missing. Keep the server console open while using the app.
+
+### Update on your PC
+
+```bash
+git fetch origin
+git checkout cursor/tradingview-workspace-1626   # or the fix branch you were given
+git pull
+```
+
+Then re-run `scripts\start-chartdesk.bat` (or the Desktop ChartDesk shortcut).
 
 ### Scripts
 

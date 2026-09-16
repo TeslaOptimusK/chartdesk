@@ -383,8 +383,19 @@ export function WorkspaceShell() {
           {magnet ? " · 자석 ON" : " · 자석 OFF"}
           {drawingsLocked ? " · 잠금" : ""}
         </span>
-        <span>
-          Ctrl+Z 실행취소 · Y 수평레이 · L 잠금 · A 알림 · O 오브젝트
+        <span className="flex flex-wrap items-center gap-3">
+          <span>
+            Ctrl+Z 실행취소 · Y 수평레이 · L 잠금 · A 알림 · O 오브젝트
+          </span>
+          <a
+            href="https://www.tradingview.com/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[var(--workspace-muted)] underline-offset-2 hover:text-[var(--workspace-fg)] hover:underline"
+            title="Charts powered by TradingView Lightweight Charts"
+          >
+            Charts by TradingView
+          </a>
         </span>
       </footer>
 

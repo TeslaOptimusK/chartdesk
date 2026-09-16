@@ -169,7 +169,12 @@ export function ChartCanvas({
   const mainSeriesRef = useRef<AnySeries | null>(null);
   const volumeRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const overlayRefs = useRef<AnySeries[]>([]);
-  const rangeKeyRef = useRef<string>("");
+  /** Only re-fit on symbol / timeframe / range-preset changes — never on live ticks. */
+  const viewKeyRef = useRef<string>("");
+  const followRealtimeRef = useRef(true);
+  const suppressRangeEventRef = useRef(false);
+  const candleCountRef = useRef(0);
+  const firstBarTimeRef = useRef<number | null>(null);
   const stochPaneEnsured = useRef(false);
   const [chartApi, setChartApi] = useState<ChartApiBundle | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -300,20 +305,37 @@ export function ChartCanvas({
 
     chartRef.current = chart;
     volumeRef.current = volumeSeries;
-    rangeKeyRef.current = "";
+    viewKeyRef.current = "";
+    followRealtimeRef.current = true;
+    firstBarTimeRef.current = null;
+    candleCountRef.current = 0;
     stochPaneEnsured.current = false;
+
+    const onVisibleRange = (
+      range: { from: number; to: number } | null
+    ) => {
+      if (suppressRangeEventRef.current || !range) return;
+      const n = candleCountRef.current;
+      if (n <= 0) return;
+      // Detached when the right edge is clearly left of the last bar
+      // (user panned left — whitespace on the right must stick).
+      followRealtimeRef.current = range.to >= n - 1 + 2;
+    };
+    chart.timeScale().subscribeVisibleLogicalRangeChange(onVisibleRange);
 
     const ro = new ResizeObserver(() => {
       if (!containerRef.current || !chartRef.current) return;
       const w = containerRef.current.clientWidth;
       const h = containerRef.current.clientHeight;
       if (w > 0 && h > 0) {
+        // Size only — never fitContent / setVisibleRange on resize.
         chartRef.current.applyOptions({ width: w, height: h });
       }
     });
     ro.observe(el);
 
     return () => {
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(onVisibleRange);
       ro.disconnect();
       setChartApi(null);
       chart.remove();
@@ -336,6 +358,7 @@ export function ChartCanvas({
           type: ColorType.Solid,
           color: chartSettings.background,
         },
+        attributionLogo: false,
       },
       grid: {
         vertLines: {
@@ -344,6 +367,11 @@ export function ChartCanvas({
         horzLines: {
           color: chartSettings.showGrid ? chartSettings.gridColor : "transparent",
         },
+      },
+      timeScale: {
+        shiftVisibleRangeOnNewBar: false,
+        rightBarStaysOnScroll: false,
+        fixRightEdge: false,
       },
     });
   }, [chartSettings]);
@@ -445,6 +473,15 @@ export function ChartCanvas({
     const main = mainSeriesRef.current;
     const volumeSeries = volumeRef.current;
     if (!chart || !main || !volumeSeries || displayCandles.length === 0) return;
+
+    const prevLogical = chart.timeScale().getVisibleLogicalRange();
+    const prevFirst = firstBarTimeRef.current;
+    const prevCount = candleCountRef.current;
+    const wasFollowing = followRealtimeRef.current;
+
+    // Suppress range events while replacing series data so the library's
+    // intermediate range cannot flip followRealtime and skip our restore.
+    suppressRangeEventRef.current = true;
 
     if (chartStyle === "line" || chartStyle === "area") {
       (main as ISeriesApi<"Line">).setData(
@@ -799,27 +836,47 @@ export function ChartCanvas({
     }
 
     const barCount = barsForRangePreset(rangePreset, timeframe);
-    const rangeKey = `${symbolId}|${timeframe}|${rangePreset}|${displayCandles.length > 0 ? displayCandles[0].time : 0}`;
-    if (rangeKeyRef.current !== rangeKey) {
-      rangeKeyRef.current = rangeKey;
+    // Never include live candle timestamps / lengths — those change on every SSE tick
+    // and previously re-triggered fitContent / setVisibleLogicalRange (pan snap-back).
+    const viewKey = `${symbolId}|${timeframe}|${rangePreset}`;
+    const newFirst = displayCandles[0]?.time ?? null;
+    const newCount = displayCandles.length;
+    candleCountRef.current = newCount;
+
+    const applyLogical = (from: number, to: number) => {
+      try {
+        chart.timeScale().setVisibleLogicalRange({ from, to });
+      } catch {
+        /* ignore invalid ranges during first paint */
+      }
+    };
+
+    if (viewKeyRef.current !== viewKey) {
+      viewKeyRef.current = viewKey;
+      followRealtimeRef.current = true;
       if (barCount == null) {
         chart.timeScale().fitContent();
+        chart.timeScale().applyOptions({ rightOffset: 14 });
       } else {
         const fromIdx = Math.max(0, displayCandles.length - barCount);
-        const from = displayCandles[fromIdx]?.time;
-        const to = displayCandles[displayCandles.length - 1]?.time;
-        if (from != null && to != null) {
-          chart.timeScale().setVisibleLogicalRange({
-            from: fromIdx - 2,
-            to: displayCandles.length - 1 + 14,
-          });
-        } else {
-          chart.timeScale().fitContent();
-        }
+        applyLogical(fromIdx - 2, displayCandles.length - 1 + 14);
+        chart.timeScale().applyOptions({ rightOffset: 14 });
       }
-      // Keep right breathing room after fit
-      chart.timeScale().applyOptions({ rightOffset: 14 });
+    } else if (!wasFollowing && prevLogical) {
+      // Keep the user's pan. Compensate when the rolling window drops bars on the left.
+      let leftShift = 0;
+      if (prevFirst != null && newFirst != null && prevFirst !== newFirst) {
+        const idx = displayCandles.findIndex((c) => c.time === prevFirst);
+        leftShift = idx >= 0 ? idx : Math.max(0, newCount - prevCount);
+      }
+      applyLogical(prevLogical.from - leftShift, prevLogical.to - leftShift);
+      followRealtimeRef.current = false;
     }
+    // When wasFollowing, leave the library range alone (no fitContent / scrollToRealTime).
+
+    firstBarTimeRef.current = newFirst;
+    suppressRangeEventRef.current = false;
+
     const last = displayCandles[displayCandles.length - 1];
     if (last) {
       setLegend({
@@ -884,7 +941,7 @@ export function ChartCanvas({
     chart.setCrosshairPosition(c.close, sharedCrosshairTime as Time, main);
   }, [sharedCrosshairTime, syncCrosshair, displayCandles]);
 
-  // Go to date
+  // Go to date — only when the date string changes, not on every candle tick
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart || !goToDate || displayCandles.length === 0) return;
@@ -906,11 +963,15 @@ export function ChartCanvas({
       displayCandles[displayCandles.length - 1].time,
       nearest.time + 10 * (displayCandles[1]?.time - displayCandles[0].time || 86400)
     );
+    suppressRangeEventRef.current = true;
+    followRealtimeRef.current = false;
     chart.timeScale().setVisibleRange({
       from: from as Time,
       to: to as Time,
     });
-  }, [goToDate, displayCandles]);
+    suppressRangeEventRef.current = false;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: do not re-jump on candle ticks
+  }, [goToDate]);
 
   useEffect(() => {
     if (drawingTool !== "none") setSelectedId(null);
