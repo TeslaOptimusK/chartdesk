@@ -25,6 +25,16 @@ npm run dev -- -p 43127
 
 Open [http://127.0.0.1:43127](http://127.0.0.1:43127).
 
+### Windows desktop shortcut
+
+After clone, create a Desktop `ChartDesk` shortcut once:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\create-desktop-shortcut.ps1
+```
+
+Double-click the shortcut (or run `scripts\start-chartdesk.bat`) to install deps if needed, start the server on port **43127**, and open the browser. Keep the console window open while using the app.
+
 ### Scripts
 
 | Command | Description |
