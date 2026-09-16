@@ -63,7 +63,7 @@ Optional: `OPENAI_API_KEY` or `LLM_API_KEY` for richer pattern/opinion extract; 
 
 Spec: [`chartdesk-docs/EASYCHART_PATTERN_OVERLAY.md`](./chartdesk-docs/EASYCHART_PATTERN_OVERLAY.md).
 
-Toolbar **EC** + **OB** / **FVG** / **Conf** + preset **단타** (15m · 60m structure) / **스윙** (4h · D). Separate overlay canvas (not user drawings). Tests: `npm run test:easychart`.
+Toolbar **EC** + **OB** / **FVG** / **Conf** / **TL** / **CH** / **Sweep** / **S/R** / **Fib** / **365** + preset **단타** (15m · 60m structure) / **스윙** (4h · D). Separate overlay canvas (not user drawings). Tests: `npm run test:easychart`.
 
 ## Data
 
