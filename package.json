@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test:easychart": "npx --yes tsx --test src/lib/easychart/__tests__/overlay-rules.test.ts"
+    "test:easychart": "npx --yes tsx --test src/lib/easychart/__tests__/overlay-rules.test.ts src/lib/easychart/__tests__/overlay-phase2.test.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",

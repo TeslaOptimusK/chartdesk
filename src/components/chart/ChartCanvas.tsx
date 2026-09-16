@@ -109,10 +109,8 @@ interface ChartCanvasProps {
   customIndicatorSource?: string | null;
   /** easychart pattern overlay zones (separate from drawings) */
   easyZones?: EasyZone[];
-  easyShowOb?: boolean;
-  easyShowFvg?: boolean;
-  easyShowConfluence?: boolean;
-  easyHalfTpLabel?: boolean;
+  easyToggles?: import("@/lib/easychart").EasyOverlayToggles;
+  easyOverlayOn?: boolean;
 }
 
 type AnySeries = ISeriesApi<SeriesType>;
@@ -161,10 +159,7 @@ export function ChartCanvas({
   indicatorOnIndicator = null,
   customIndicatorSource = null,
   easyZones = [],
-  easyShowOb = false,
-  easyShowFvg = false,
-  easyShowConfluence = false,
-  easyHalfTpLabel = false,
+  easyToggles,
 }: ChartCanvasProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -932,10 +927,21 @@ export function ChartCanvas({
       <PatternOverlay
         chartApi={chartApi}
         zones={easyZones}
-        showOb={easyShowOb}
-        showFvg={easyShowFvg}
-        showConfluence={easyShowConfluence}
-        halfTpLabel={easyHalfTpLabel}
+        toggles={
+          easyToggles ?? {
+            ob: false,
+            fvg: false,
+            confluence: false,
+            trend: false,
+            channel: false,
+            fakeout: false,
+            srFlip: false,
+            fib: false,
+            overlapOnly: false,
+            halfTpLabel: false,
+            sma365: false,
+          }
+        }
       />
       {showCountdown && countdownSec > 0 && (
         <div

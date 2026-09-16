@@ -89,7 +89,7 @@ const TZ_KEY = "chartdesk-timezone-v1";
 const PHASE2_KEY = "chartdesk-phase2-v1";
 const PHASE3_KEY = "chartdesk-phase3-v1";
 const PHASE4_KEY = "chartdesk-phase4-v1";
-const EASY_KEY = "chartdesk-easychart-overlay-v1";
+const EASY_KEY = "chartdesk-easychart-overlay-v2";
 
 interface EasyOverlayPrefs {
   enabled: boolean;

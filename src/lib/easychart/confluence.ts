@@ -1,12 +1,19 @@
 import type { Candle } from "@/lib/types";
+import { detectChannels } from "@/lib/easychart/channel";
+import { detectFakeoutTraps } from "@/lib/easychart/fakeout";
+import { detectFibStructures } from "@/lib/easychart/fib";
 import { detectFairValueGaps } from "@/lib/easychart/fvg";
 import { detectOrderBlocks } from "@/lib/easychart/order-block";
+import { detectSma365Regime } from "@/lib/easychart/regime";
+import { detectSrFlips } from "@/lib/easychart/sr-flip";
+import { detectTrendLines } from "@/lib/easychart/trend";
 import type {
   EasyDetectOptions,
+  EasyOverlayToggles,
   EasyZone,
 } from "@/lib/easychart/types";
+import { DEFAULT_EASY_TOGGLES } from "@/lib/easychart/types";
 
-/** Spec confluence table — Phase 1 subset. */
 export const CONFLUENCE_THRESHOLD = 2;
 
 export function zonesOverlap(
@@ -38,81 +45,169 @@ function priceOverlapFrac(a: EasyZone, b: EasyZone): number {
   return denom > 0 ? overlap / denom : 0;
 }
 
-/**
- * Score zones: OB +1, FVG +1, HTF∩LTF +2, sweep +2, untouched/old fade.
- * Below threshold → hide (or caller fades).
- */
+function baseScore(kind: EasyZone["kind"]): number {
+  switch (kind) {
+    case "ob":
+    case "fvg":
+    case "trend":
+    case "channel":
+    case "sr_flip":
+    case "fib":
+    case "fib_ext":
+    case "sma365":
+      return 1;
+    case "fakeout":
+    case "trap":
+    case "overlap":
+      return 2;
+    default:
+      return 0;
+  }
+}
+
 export function scoreAndFilterZones(
   ltfZones: EasyZone[],
   htfZones: EasyZone[],
   threshold = CONFLUENCE_THRESHOLD
 ): EasyZone[] {
   const scored = ltfZones.map((z) => {
-    let score = z.kind === "ob" || z.kind === "fvg" ? 1 : 0;
+    let score = baseScore(z.kind);
     let htfOverlap = false;
 
     for (const h of htfZones) {
-      if (h.bias !== z.bias) continue;
-      if (priceOverlapFrac(z, h) >= 0.25 || zonesOverlap(z, h)) {
+      if (h.bias !== "neutral" && z.bias !== "neutral" && h.bias !== z.bias)
+        continue;
+      if (priceOverlapFrac(z, h) >= 0.2 || zonesOverlap(z, h)) {
         score += 2;
         htfOverlap = true;
         break;
       }
     }
 
-    // Same-TF OB+FVG overlap
     for (const o of ltfZones) {
       if (o.id === z.id) continue;
       if (o.kind === z.kind) continue;
-      if (o.bias !== z.bias) continue;
-      if (zonesOverlap(z, o)) {
-        score += 1;
+      if (
+        o.bias !== "neutral" &&
+        z.bias !== "neutral" &&
+        o.bias !== z.bias
+      )
+        continue;
+      if (zonesOverlap(z, o, 0.08)) {
+        if (
+          (z.kind === "ob" || z.kind === "fvg") &&
+          (o.kind === "ob" || o.kind === "fvg")
+        ) {
+          score += 1;
+        } else if (z.kind === "fib" || o.kind === "sr_flip") {
+          score += 2;
+        } else {
+          score += 1;
+        }
         break;
       }
     }
 
+    if (z.kind === "fakeout" || z.kind === "trap") score += 0; // already 2
     if (z.meta?.sweep) score += 2;
-    if (!z.touched) score -= 1;
+    if (!z.touched && (z.kind === "ob" || z.kind === "fvg")) score -= 1;
     if (z.invalidated) score -= 2;
 
     return { ...z, score: Math.max(0, score), htfOverlap };
   });
 
   return scored
-    .filter((z) => !z.invalidated && z.score >= threshold)
+    .filter((z) => {
+      if (z.invalidated) return false;
+      // Always keep structural lines / regime / markers with score>=1
+      if (
+        z.kind === "trend" ||
+        z.kind === "channel" ||
+        z.kind === "sr_flip" ||
+        z.kind === "sma365" ||
+        z.kind === "fib" ||
+        z.kind === "fib_ext" ||
+        z.kind === "fakeout" ||
+        z.kind === "trap" ||
+        z.kind === "overlap"
+      ) {
+        return z.score >= 1;
+      }
+      return z.score >= threshold;
+    })
     .sort((a, b) => b.score - a.score);
 }
 
 export function detectEasyOverlayZones(
   ltfCandles: Candle[],
   htfCandles: Candle[] | null,
-  opts: EasyDetectOptions = {}
+  opts: EasyDetectOptions = {},
+  toggles: EasyOverlayToggles = DEFAULT_EASY_TOGGLES
 ): EasyZone[] {
   const threshold = opts.confluenceThreshold ?? CONFLUENCE_THRESHOLD;
-  const ltfOb = detectOrderBlocks(ltfCandles, opts);
-  const ltfFvg = detectFairValueGaps(ltfCandles, opts);
-  const ltf = [...ltfOb, ...ltfFvg];
+  const ltf: EasyZone[] = [];
 
-  const htf = htfCandles?.length
-    ? [
-        ...detectOrderBlocks(htfCandles, {
-          ...opts,
-          maxAgeBars: (opts.maxAgeBars ?? 80) / 2,
-        }),
-        ...detectFairValueGaps(htfCandles, {
-          ...opts,
-          maxAgeBars: (opts.maxAgeBars ?? 60) / 2,
-        }),
-      ]
-    : [];
+  if (toggles.ob) ltf.push(...detectOrderBlocks(ltfCandles, opts));
+  if (toggles.fvg) ltf.push(...detectFairValueGaps(ltfCandles, opts));
+  if (toggles.trend ?? opts.enableTrend)
+    ltf.push(...detectTrendLines(ltfCandles, opts));
+  if (toggles.channel ?? opts.enableChannel)
+    ltf.push(...detectChannels(ltfCandles, opts));
+  if (toggles.fakeout ?? opts.enableFakeout)
+    ltf.push(...detectFakeoutTraps(ltfCandles, opts));
+  if (toggles.srFlip ?? opts.enableSrFlip)
+    ltf.push(...detectSrFlips(ltfCandles, opts));
 
-  return scoreAndFilterZones(ltf, htf, threshold);
+  const srPrices = ltf
+    .filter((z) => z.kind === "sr_flip")
+    .map((z) => z.priceTop);
+
+  if (toggles.fib ?? opts.enableFib)
+    ltf.push(...detectFibStructures(ltfCandles, srPrices, opts));
+  if (toggles.sma365 ?? opts.enableSma365)
+    ltf.push(...detectSma365Regime(ltfCandles, opts));
+
+  const htf =
+    htfCandles?.length
+      ? [
+          ...(toggles.ob
+            ? detectOrderBlocks(htfCandles, {
+                ...opts,
+                maxAgeBars: (opts.maxAgeBars ?? 80) / 2,
+              })
+            : []),
+          ...(toggles.fvg
+            ? detectFairValueGaps(htfCandles, {
+                ...opts,
+                maxAgeBars: (opts.maxAgeBars ?? 60) / 2,
+              })
+            : []),
+          ...(toggles.srFlip ? detectSrFlips(htfCandles, opts) : []),
+        ]
+      : [];
+
+  let scored = scoreAndFilterZones(ltf, htf, threshold);
+  if (toggles.overlapOnly) {
+    scored = scored.filter(
+      (z) =>
+        z.htfOverlap ||
+        z.kind === "overlap" ||
+        z.score >= 3 ||
+        z.kind === "sma365"
+    );
+  }
+  return scored;
 }
 
-/** Raw zones without confluence filter (for tests / debug). */
 export function detectRawZones(candles: Candle[], opts?: EasyDetectOptions) {
   return {
     orderBlocks: detectOrderBlocks(candles, opts),
     fvgs: detectFairValueGaps(candles, opts),
+    trends: detectTrendLines(candles, opts),
+    channels: detectChannels(candles, opts),
+    fakeouts: detectFakeoutTraps(candles, opts),
+    srFlips: detectSrFlips(candles, opts),
+    fibs: detectFibStructures(candles, [], opts),
+    sma365: detectSma365Regime(candles, opts),
   };
 }

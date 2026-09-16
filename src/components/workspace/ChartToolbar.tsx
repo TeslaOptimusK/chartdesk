@@ -1038,6 +1038,12 @@ export function ChartToolbar({ onOpenIngest }: { onOpenIngest: () => void }) {
             ["ob", "OB"],
             ["fvg", "FVG"],
             ["confluence", "Conf"],
+            ["trend", "TL"],
+            ["channel", "CH"],
+            ["fakeout", "Sweep"],
+            ["srFlip", "S/R"],
+            ["fib", "Fib"],
+            ["sma365", "365"],
           ] as const
         ).map(([key, label]) => (
           <label
@@ -1088,17 +1094,12 @@ export function ChartToolbar({ onOpenIngest }: { onOpenIngest: () => void }) {
           </PopoverTrigger>
           <PopoverContent className="w-44 border-[var(--workspace-border)] bg-[var(--workspace-elevated)] p-2">
             <div className="mb-1 text-[10px] font-semibold text-[var(--workspace-muted)]">
-              Phase 2 스텁
+              추가
             </div>
             {(
               [
-                ["trend", "추세선"],
-                ["channel", "채널"],
-                ["fakeout", "Fake/Trap"],
-                ["srFlip", "S/R Flip"],
-                ["fib", "피보"],
                 ["overlapOnly", "Overlap only"],
-                ["halfTpLabel", "½TP 라벨"],
+                ["halfTpLabel", "½TP 반익반본"],
               ] as const
             ).map(([key, label]) => (
               <label

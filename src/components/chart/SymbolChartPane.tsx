@@ -258,8 +258,6 @@ export function SymbolChartPane({
 
   const easyZones: EasyZone[] = useMemo(() => {
     if (!easyOverlayEnabled || !interactive) return [];
-    if (!easyOverlayToggles.ob && !easyOverlayToggles.fvg) return [];
-    // HTF structure from same series (resample) so confluence shares price space
     const ltfSec = timeframeSeconds(
       (customIntervalMinutes ? "5" : timeframe) as Timeframe
     );
@@ -268,17 +266,12 @@ export function SymbolChartPane({
       htfSec > ltfSec
         ? resampleCandles(processedCandles, htfSec)
         : processedCandles;
-    const raw = detectEasyOverlayZones(
+    return detectEasyOverlayZones(
       processedCandles,
       structureCandles.length >= 10 ? structureCandles : null,
-      { confluenceThreshold: easyOverlayToggles.confluence ? 2 : 1 }
+      { confluenceThreshold: easyOverlayToggles.confluence ? 2 : 1 },
+      easyOverlayToggles
     );
-    return raw.filter((z) => {
-      if (z.kind === "ob" && !easyOverlayToggles.ob) return false;
-      if (z.kind === "fvg" && !easyOverlayToggles.fvg) return false;
-      if (easyOverlayToggles.overlapOnly && !z.htfOverlap) return false;
-      return true;
-    });
   }, [
     easyOverlayEnabled,
     interactive,
@@ -407,10 +400,22 @@ export function SymbolChartPane({
         indicatorOnIndicator={indicatorOnIndicator}
         customIndicatorSource={customIndicatorSource}
         easyZones={easyZones}
-        easyShowOb={easyOverlayEnabled && easyOverlayToggles.ob}
-        easyShowFvg={easyOverlayEnabled && easyOverlayToggles.fvg}
-        easyShowConfluence={easyOverlayEnabled && easyOverlayToggles.confluence}
-        easyHalfTpLabel={easyOverlayEnabled && easyOverlayToggles.halfTpLabel}
+        easyToggles={
+          easyOverlayEnabled
+            ? easyOverlayToggles
+            : {
+                ...easyOverlayToggles,
+                ob: false,
+                fvg: false,
+                trend: false,
+                channel: false,
+                fakeout: false,
+                srFlip: false,
+                fib: false,
+                sma365: false,
+              }
+        }
+        easyOverlayOn={easyOverlayEnabled}
       />
     </div>
   );
