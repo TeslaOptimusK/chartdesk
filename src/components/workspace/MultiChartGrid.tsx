@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Children,
   useCallback,
   useRef,
   useState,
@@ -12,7 +13,7 @@ import { cn } from "@/lib/utils";
 
 interface MultiChartGridProps {
   mode: LayoutMode;
-  children: ReactNode[];
+  children: ReactNode;
   className?: string;
 }
 
@@ -29,6 +30,7 @@ export function MultiChartGrid({
   const [rowPct, setRowPct] = useState(50);
   const wrapRef = useRef<HTMLDivElement>(null);
   const dragKind = useRef<"col" | "row" | null>(null);
+  const panes = Children.toArray(children);
 
   const onPointerMove = useCallback((e: PointerEvent) => {
     const el = wrapRef.current;
@@ -56,21 +58,23 @@ export function MultiChartGrid({
     window.addEventListener("pointerup", endDrag);
   };
 
-  const VSep = (
+  const vSep = (key: string) => (
     <div
+      key={key}
       role="separator"
       aria-orientation="vertical"
       onPointerDown={startDrag("col")}
-      className="w-1 shrink-0 cursor-col-resize bg-[var(--workspace-border)] hover:bg-[var(--brand-accent)]/70"
+      className="w-1.5 shrink-0 cursor-col-resize bg-[var(--workspace-border)] hover:bg-[var(--brand-accent)]/70"
     />
   );
 
-  const HSep = (
+  const hSep = (key: string) => (
     <div
+      key={key}
       role="separator"
       aria-orientation="horizontal"
       onPointerDown={startDrag("row")}
-      className="h-1 shrink-0 cursor-row-resize bg-[var(--workspace-border)] hover:bg-[var(--brand-accent)]/70"
+      className="h-1.5 shrink-0 cursor-row-resize bg-[var(--workspace-border)] hover:bg-[var(--brand-accent)]/70"
     />
   );
 
@@ -82,7 +86,7 @@ export function MultiChartGrid({
         data-feature="layout.grid"
         data-layout-mode="single"
       >
-        <div className="min-h-0 flex-1 overflow-hidden">{children[0]}</div>
+        <div className="min-h-0 flex-1 overflow-hidden">{panes[0]}</div>
       </div>
     );
   }
@@ -99,12 +103,10 @@ export function MultiChartGrid({
           className="min-h-0 min-w-0 overflow-hidden"
           style={{ width: `${colPct}%` }}
         >
-          {children[0]}
+          {panes[0]}
         </div>
-        {VSep}
-        <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
-          {children[1]}
-        </div>
+        {vSep("v-split2")}
+        <div className="min-h-0 min-w-0 flex-1 overflow-hidden">{panes[1]}</div>
       </div>
     );
   }
@@ -124,25 +126,21 @@ export function MultiChartGrid({
           className="min-h-0 min-w-0 overflow-hidden"
           style={{ width: `${colPct}%` }}
         >
-          {children[0]}
+          {panes[0]}
         </div>
-        {VSep}
-        <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
-          {children[1]}
-        </div>
+        {vSep("v-top")}
+        <div className="min-h-0 min-w-0 flex-1 overflow-hidden">{panes[1]}</div>
       </div>
-      {HSep}
+      {hSep("h-mid")}
       <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
         <div
           className="min-h-0 min-w-0 overflow-hidden"
           style={{ width: `${colPct}%` }}
         >
-          {children[2]}
+          {panes[2]}
         </div>
-        {VSep}
-        <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
-          {children[3]}
-        </div>
+        {vSep("v-bot")}
+        <div className="min-h-0 min-w-0 flex-1 overflow-hidden">{panes[3]}</div>
       </div>
     </div>
   );

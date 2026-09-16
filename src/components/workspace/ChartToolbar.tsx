@@ -38,7 +38,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { useWorkspace, type IndicatorId, type LayoutMode } from "@/lib/store";
+import { useWorkspace, type IndicatorId } from "@/lib/store";
 import { DRAWING_TOOL_META } from "@/lib/drawings";
 import {
   SYMBOL_CHIP_IDS,
@@ -616,19 +616,23 @@ export function ChartToolbar({ onOpenIngest }: { onOpenIngest: () => void }) {
         </ToolBtn>
       </div>
 
-      <div className="flex items-center gap-1 border-l border-[var(--workspace-border)] pl-2">
+      <div
+        className="flex items-center gap-1 border-l border-[var(--workspace-border)] pl-2"
+        data-feature="layout.mode"
+      >
         {(
           [
-            ["single", Square],
-            ["split2", Columns2],
-            ["split4", LayoutGrid],
+            ["single", Square, "1차트", "layout.mode.single"],
+            ["split2", Columns2, "2분할", "layout.mode.split2"],
+            ["split4", LayoutGrid, "4분할", "layout.mode.split4"],
           ] as const
-        ).map(([mode, Icon]) => (
+        ).map(([mode, Icon, label, feature]) => (
           <ToolBtn
             key={mode}
             active={layoutMode === mode}
-            onClick={() => setLayoutMode(mode as LayoutMode)}
-            title={mode}
+            onClick={() => setLayoutMode(mode)}
+            title={`${label} (${mode})`}
+            dataFeature={feature}
           >
             <Icon className="h-3.5 w-3.5" />
           </ToolBtn>
