@@ -23,9 +23,10 @@ $shortcut = $shell.CreateShortcut($lnkPath)
 $shortcut.TargetPath = $batPath
 $shortcut.WorkingDirectory = $repoRoot
 $shortcut.WindowStyle = 1
-$shortcut.Description = "Start ChartDesk (http://127.0.0.1:43127)"
+$shortcut.Description = "Start ChartDesk app window (http://127.0.0.1:43127)"
 $shortcut.Save()
 
 Write-Host "Created: $lnkPath"
 Write-Host "Target:  $batPath"
 Write-Host "WorkDir: $repoRoot"
+Write-Host "Launcher opens Chrome/Edge --app mode when available."

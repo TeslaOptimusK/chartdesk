@@ -319,7 +319,7 @@ export function SymbolChartPane({
   return (
     <div
       className={cn(
-        "relative flex min-h-0 flex-col bg-[var(--chart-bg)]",
+        "relative flex min-h-0 flex-1 flex-col bg-[var(--chart-bg)]",
         className
       )}
       data-pane-index={paneIndex}
@@ -376,7 +376,7 @@ export function SymbolChartPane({
         magnet={magnet}
         goToDate={interactive ? goToDate : null}
         height={height}
-        className="w-full"
+        className="min-h-0 w-full flex-1"
         chartSettings={chartSettings}
         locked={drawingsLocked}
         priceScaleMode={priceScaleMode}

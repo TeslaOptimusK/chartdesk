@@ -1,5 +1,5 @@
 import type { Candle } from "@/lib/types";
-import { ema, sma, atr } from "@/lib/indicators";
+import { ema, sma, atr, rsi } from "@/lib/indicators";
 
 /** Feature ID: indicator favorites — WMA */
 export function wma(values: number[], period: number): (number | null)[] {
@@ -40,6 +40,51 @@ export function stochastic(
   const dRaw = sma(kVals, dPeriod);
   const d: (number | null)[] = k.map((v, i) =>
     v == null || i < kPeriod + dPeriod - 2 ? null : dRaw[i]
+  );
+  return { k, d };
+}
+
+/** Stochastic RSI — Stochastic applied to RSI (TradingView-style subplot). */
+export function stochasticRsi(
+  candles: Candle[],
+  rsiPeriod = 14,
+  stochPeriod = 14,
+  kSmooth = 3,
+  dSmooth = 3
+): { k: (number | null)[]; d: (number | null)[] } {
+  const rsiVals = rsi(candles, rsiPeriod);
+  const stochRaw: (number | null)[] = Array(candles.length).fill(null);
+  const readyAt = rsiPeriod + stochPeriod - 2;
+  for (let i = 0; i < candles.length; i++) {
+    if (i < readyAt || rsiVals[i] == null) continue;
+    let hi = -Infinity;
+    let lo = Infinity;
+    let ok = true;
+    for (let j = i - stochPeriod + 1; j <= i; j++) {
+      const v = rsiVals[j];
+      if (v == null) {
+        ok = false;
+        break;
+      }
+      hi = Math.max(hi, v);
+      lo = Math.min(lo, v);
+    }
+    if (!ok) continue;
+    stochRaw[i] = hi === lo ? 50 : ((rsiVals[i]! - lo) / (hi - lo)) * 100;
+  }
+  const kSmoothArr = sma(
+    stochRaw.map((v) => v ?? 0),
+    kSmooth
+  );
+  const k: (number | null)[] = stochRaw.map((v, i) =>
+    v == null || i < readyAt + kSmooth - 1 ? null : kSmoothArr[i]
+  );
+  const dSmoothArr = sma(
+    k.map((v) => v ?? 0),
+    dSmooth
+  );
+  const d: (number | null)[] = k.map((v, i) =>
+    v == null || i < readyAt + kSmooth + dSmooth - 2 ? null : dSmoothArr[i]
   );
   return { k, d };
 }

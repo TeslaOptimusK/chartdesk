@@ -61,6 +61,7 @@ const INDICATORS: { id: IndicatorId; label: string }[] = [
   { id: "bb", label: "BB" },
   { id: "rsi", label: "RSI" },
   { id: "macd", label: "MACD" },
+  { id: "stoch", label: "Stoch RSI" },
   { id: "atr", label: "ATR" },
   { id: "vwap", label: "VWAP" },
   { id: "volMa", label: "VolMA" },

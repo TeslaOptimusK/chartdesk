@@ -55,7 +55,7 @@ import {
 import {
   anchoredVwap as anchoredVwapSeries,
   ichimoku,
-  stochastic,
+  stochasticRsi,
   supertrend,
   wma,
 } from "@/lib/indicators-extra";
@@ -167,6 +167,8 @@ export function ChartCanvas({
   const mainSeriesRef = useRef<AnySeries | null>(null);
   const volumeRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const overlayRefs = useRef<AnySeries[]>([]);
+  /** Only re-apply visible range when symbol/range/tf changes — not on every SSE tick. */
+  const viewKeyRef = useRef<string>("");
   const [chartApi, setChartApi] = useState<ChartApiBundle | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [legend, setLegend] = useState<LegendState | null>(null);
@@ -229,11 +231,13 @@ export function ChartCanvas({
     return () => window.clearInterval(id);
   }, [displayCandles, showCountdown, timeframe]);
 
-  // Create chart once
+  // Create chart once (fill parent; free pan/zoom; no TV attribution logo)
   useEffect(() => {
     if (!containerRef.current) return;
-    const chart = createChart(containerRef.current, {
-      height,
+    const el = containerRef.current;
+    const chart = createChart(el, {
+      width: el.clientWidth || undefined,
+      height: el.clientHeight || height,
       layout: {
         background: {
           type: ColorType.Solid,
@@ -241,6 +245,12 @@ export function ChartCanvas({
         },
         textColor: "#9aa7b5",
         fontFamily: "var(--font-chart-mono), ui-monospace, monospace",
+        attributionLogo: false,
+        panes: {
+          enableResize: true,
+          separatorColor: "#1e2a38",
+          separatorHoverColor: "rgba(61, 79, 99, 0.55)",
+        },
       },
       grid: {
         vertLines: {
@@ -255,7 +265,28 @@ export function ChartCanvas({
         horzLine: { color: "#3d4f63", labelBackgroundColor: "#1c2836" },
       },
       rightPriceScale: { borderColor: "#1e2a38" },
-      timeScale: { borderColor: "#1e2a38", timeVisible: true },
+      timeScale: {
+        borderColor: "#1e2a38",
+        timeVisible: true,
+        rightOffset: 12,
+        fixRightEdge: false,
+        fixLeftEdge: false,
+        lockVisibleTimeRangeOnResize: true,
+        shiftVisibleRangeOnNewBar: false,
+        rightBarStaysOnScroll: false,
+      },
+      handleScroll: {
+        mouseWheel: true,
+        pressedMouseMove: true,
+        horzTouchDrag: true,
+        vertTouchDrag: true,
+      },
+      handleScale: {
+        axisPressedMouseMove: true,
+        axisDoubleClickReset: true,
+        mouseWheel: true,
+        pinch: true,
+      },
     });
 
     const volumeSeries = chart.addSeries(HistogramSeries, {
@@ -268,10 +299,15 @@ export function ChartCanvas({
 
     chartRef.current = chart;
     volumeRef.current = volumeSeries;
+    viewKeyRef.current = "";
 
     const ro = new ResizeObserver(() => {
       if (!containerRef.current) return;
-      chart.applyOptions({ width: containerRef.current.clientWidth });
+      const w = containerRef.current.clientWidth;
+      const h = containerRef.current.clientHeight;
+      if (w > 0 && h > 0) {
+        chart.applyOptions({ width: w, height: h });
+      }
     });
     ro.observe(containerRef.current);
 
@@ -489,17 +525,22 @@ export function ChartCanvas({
     const addLine = (
       values: (number | null)[],
       color: string,
-      scaleId?: string
+      opts?: { scaleId?: string; paneIndex?: number; title?: string }
     ) => {
-      const series = chart.addSeries(LineSeries, {
-        color,
-        lineWidth: 2,
-        priceLineVisible: false,
-        lastValueVisible: false,
-        priceScaleId: scaleId,
-      });
-      if (scaleId) {
-        chart.priceScale(scaleId).applyOptions({
+      const series = chart.addSeries(
+        LineSeries,
+        {
+          color,
+          lineWidth: 2,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          priceScaleId: opts?.scaleId,
+          title: opts?.title,
+        },
+        opts?.paneIndex ?? 0
+      );
+      if (opts?.scaleId && (opts.paneIndex ?? 0) === 0) {
+        chart.priceScale(opts.scaleId).applyOptions({
           scaleMargins: { top: 0.72, bottom: 0.02 },
         });
       }
@@ -513,6 +554,17 @@ export function ChartCanvas({
           .filter((x): x is { time: Time; value: number } => x != null)
       );
       overlayRefs.current.push(series);
+      return series;
+    };
+
+    // Oscillator panes (TradingView-style): price stays pane 0; each osc gets its own pane.
+    let nextPane = 1;
+    const ensurePane = () => {
+      const idx = nextPane++;
+      while (chart.panes().length <= idx) {
+        chart.addPane(true);
+      }
+      return idx;
     };
 
     if (indicators.includes("sma20")) addLine(sma(closes, 20), "#fbbf24");
@@ -539,26 +591,48 @@ export function ChartCanvas({
     }
     if (indicators.includes("vwap")) addLine(vwap(displayCandles), "#e8b86d");
     if (indicators.includes("rsi")) {
+      const pane = ensurePane();
       const rsiVals = rsi(displayCandles, 14);
-      addLine(rsiVals, "#c084fc", "rsi");
+      addLine(rsiVals, "#c084fc", {
+        scaleId: "rsi",
+        paneIndex: pane,
+        title: "RSI",
+      });
       if (
         indicatorOnIndicator?.parent === "rsi" &&
         indicatorOnIndicator.child === "sma20"
       ) {
-        addLine(sma(rsiVals.map((v) => v ?? 0), 14), "#fbbf24", "rsi");
+        addLine(
+          sma(
+            rsiVals.map((v) => v ?? 0),
+            14
+          ),
+          "#fbbf24",
+          { scaleId: "rsi", paneIndex: pane }
+        );
       }
     }
-    if (indicators.includes("atr")) addLine(atr(displayCandles, 14), "#fb7185", "atr");
+    if (indicators.includes("atr")) {
+      const pane = ensurePane();
+      addLine(atr(displayCandles, 14), "#fb7185", {
+        scaleId: "atr",
+        paneIndex: pane,
+        title: "ATR",
+      });
+    }
     if (indicators.includes("macd")) {
+      const pane = ensurePane();
       const m = macd(displayCandles);
-      const hist = chart.addSeries(HistogramSeries, {
-        priceScaleId: "macd",
-        priceLineVisible: false,
-        lastValueVisible: false,
-      });
-      chart.priceScale("macd").applyOptions({
-        scaleMargins: { top: 0.78, bottom: 0.02 },
-      });
+      const hist = chart.addSeries(
+        HistogramSeries,
+        {
+          priceScaleId: "macd",
+          priceLineVisible: false,
+          lastValueVisible: false,
+          title: "MACD",
+        },
+        pane
+      );
       hist.setData(
         displayCandles
           .map((c, i) =>
@@ -578,13 +652,18 @@ export function ChartCanvas({
           )
       );
       overlayRefs.current.push(hist);
-      addLine(m.macd, "#38bdf8", "macd");
-      addLine(m.signal, "#fbbf24", "macd");
+      addLine(m.macd, "#38bdf8", { scaleId: "macd", paneIndex: pane });
+      addLine(m.signal, "#fbbf24", { scaleId: "macd", paneIndex: pane });
     }
     if (indicators.includes("stoch")) {
-      const st = stochastic(displayCandles);
-      addLine(st.k, "#f97316", "stoch");
-      addLine(st.d, "#6366f1", "stoch");
+      const pane = ensurePane();
+      const st = stochasticRsi(displayCandles);
+      addLine(st.k, "#f97316", {
+        scaleId: "stoch",
+        paneIndex: pane,
+        title: "Stoch RSI",
+      });
+      addLine(st.d, "#6366f1", { scaleId: "stoch", paneIndex: pane });
     }
     if (customIndicatorSource?.trim()) {
       const vals = runCustomIndicator(customIndicatorSource, displayCandles);
@@ -609,6 +688,11 @@ export function ChartCanvas({
           .filter((x): x is { time: Time; value: number } => x != null)
       );
       overlayRefs.current.push(series);
+    }
+
+    // Drop trailing empty oscillator panes left from a previous indicator set
+    while (chart.panes().length > nextPane) {
+      chart.removePane(chart.panes().length - 1);
     }
 
     // Compare overlay (normalized to primary first close)
@@ -693,21 +777,34 @@ export function ChartCanvas({
       createSeriesMarkers(main as ISeriesApi<"Candlestick">, markers);
     }
 
-    const barCount = barsForRangePreset(rangePreset, timeframe);
-    if (barCount == null) {
-      chart.timeScale().fitContent();
-    } else {
-      const fromIdx = Math.max(0, displayCandles.length - barCount);
-      const from = displayCandles[fromIdx]?.time;
-      const to = displayCandles[displayCandles.length - 1]?.time;
-      if (from != null && to != null) {
-        chart.timeScale().setVisibleRange({
-          from: from as Time,
-          to: to as Time,
-        });
-      } else {
+    // Apply visible range only when symbol / range preset / timeframe changes —
+    // never on live candle ticks (that glued the chart to the right edge).
+    const viewKey = `${symbolId}|${rangePreset}|${timeframe}|${chartStyle}`;
+    if (viewKeyRef.current !== viewKey) {
+      viewKeyRef.current = viewKey;
+      const barCount = barsForRangePreset(rangePreset, timeframe);
+      const rightPad = 14;
+      if (barCount == null) {
         chart.timeScale().fitContent();
+        const logical = chart.timeScale().getVisibleLogicalRange();
+        if (logical) {
+          chart.timeScale().setVisibleLogicalRange({
+            from: logical.from,
+            to: logical.to + rightPad,
+          });
+        }
+      } else {
+        const fromIdx = Math.max(0, displayCandles.length - barCount);
+        chart.timeScale().setVisibleLogicalRange({
+          from: fromIdx,
+          to: displayCandles.length - 1 + rightPad,
+        });
       }
+      chart.timeScale().applyOptions({
+        rightOffset: rightPad,
+        fixRightEdge: false,
+        shiftVisibleRangeOnNewBar: false,
+      });
     }
     const last = displayCandles[displayCandles.length - 1];
     if (last) {
@@ -734,6 +831,7 @@ export function ChartCanvas({
     volumeWeights,
     indicatorOnIndicator,
     customIndicatorSource,
+    symbolId,
   ]);
 
   // Crosshair legend + layout.sync.crosshair
@@ -807,8 +905,8 @@ export function ChartCanvas({
   return (
     <div
       ref={wrapRef}
-      className={cn("relative w-full", className)}
-      style={{ height }}
+      className={cn("relative w-full min-h-0", className)}
+      style={{ height: height > 0 ? height : "100%" }}
       data-testid="chart-canvas"
       data-drawing-tool={drawingTool}
       data-chart-style={chartStyle}

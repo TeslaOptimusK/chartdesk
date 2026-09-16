@@ -316,28 +316,24 @@ export function WorkspaceShell() {
       <div className="flex min-h-0 flex-1">
         <main
           className={cn(
-            "grid min-w-0 flex-1 gap-px bg-[var(--workspace-border)]",
-            layoutMode === "single" && "grid-cols-1",
-            layoutMode === "split2" && "grid-cols-1 md:grid-cols-2",
-            layoutMode === "split4" && "grid-cols-1 md:grid-cols-2"
+            "grid min-h-0 min-w-0 flex-1 gap-px bg-[var(--workspace-border)]",
+            layoutMode === "single" && "grid-cols-1 grid-rows-1",
+            layoutMode === "split2" &&
+              "grid-cols-1 grid-rows-2 md:grid-cols-2 md:grid-rows-1",
+            layoutMode === "split4" &&
+              "grid-cols-1 grid-rows-4 md:grid-cols-2 md:grid-rows-2"
           )}
+          data-feature="layout.grid"
+          data-layout-mode={layoutMode}
         >
           {paneSymbols.map((id, idx) => (
             <SymbolChartPane
               key={`${layoutMode}-${id}-${idx}`}
               symbolId={id}
-              height={
-                fullscreen
-                  ? 720
-                  : layoutMode === "single"
-                    ? 560
-                    : layoutMode === "split2"
-                      ? 520
-                      : 280
-              }
-              interactive={idx === 0}
+              height={0}
+              interactive
               paneIndex={idx}
-              className="min-h-0"
+              className="min-h-0 h-full"
             />
           ))}
         </main>
@@ -383,8 +379,19 @@ export function WorkspaceShell() {
           {magnet ? " · 자석 ON" : " · 자석 OFF"}
           {drawingsLocked ? " · 잠금" : ""}
         </span>
-        <span>
-          Ctrl+Z 실행취소 · Y 수평레이 · L 잠금 · A 알림 · O 오브젝트
+        <span className="flex items-center gap-2">
+          <span>
+            Ctrl+Z 실행취소 · Y 수평레이 · L 잠금 · A 알림 · O 오브젝트
+          </span>
+          <a
+            href="https://www.tradingview.com/"
+            target="_blank"
+            rel="noreferrer"
+            className="text-[var(--workspace-faint)] underline-offset-2 hover:underline"
+            title="Charting library by TradingView"
+          >
+            Charts by TradingView
+          </a>
         </span>
       </footer>
 

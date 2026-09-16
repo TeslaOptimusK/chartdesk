@@ -26,7 +26,7 @@ const INDICATOR_CATALOG: { id: IndicatorId; label: string; feature?: string }[] 
     { id: "vwap", label: "VWAP" },
     { id: "rsi", label: "RSI" },
     { id: "macd", label: "MACD" },
-    { id: "stoch", label: "Stochastic" },
+    { id: "stoch", label: "Stoch RSI" },
     { id: "atr", label: "ATR" },
     { id: "volMa", label: "Volume MA" },
     { id: "volume", label: "Volume" },
