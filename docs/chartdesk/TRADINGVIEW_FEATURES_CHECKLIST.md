@@ -173,6 +173,22 @@ Phase 1 완료 = 첨부 ChartDesk 스크린샷과 같은 셸.
 
 ---  
 
+## Hardening notes (post Phase 4)
+
+| Area | Status |  
+|------|--------|  
+| Alerts auto-fire on bar/mock ticks + webhook retries | done |  
+| `POST /api/alerts/evaluate` `scope:"pending"` (watchlist multi-symbol) | done |  
+| Realtime SSE / WS stub / poll + mock fallback | done |  
+| Fanding file-drop + ingest webhook (no scrape) | done |  
+| Extended hours bars + Pre/Post markers | done |  
+| Bar replay play/scrub | done |  
+| DOM imbalance · FP delta/POC · TPO POC/VA | done |  
+| Snapshot composites drawings | done |  
+| Pine / `screener.pine` | wont |  
+
+---  
+
 ## 라벨 스모크 (한국어)  
 
 - [x] 워치리스트 뉴스 최근 패턴 포스트 알림 코멘터리  

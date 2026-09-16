@@ -8,6 +8,7 @@ import {
   type FootprintBar,
 } from "@/lib/chart-transforms";
 import type { Candle } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 interface Phase4ChartOverlayProps {
   chartStyle: ChartStyle;
@@ -95,7 +96,12 @@ function FootprintPane({
     });
 
     ctx.fillStyle = "rgba(154,167,181,0.9)";
-    ctx.fillText("mock FP · bid/ask vol", pad, h - 4);
+    const last = bars[bars.length - 1];
+    ctx.fillText(
+      `mock FP · Δ${last.delta >= 0 ? "+" : ""}${last.delta} · POC ${last.poc.toFixed(2)}`,
+      pad,
+      h - 4
+    );
   }, [bars]);
 
   return (
@@ -112,21 +118,45 @@ function TpoPane({
   profile,
   feature,
 }: {
-  profile: { price: number; letters: string }[];
+  profile: { price: number; letters: string; role?: string }[];
   feature: string;
 }) {
+  const poc = profile.find((r) => r.role === "poc");
+  const vah = profile.find((r) => r.role === "vah");
+  const val = profile.find((r) => r.role === "val");
+
   return (
     <div
       className="pointer-events-none absolute inset-y-8 right-12 z-[12] flex w-[22%] min-w-[72px] flex-col overflow-hidden rounded border border-[var(--workspace-border)]/60 bg-black/50 font-mono text-[9px] leading-tight text-[var(--workspace-muted)]"
       data-feature={feature}
     >
       <div className="border-b border-[var(--workspace-border)]/50 px-1 py-0.5 text-[8px] text-amber-200/80">
-        mock TPO · letters
+        mock TPO · POC/VA
+        {poc ? ` · ${poc.price.toFixed(2)}` : ""}
       </div>
+      {(vah || val) && (
+        <div className="flex justify-between border-b border-[var(--workspace-border)]/40 px-1 py-0.5 text-[8px]">
+          <span className="text-emerald-300/80">
+            VAH {vah?.price.toFixed(2) ?? "—"}
+          </span>
+          <span className="text-rose-300/80">
+            VAL {val?.price.toFixed(2) ?? "—"}
+          </span>
+        </div>
+      )}
       <div className="flex-1 overflow-hidden px-1 py-0.5">
         {profile.slice(0, 28).map((row) => (
-          <div key={row.price} className="flex justify-between gap-1">
+          <div
+            key={row.price}
+            className={cn(
+              "flex justify-between gap-1",
+              row.role === "poc" && "bg-amber-500/20 text-amber-100",
+              row.role === "vah" && "text-emerald-200",
+              row.role === "val" && "text-rose-200"
+            )}
+          >
             <span className="text-[var(--workspace-fg)]">
+              {row.role === "poc" ? "★ " : ""}
               {row.price.toFixed(2)}
             </span>
             <span className="truncate text-sky-300/90">{row.letters}</span>

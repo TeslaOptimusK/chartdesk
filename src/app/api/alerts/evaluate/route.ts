@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
-import { evaluateSymbolAlerts } from "@/lib/alert-engine";
+import {
+  evaluatePendingWatchlistAlerts,
+  evaluateSymbolAlerts,
+} from "@/lib/alert-engine";
 import { createMarketDataAdapter } from "@/lib/market-data";
 import { readStore } from "@/lib/storage";
 import type { Candle, Timeframe } from "@/lib/types";
@@ -11,7 +14,25 @@ export async function POST(req: Request) {
     lastClose?: number;
     tf?: Timeframe;
     limit?: number;
+    /** Evaluate all symbols with pending watches (watchlist / multi / technical). */
+    scope?: "symbol" | "pending";
   };
+
+  if (body.scope === "pending") {
+    const result = await evaluatePendingWatchlistAlerts({
+      tf: body.tf ?? "D",
+      limit: body.limit ?? 120,
+    });
+    const alertsStore = await readStore();
+    return NextResponse.json({
+      fired: result.fired,
+      priceWatches: result.priceWatches,
+      technicalAlerts: result.technicalAlerts,
+      multiConditionAlerts: result.multiConditionAlerts,
+      alerts: alertsStore.alerts,
+      scope: "pending",
+    });
+  }
 
   if (!body.symbolId) {
     return NextResponse.json({ error: "symbolId required" }, { status: 400 });

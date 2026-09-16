@@ -46,7 +46,7 @@ Optional: `MARKET_DATA_MODE=delayed` + vendor URL/key for free delayed quotes; `
 
 ### Alerts & webhooks
 
-- Unified evaluation: `POST /api/alerts/evaluate` with `{ symbolId, candles?, lastClose? }` (price watches, technical, multi-condition, watchlist bulk).
+- Unified evaluation: `POST /api/alerts/evaluate` with `{ symbolId, candles?, lastClose? }` or `{ scope: "pending" }` for watchlist/multi/technical across symbols. Fires on SSE mock ticks + 12s pending sweep.
 - Alert webhook URL in the 알림 tab → `PUT /api/webhooks`; deliveries POST `{ alert, firedAt }` with retries, else logged to `data/webhook-log.json`.
 
 ### Fanding ingest

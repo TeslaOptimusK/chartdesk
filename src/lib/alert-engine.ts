@@ -1,4 +1,5 @@
 import { rsi } from "@/lib/indicators";
+import { createMarketDataAdapter } from "@/lib/market-data";
 import { deliverAlertWebhook } from "@/lib/webhook-deliver";
 import {
   addAlert,
@@ -16,6 +17,7 @@ import type {
   PriceWatch,
   SymbolMeta,
   TechnicalAlert,
+  Timeframe,
 } from "@/lib/types";
 
 export interface EvaluateAlertsInput {
@@ -229,4 +231,67 @@ export async function evaluateSymbolAlerts(
 
 function metaLabel(symbol: SymbolMeta | undefined): string {
   return symbol?.ticker ?? "symbol";
+}
+
+/**
+ * Evaluate pending price / technical / multi watches across watchlist + any
+ * symbol that still has untriggered alerts (mock/realtime tick path).
+ */
+export async function evaluatePendingWatchlistAlerts(opts?: {
+  tf?: Timeframe;
+  limit?: number;
+}): Promise<EvaluateAlertsResult> {
+  const store = await readStore();
+  const pendingIds = new Set<string>();
+
+  for (const w of store.priceWatches ?? []) {
+    if (!w.triggered) pendingIds.add(w.symbolId);
+  }
+  for (const ta of store.technicalAlerts ?? []) {
+    if (!ta.triggered) pendingIds.add(ta.symbolId);
+  }
+  for (const ma of store.multiConditionAlerts ?? []) {
+    if (!ma.triggered) pendingIds.add(ma.symbolId);
+  }
+  // Only pull watchlist symbols that already have a pending watch of some kind
+  // (avoid evaluating the entire list on every tick with no alerts).
+  const hasPending =
+    (store.priceWatches ?? []).some((w) => !w.triggered) ||
+    (store.technicalAlerts ?? []).some((t) => !t.triggered) ||
+    (store.multiConditionAlerts ?? []).some((m) => !m.triggered);
+
+  if (!hasPending) {
+    return {
+      fired: [],
+      priceWatches: store.priceWatches ?? [],
+      technicalAlerts: store.technicalAlerts ?? [],
+      multiConditionAlerts: store.multiConditionAlerts ?? [],
+    };
+  }
+
+  const adapter = createMarketDataAdapter();
+  const tf = opts?.tf ?? "D";
+  const limit = opts?.limit ?? 120;
+  const fired: AlertItem[] = [];
+  let priceWatches = store.priceWatches ?? [];
+  let technicalAlerts = store.technicalAlerts ?? [];
+  let multiConditionAlerts = store.multiConditionAlerts ?? [];
+
+  for (const symbolId of pendingIds) {
+    const symbol = store.symbols.find((s) => s.id === symbolId);
+    if (!symbol) continue;
+    const candles = await adapter.getCandles({
+      symbolId: symbol.id,
+      ticker: symbol.ticker,
+      timeframe: tf === "tick" ? "1" : tf,
+      limit,
+    });
+    const result = await evaluateSymbolAlerts({ symbolId, candles });
+    fired.push(...result.fired);
+    priceWatches = result.priceWatches;
+    technicalAlerts = result.technicalAlerts;
+    multiConditionAlerts = result.multiConditionAlerts;
+  }
+
+  return { fired, priceWatches, technicalAlerts, multiConditionAlerts };
 }

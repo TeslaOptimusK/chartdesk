@@ -351,6 +351,12 @@ function DomDialog({
   const bestAsk = ladder.find((r) => r.askSize > 0)?.price ?? mid;
   const bestBid = [...ladder].reverse().find((r) => r.bidSize > 0)?.price ?? mid;
   const spread = bestAsk - bestBid;
+  const bidDepth = ladder.reduce((s, r) => s + r.bidSize, 0);
+  const askDepth = ladder.reduce((s, r) => s + r.askSize, 0);
+  const imbalance =
+    bidDepth + askDepth > 0
+      ? ((bidDepth - askDepth) / (bidDepth + askDepth)) * 100
+      : 0;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -367,6 +373,16 @@ function DomDialog({
           <span>
             스프레드{" "}
             <span className="text-[var(--workspace-fg)]">{spread.toFixed(2)}</span>
+            {" · "}
+            불균형{" "}
+            <span
+              className={
+                imbalance >= 0 ? "text-rose-300" : "text-sky-300"
+              }
+            >
+              {imbalance >= 0 ? "+" : ""}
+              {imbalance.toFixed(1)}%
+            </span>
           </span>
           <span
             className={cn(

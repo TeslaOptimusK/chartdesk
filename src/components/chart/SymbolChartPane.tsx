@@ -117,8 +117,9 @@ export function SymbolChartPane({
     };
   }, []);
 
+  // Mock / delayed / realtime — SSE ticks drive candle updates + alert evaluate
   useEffect(() => {
-    if (!interactive || marketMode !== "realtime") return;
+    if (!interactive) return;
     const es = new EventSource(
       `/api/market/sse?symbolId=${encodeURIComponent(symbolId)}&tf=${encodeURIComponent(fetchTf)}`
     );

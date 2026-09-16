@@ -343,6 +343,10 @@ export interface FootprintLevel {
 export interface FootprintBar {
   time: number;
   levels: FootprintLevel[];
+  /** Net ask−bid for the bar */
+  delta: number;
+  /** Price of max total volume (POC) */
+  poc: number;
 }
 
 export function mockFootprintBars(
@@ -367,7 +371,11 @@ export function mockFootprintBars(
         askVol,
       });
     }
-    return { time: c.time, levels };
+    const delta = levels.reduce((s, l) => s + (l.askVol - l.bidVol), 0);
+    const pocLevel = levels.reduce((best, l) =>
+      l.bidVol + l.askVol > best.bidVol + best.askVol ? l : best
+    );
+    return { time: c.time, levels, delta, poc: pocLevel.price };
   });
 }
 
@@ -375,6 +383,8 @@ export function mockFootprintBars(
 export interface TpoLevel {
   price: number;
   letters: string;
+  /** Point of control / value area markers */
+  role?: "poc" | "vah" | "val" | "inside";
 }
 
 export function mockTpoProfile(
@@ -403,10 +413,49 @@ export function mockTpoProfile(
     }
   });
 
-  return [...buckets.entries()]
-    .sort((a, b) => b[0] - a[0])
+  const ranked = [...buckets.entries()]
     .map(([price, letters]) => ({
       price,
       letters: letters.join(""),
-    }));
+      tpoCount: letters.length,
+    }))
+    .sort((a, b) => b.tpoCount - a.tpoCount || b.price - a.price);
+
+  const poc = ranked[0];
+  const totalTpo = ranked.reduce((s, r) => s + r.tpoCount, 0);
+  const target = totalTpo * 0.7;
+  let covered = poc?.tpoCount ?? 0;
+  const inVa = new Set<number>(poc ? [poc.price] : []);
+  const byPrice = [...ranked].sort((a, b) => b.price - a.price);
+  const pocIdx = byPrice.findIndex((r) => r.price === poc?.price);
+  let up = pocIdx - 1;
+  let down = pocIdx + 1;
+  while (covered < target && (up >= 0 || down < byPrice.length)) {
+    const upRow = up >= 0 ? byPrice[up] : null;
+    const downRow = down < byPrice.length ? byPrice[down] : null;
+    const pick =
+      (upRow?.tpoCount ?? -1) >= (downRow?.tpoCount ?? -1) ? upRow : downRow;
+    if (!pick) break;
+    inVa.add(pick.price);
+    covered += pick.tpoCount;
+    if (pick === upRow) up--;
+    else down++;
+  }
+
+  const vaPrices = [...inVa].sort((a, b) => b - a);
+  const vah = vaPrices[0];
+  const val = vaPrices[vaPrices.length - 1];
+
+  return byPrice.map((row) => {
+    let role: TpoLevel["role"] = "inside";
+    if (row.price === poc?.price) role = "poc";
+    else if (row.price === vah) role = "vah";
+    else if (row.price === val) role = "val";
+    else if (!inVa.has(row.price)) role = undefined;
+    return {
+      price: row.price,
+      letters: row.letters,
+      role,
+    };
+  });
 }

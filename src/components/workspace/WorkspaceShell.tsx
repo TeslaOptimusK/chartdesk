@@ -69,6 +69,10 @@ export function WorkspaceShell() {
     setDrawingsLocked,
     sync,
     extendedHours,
+    setPriceWatches,
+    setTechnicalAlerts,
+    setMultiConditionAlerts,
+    setAlerts,
   } = useWorkspace();
   const [ingestOpen, setIngestOpen] = useState(false);
   const [bootError, setBootError] = useState<string | null>(null);
@@ -88,6 +92,37 @@ export function WorkspaceShell() {
     const id = window.setInterval(() => setClock(new Date()), 1000);
     return () => window.clearInterval(id);
   }, []);
+
+  // Watchlist / multi / technical — evaluate pending across symbols on mock ticks
+  useEffect(() => {
+    if (!ready) return;
+    const tick = () => {
+      void fetch("/api/alerts/evaluate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scope: "pending", tf: "D" }),
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.priceWatches) setPriceWatches(data.priceWatches);
+          if (data.technicalAlerts) setTechnicalAlerts(data.technicalAlerts);
+          if (data.multiConditionAlerts) {
+            setMultiConditionAlerts(data.multiConditionAlerts);
+          }
+          if (data.fired?.length && data.alerts) setAlerts(data.alerts);
+        })
+        .catch(() => undefined);
+    };
+    tick();
+    const id = window.setInterval(tick, 12_000);
+    return () => window.clearInterval(id);
+  }, [
+    ready,
+    setPriceWatches,
+    setTechnicalAlerts,
+    setMultiConditionAlerts,
+    setAlerts,
+  ]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
