@@ -42,7 +42,17 @@ See `.env.example`. Without keys:
 - Market data → deterministic mock candles
 - LLM → rule-based symbol extract + opinion drafts
 
-Optional: `MARKET_DATA_MODE=delayed` + vendor URL/key for free delayed quotes; `LLM_API_KEY` for draft enrichment.
+Optional: `MARKET_DATA_MODE=delayed` + vendor URL/key for free delayed quotes; `MARKET_DATA_MODE=realtime` for SSE ticks (`GET /api/market/sse?symbolId=&tf=`) and optional `MARKET_DATA_WS_URL`; `LLM_API_KEY` for draft enrichment.
+
+### Alerts & webhooks
+
+- Unified evaluation: `POST /api/alerts/evaluate` with `{ symbolId, candles?, lastClose? }` (price watches, technical, multi-condition, watchlist bulk).
+- Alert webhook URL in the 알림 tab → `PUT /api/webhooks`; deliveries POST `{ alert, firedAt }` with retries, else logged to `data/webhook-log.json`.
+
+### Fanding ingest
+
+- UI: paste or drag-drop `.txt` / `.md` / `.json` (sets `ingestMethod: file_drop`).
+- Webhook: `POST /api/ingest/webhook` JSON `{ category, title, body, externalUrl?, symbolIds? }` or plain text with `?category=` → `202 Accepted`.
 
 ## Data
 

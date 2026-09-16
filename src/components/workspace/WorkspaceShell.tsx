@@ -12,6 +12,7 @@ import { useWorkspace } from "@/lib/store";
 import type { DrawingTool, Timeframe } from "@/lib/types";
 import {
   TIMEZONE_OPTIONS,
+  extendedSessionBadge,
   getSessionStatus,
   timezoneDisplay,
 } from "@/lib/session";
@@ -67,6 +68,7 @@ export function WorkspaceShell() {
     drawingsLocked,
     setDrawingsLocked,
     sync,
+    extendedHours,
   } = useWorkspace();
   const [ingestOpen, setIngestOpen] = useState(false);
   const [bootError, setBootError] = useState<string | null>(null);
@@ -182,6 +184,10 @@ export function WorkspaceShell() {
   const session = useMemo(
     () => getSessionStatus(active?.exchange, clock),
     [active?.exchange, clock]
+  );
+  const extBadge = useMemo(
+    () => extendedSessionBadge(active?.exchange, extendedHours, clock),
+    [active?.exchange, extendedHours, clock]
   );
 
   const paneSymbolsRaw =
@@ -310,6 +316,17 @@ export function WorkspaceShell() {
       <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--workspace-border)] bg-[var(--workspace-panel)] px-3 py-1.5 text-[10px] text-[var(--workspace-faint)]">
         <span className="flex flex-wrap items-center gap-2">
           <span data-feature="data.session_status">{session.label}</span>
+          {extBadge ? (
+            <>
+              <span>·</span>
+              <span
+                className="rounded bg-[var(--workspace-elevated)] px-1.5 py-0.5 text-[var(--workspace-muted)]"
+                data-feature="chart.extended_hours"
+              >
+                {extBadge}
+              </span>
+            </>
+          ) : null}
           <span>·</span>
           <label
             className="inline-flex items-center gap-1"

@@ -5,6 +5,7 @@ import { ChartCanvas } from "@/components/chart/ChartCanvas";
 import { useWorkspace, type IndicatorId } from "@/lib/store";
 import type { Candle, Drawing, PatternHit } from "@/lib/types";
 import { resampleCandles } from "@/lib/chart-time";
+import { appendExtendedSessionBars } from "@/lib/extended-hours";
 import { buildEventMarkers } from "@/lib/phase2-data";
 import { cn } from "@/lib/utils";
 
@@ -39,6 +40,8 @@ export function SymbolChartPane({
     setPriceWatches,
     setAlerts,
     alerts,
+    setTechnicalAlerts,
+    setMultiConditionAlerts,
     drawingsLocked,
     chartSettings,
     priceScaleMode,
@@ -57,6 +60,7 @@ export function SymbolChartPane({
     replayActive,
     replayIndex,
     setReplayIndex,
+    setReplayTotalBars,
     layoutMode,
     indicatorOnIndicator,
     customIndicatorSource,
@@ -65,6 +69,9 @@ export function SymbolChartPane({
   const [compareCandles, setCompareCandles] = useState<Candle[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [marketMode, setMarketMode] = useState<"mock" | "delayed" | "realtime">(
+    "mock"
+  );
   const symbol = symbols.find((s) => s.id === symbolId);
   const compareSymbol = symbols.find((s) => s.id === compareSymbolId);
 
@@ -98,6 +105,43 @@ export function SymbolChartPane({
   }, [symbolId, fetchTf, candleLimit]);
 
   useEffect(() => {
+    let cancelled = false;
+    fetch("/api/market/stream-info")
+      .then((r) => r.json())
+      .then((d: { mode?: "mock" | "delayed" | "realtime" }) => {
+        if (!cancelled && d.mode) setMarketMode(d.mode);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!interactive || marketMode !== "realtime") return;
+    const es = new EventSource(
+      `/api/market/sse?symbolId=${encodeURIComponent(symbolId)}&tf=${encodeURIComponent(fetchTf)}`
+    );
+    es.onmessage = (ev) => {
+      try {
+        const msg = JSON.parse(ev.data) as { type?: string; candle?: Candle };
+        if (msg.type !== "candle" || !msg.candle) return;
+        setCandles((prev) => {
+          if (!prev.length) return [msg.candle!];
+          const last = prev[prev.length - 1];
+          if (last.time === msg.candle!.time) {
+            return [...prev.slice(0, -1), msg.candle!];
+          }
+          return [...prev.slice(-(candleLimit - 1)), msg.candle!];
+        });
+      } catch {
+        /* ignore */
+      }
+    };
+    return () => es.close();
+  }, [interactive, marketMode, symbolId, fetchTf, candleLimit]);
+
+  useEffect(() => {
     if (!compareSymbolId || !interactive) {
       setCompareCandles([]);
       return;
@@ -116,82 +160,78 @@ export function SymbolChartPane({
     };
   }, [compareSymbolId, fetchTf, candleLimit, interactive]);
 
-  const processedCandles = useMemo(() => {
+  const baseCandles = useMemo(() => {
     let list = candles;
+    if (extendedHours && list.length) {
+      list = appendExtendedSessionBars(
+        list,
+        customIntervalMinutes ? "5" : timeframe
+      );
+    }
     if (customIntervalMinutes && customIntervalMinutes > 0) {
       list = resampleCandles(list, customIntervalMinutes * 60);
     }
+    return list;
+  }, [candles, extendedHours, customIntervalMinutes, timeframe]);
+
+  const processedCandles = useMemo(() => {
+    let list = baseCandles;
     if (replayActive && replayIndex != null && replayIndex >= 0) {
       list = list.slice(0, Math.min(replayIndex + 1, list.length));
     }
     return list;
-  }, [candles, customIntervalMinutes, replayActive, replayIndex]);
+  }, [baseCandles, replayActive, replayIndex]);
 
   useEffect(() => {
-    if (!replayActive || processedCandles.length === 0) return;
-    if (replayIndex == null) setReplayIndex(processedCandles.length - 1);
-  }, [replayActive, processedCandles.length, replayIndex, setReplayIndex]);
+    if (interactive) setReplayTotalBars(Math.max(baseCandles.length, 10));
+  }, [baseCandles.length, interactive, setReplayTotalBars]);
+
+  useEffect(() => {
+    if (!replayActive || baseCandles.length === 0) return;
+    if (replayIndex == null) setReplayIndex(0);
+  }, [replayActive, baseCandles.length, replayIndex, setReplayIndex]);
+
+  useEffect(() => {
+    if (!replayActive || !interactive || baseCandles.length === 0) return;
+    const id = window.setInterval(() => {
+      const cur = replayIndex ?? 0;
+      if (cur >= baseCandles.length - 1) return;
+      setReplayIndex(cur + 1);
+    }, 450);
+    return () => window.clearInterval(id);
+  }, [
+    replayActive,
+    interactive,
+    baseCandles.length,
+    replayIndex,
+    setReplayIndex,
+  ]);
 
   useEffect(() => {
     if (!interactive || processedCandles.length === 0) return;
     const last = processedCandles[processedCandles.length - 1];
-    const prev =
-      processedCandles.length > 1
-        ? processedCandles[processedCandles.length - 2]
-        : null;
-    const pending = priceWatches.filter(
-      (w) => w.symbolId === symbolId && !w.triggered
-    );
-    if (!pending.length) return;
-
-    const fired: string[] = [];
-    for (const w of pending) {
-      let hit = false;
-      if (w.op === "above") hit = last.close >= w.price;
-      else if (w.op === "below") hit = last.close <= w.price;
-      else if (w.op === "crossing" && prev) {
-        const before = prev.close;
-        const after = last.close;
-        hit =
-          (before < w.price && after >= w.price) ||
-          (before > w.price && after <= w.price);
-      }
-      if (hit) fired.push(w.id);
-    }
-    if (!fired.length) return;
-
-    const nextWatches = priceWatches.map((w) =>
-      fired.includes(w.id)
-        ? { ...w, triggered: true, lastClose: last.close }
-        : w
-    );
-    setPriceWatches(nextWatches);
-    void fetch("/api/watches", {
-      method: "PUT",
+    void fetch("/api/alerts/evaluate", {
+      method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ priceWatches: nextWatches }),
-    });
-
-    for (const w of pending.filter((x) => fired.includes(x.id))) {
-      const opLabel =
-        w.op === "above" ? "이상" : w.op === "below" ? "이하" : "돌파";
-      void fetch("/api/alerts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type: "price",
-          title: `가격 알림 ${opLabel} ${w.price}`,
-          message:
-            w.message?.trim() ||
-            `${symbol?.ticker ?? symbolId} 종가 ${last.close.toFixed(2)} (${opLabel} ${w.price})`,
-          symbolId,
-        }),
+      body: JSON.stringify({
+        symbolId,
+        candles: processedCandles,
+        lastClose: last.close,
+        tf: fetchTf,
+      }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.priceWatches) setPriceWatches(data.priceWatches);
+        if (data.technicalAlerts) setTechnicalAlerts(data.technicalAlerts);
+        if (data.multiConditionAlerts) {
+          setMultiConditionAlerts(data.multiConditionAlerts);
+        }
+        if (data.fired?.length) {
+          setAlerts(data.alerts ?? [...data.fired, ...alerts]);
+        }
       })
-        .then((r) => r.json())
-        .then((data) => {
-          if (data.alert) setAlerts([data.alert, ...alerts]);
-        });
-    }
+      .catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [processedCandles, symbolId]);
 

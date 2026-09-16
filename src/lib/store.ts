@@ -228,6 +228,7 @@ interface WorkspaceState {
   /** Feature ID: replay */
   replayActive: boolean;
   replayIndex: number | null;
+  replayTotalBars: number;
   /** Feature ID: indicator.dialog */
   indicatorDialogOpen: boolean;
   /** Feature ID: shell.command_palette */
@@ -341,6 +342,7 @@ interface WorkspaceState {
   setStayInDrawMode: (v: boolean) => void;
   setReplayActive: (v: boolean) => void;
   setReplayIndex: (idx: number | null) => void;
+  setReplayTotalBars: (n: number) => void;
   setIndicatorDialogOpen: (v: boolean) => void;
   setCommandPaletteOpen: (v: boolean) => void;
   setCustomIntervalMinutes: (m: number | null) => void;
@@ -517,6 +519,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   stayInDrawMode: DEFAULT_PHASE2.stayInDrawMode,
   replayActive: false,
   replayIndex: null,
+  replayTotalBars: 200,
   indicatorDialogOpen: false,
   commandPaletteOpen: false,
   customIntervalMinutes: null,
@@ -810,6 +813,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   setReplayActive: (v) =>
     set({ replayActive: v, replayIndex: v ? get().replayIndex : null }),
   setReplayIndex: (idx) => set({ replayIndex: idx }),
+  setReplayTotalBars: (replayTotalBars) => set({ replayTotalBars }),
   setIndicatorDialogOpen: (v) => set({ indicatorDialogOpen: v }),
   setCommandPaletteOpen: (v) => set({ commandPaletteOpen: v }),
   setCustomIntervalMinutes: (m) => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -15,8 +15,37 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useWorkspace } from "@/lib/store";
 import { CATEGORY_LABELS, type PostCategory } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 const CATEGORIES = Object.keys(CATEGORY_LABELS) as PostCategory[];
+
+const FILE_ACCEPT = ".txt,.md,.json";
+
+function titleFromFile(name: string, text: string): string {
+  if (name.endsWith(".json")) {
+    try {
+      const j = JSON.parse(text) as { title?: string };
+      if (j.title?.trim()) return j.title.trim();
+    } catch {
+      /* fall through */
+    }
+  }
+  const line = text.split(/\r?\n/).find((l) => l.trim()) ?? "";
+  return line.slice(0, 120) || name.replace(/\.[^.]+$/, "");
+}
+
+function bodyFromFile(name: string, text: string): string {
+  if (name.endsWith(".json")) {
+    try {
+      const j = JSON.parse(text) as { body?: string; content?: string };
+      if (j.body?.trim()) return j.body.trim();
+      if (j.content?.trim()) return j.content.trim();
+    } catch {
+      /* use raw */
+    }
+  }
+  return text;
+}
 
 export function IngestDialog({
   open,
@@ -31,15 +60,42 @@ export function IngestDialog({
   const [body, setBody] = useState("");
   const [externalUrl, setExternalUrl] = useState("");
   const [symbolIds, setSymbolIds] = useState<string[]>([]);
+  const [ingestMethod, setIngestMethod] = useState<"manual_paste" | "file_drop">(
+    "manual_paste"
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
 
   const toggleSymbol = (id: string) => {
     setSymbolIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     );
   };
+
+  const applyFile = useCallback((file: File, text: string) => {
+    setIngestMethod("file_drop");
+    setTitle(titleFromFile(file.name, text));
+    setBody(bodyFromFile(file.name, text));
+    setOkMsg(`파일 로드: ${file.name}`);
+  }, []);
+
+  const onFiles = useCallback(
+    (files: FileList | null) => {
+      if (!files?.length) return;
+      const file = files[0];
+      const ext = file.name.split(".").pop()?.toLowerCase();
+      if (!ext || !["txt", "md", "json"].includes(ext)) {
+        setError("지원: .txt, .md, .json");
+        return;
+      }
+      void file.text().then(applyFile.bind(null, file)).catch(() => {
+        setError("파일 읽기 실패");
+      });
+    },
+    [applyFile]
+  );
 
   const submit = async () => {
     setBusy(true);
@@ -55,7 +111,7 @@ export function IngestDialog({
           body,
           externalUrl,
           symbolIds,
-          ingestMethod: "manual_paste",
+          ingestMethod,
           autoOpinion: true,
         }),
       });
@@ -75,6 +131,7 @@ export function IngestDialog({
       setBody("");
       setExternalUrl("");
       setSymbolIds([]);
+      setIngestMethod("manual_paste");
     } catch (e) {
       setError(e instanceof Error ? e.message : "오류");
     } finally {
@@ -88,13 +145,47 @@ export function IngestDialog({
         <DialogHeader>
           <DialogTitle>easychart 포스트 수동 인제스트</DialogTitle>
           <DialogDescription className="text-[var(--workspace-muted)]">
-            멤버십에서 합법적으로 열람한 글만 붙여넣으세요. 원문 스크래핑·재배포는
-            지원하지 않습니다. 파일 드롭/웹훅 훅은 이후 확장용으로 예약되어
-            있습니다.
+            멤버십에서 합법적으로 열람한 글만 붙여넣거나 파일을 드롭하세요.
+            웹훅은 <code className="text-[10px]">POST /api/ingest/webhook</code>
+            을 사용합니다.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3">
+          <div
+            className={cn(
+              "rounded-md border border-dashed px-3 py-4 text-center text-xs transition-colors",
+              dragOver
+                ? "border-[var(--brand-accent)] bg-[var(--brand-accent)]/10"
+                : "border-[var(--workspace-border)] text-[var(--workspace-muted)]"
+            )}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragOver(true);
+            }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragOver(false);
+              onFiles(e.dataTransfer.files);
+            }}
+            data-feature="ingest.file_drop"
+          >
+            <p className="mb-2">.txt / .md / .json 드래그 앤 드롭</p>
+            <label className="cursor-pointer text-[var(--brand-accent)] underline">
+              파일 선택
+              <input
+                type="file"
+                accept={FILE_ACCEPT}
+                className="hidden"
+                onChange={(e) => onFiles(e.target.files)}
+              />
+            </label>
+            {ingestMethod === "file_drop" && (
+              <p className="mt-2 text-[10px] text-emerald-300/90">file_drop</p>
+            )}
+          </div>
+
           <div>
             <Label className="mb-1.5 block text-xs">주제</Label>
             <div className="grid grid-cols-2 gap-1.5">
@@ -122,7 +213,10 @@ export function IngestDialog({
             <Input
               id="title"
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              onChange={(e) => {
+                setTitle(e.target.value);
+                setIngestMethod("manual_paste");
+              }}
               className="border-[var(--workspace-border)] bg-[var(--workspace-panel)]"
             />
           </div>
@@ -135,7 +229,10 @@ export function IngestDialog({
               id="body"
               rows={6}
               value={body}
-              onChange={(e) => setBody(e.target.value)}
+              onChange={(e) => {
+                setBody(e.target.value);
+                setIngestMethod("manual_paste");
+              }}
               className="border-[var(--workspace-border)] bg-[var(--workspace-panel)]"
               placeholder="멤버십에서 복사한 분석/강의 텍스트…"
             />

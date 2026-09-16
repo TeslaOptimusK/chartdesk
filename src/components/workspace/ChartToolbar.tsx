@@ -189,6 +189,7 @@ export function ChartToolbar({ onOpenIngest }: { onOpenIngest: () => void }) {
     setReplayActive,
     replayIndex,
     setReplayIndex,
+    replayTotalBars,
     eventToggles,
     setEventToggles,
     setScreenerOpen,
@@ -881,11 +882,11 @@ export function ChartToolbar({ onOpenIngest }: { onOpenIngest: () => void }) {
         {replayActive && (
           <input
             type="range"
-            min={10}
-            max={200}
-            value={replayIndex ?? 180}
+            min={0}
+            max={Math.max(replayTotalBars - 1, 1)}
+            value={replayIndex ?? 0}
             onChange={(e) => setReplayIndex(Number(e.target.value))}
-            className="w-20"
+            className="w-24"
           />
         )}
       </div>

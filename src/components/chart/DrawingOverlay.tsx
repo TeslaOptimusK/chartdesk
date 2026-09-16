@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type Ref } from "react";
 import type { IChartApi, ISeriesApi, Time } from "lightweight-charts";
 import type {
   Candle,
@@ -45,6 +45,8 @@ interface DrawingOverlayProps {
   stayInDrawMode?: boolean;
   /** Raw candles for VP / anchored VWAP (unscaled) */
   candlesFull?: Candle[];
+  /** Expose drawing canvas for snapshot compositing */
+  drawingCanvasRef?: Ref<HTMLCanvasElement | null>;
 }
 
 function pointToXY(
@@ -71,9 +73,20 @@ export function DrawingOverlay({
   locked = false,
   stayInDrawMode = false,
   candlesFull,
+  drawingCanvasRef,
 }: DrawingOverlayProps) {
   const profileCandles = candlesFull?.length ? candlesFull : candles;
   const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  const bindCanvasRef = (el: HTMLCanvasElement | null) => {
+    canvasRef.current = el;
+    if (!drawingCanvasRef) return;
+    if (typeof drawingCanvasRef === "function") {
+      drawingCanvasRef(el);
+    } else {
+      drawingCanvasRef.current = el;
+    }
+  };
   const pendingRef = useRef<DrawingPoint[]>([]);
   const [pending, setPending] = useState<DrawingPoint[]>([]);
   const [cursor, setCursor] = useState<DrawingPoint | null>(null);
@@ -304,7 +317,7 @@ export function DrawingOverlay({
 
   return (
     <canvas
-      ref={canvasRef}
+      ref={bindCanvasRef}
       className="absolute inset-0 z-10 h-full w-full"
       style={{
         pointerEvents: active ? "auto" : "none",

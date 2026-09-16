@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import {
   AreaSeries,
   BarSeries,
@@ -66,6 +66,7 @@ import {
   secondsToBarClose,
 } from "@/lib/chart-time";
 import { Phase4ChartOverlay } from "@/components/chart/Phase4ChartOverlay";
+import type { SessionTaggedCandle } from "@/lib/extended-hours";
 import { cn } from "@/lib/utils";
 
 interface ChartCanvasProps {
@@ -161,6 +162,7 @@ export function ChartCanvas({
   const [chartApi, setChartApi] = useState<ChartApiBundle | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [legend, setLegend] = useState<LegendState | null>(null);
+  const drawingCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const [countdownSec, setCountdownSec] = useState(0);
 
@@ -363,12 +365,24 @@ export function ChartCanvas({
     setChartApi({ chart, series: series as ISeriesApi<"Candlestick"> });
   }, [chartStyle, chartSettings.upColor, chartSettings.downColor]);
 
-  // Feature ID: chart.snapshot
+  // Feature ID: chart.snapshot — chart + drawing overlay
   useEffect(() => {
     if (!snapshotTick || !chartRef.current) return;
     try {
       const shot = chartRef.current.takeScreenshot(true, false);
-      const url = shot.toDataURL("image/png");
+      const w = shot.width;
+      const h = shot.height;
+      const off = document.createElement("canvas");
+      off.width = w;
+      off.height = h;
+      const ctx = off.getContext("2d");
+      if (!ctx) return;
+      ctx.drawImage(shot, 0, 0);
+      const drawEl = drawingCanvasRef.current;
+      if (drawEl && drawEl.width > 0 && drawEl.height > 0) {
+        ctx.drawImage(drawEl, 0, 0, w, h);
+      }
+      const url = off.toDataURL("image/png");
       const a = document.createElement("a");
       a.href = url;
       a.download = `chartdesk-${symbolId}-${Date.now()}.png`;
@@ -654,6 +668,20 @@ export function ChartCanvas({
           text: ev.title,
         });
       }
+      if (extendedHours) {
+        for (const c of displayCandles as SessionTaggedCandle[]) {
+          const tag = c.sessionTag;
+          if (tag === "pre" || tag === "post") {
+            markers.push({
+              time: c.time as Time,
+              position: "belowBar",
+              color: tag === "pre" ? "#94a3b8" : "#6366f1",
+              shape: "square",
+              text: tag === "pre" ? "Pre" : "Post",
+            });
+          }
+        }
+      }
       createSeriesMarkers(main as ISeriesApi<"Candlestick">, markers);
     }
 
@@ -815,11 +843,18 @@ export function ChartCanvas({
         </div>
       )}
       {extendedHours && (
-        <div
-          className="pointer-events-none absolute inset-y-0 right-0 z-[6] w-[18%] bg-indigo-500/5"
-          data-feature="chart.extended_hours"
-          title="프리/애프터 마켓 (stub)"
-        />
+        <>
+          <div
+            className="pointer-events-none absolute inset-y-0 left-0 z-[6] w-[14%] bg-slate-400/8"
+            data-feature="chart.extended_hours"
+            title="프리마켓 구간 (mock)"
+          />
+          <div
+            className="pointer-events-none absolute inset-y-0 right-0 z-[6] w-[14%] bg-indigo-500/8"
+            data-feature="chart.extended_hours"
+            title="애프터마켓 구간 (mock)"
+          />
+        </>
       )}
       {legend && (
         <div
@@ -879,6 +914,7 @@ export function ChartCanvas({
         locked={locked}
         stayInDrawMode={stayInDrawMode}
         candlesFull={candles}
+        drawingCanvasRef={drawingCanvasRef as RefObject<HTMLCanvasElement | null>}
       />
       {showCountdown && countdownSec > 0 && (
         <div

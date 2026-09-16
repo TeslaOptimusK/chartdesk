@@ -347,7 +347,7 @@ export interface FootprintBar {
 
 export function mockFootprintBars(
   candles: Candle[],
-  levelsPerBar = 8
+  levelsPerBar = 14
 ): FootprintBar[] {
   return candles.map((c, idx) => {
     const range = Math.max(c.high - c.low, c.close * 0.0005, 0.01);
@@ -377,11 +377,9 @@ export interface TpoLevel {
   letters: string;
 }
 
-const TPO_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-
 export function mockTpoProfile(
   candles: Candle[],
-  levels = 24
+  levels = 32
 ): TpoLevel[] {
   if (!candles.length) return [];
   const lo = Math.min(...candles.map((c) => c.low));
@@ -389,9 +387,12 @@ export function mockTpoProfile(
   const span = Math.max(hi - lo, 0.01);
   const step = span / levels;
   const buckets = new Map<number, string[]>();
+  const periodLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const barsPerPeriod = Math.max(1, Math.floor(candles.length / periodLetters.length));
 
   candles.forEach((c, barIdx) => {
-    const letter = TPO_LETTERS[barIdx % TPO_LETTERS.length] ?? "A";
+    const periodIdx = Math.floor(barIdx / barsPerPeriod) % periodLetters.length;
+    const letter = periodLetters[periodIdx] ?? "A";
     const touchLow = Math.floor((c.low - lo) / step);
     const touchHigh = Math.floor((c.high - lo) / step);
     for (let b = touchLow; b <= touchHigh; b++) {

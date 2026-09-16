@@ -171,7 +171,7 @@ export interface DomLevel {
   askSize: number;
 }
 
-export function mockDomLadder(mid: number, levels = 12): DomLevel[] {
+export function mockDomLadder(mid: number, levels = 20): DomLevel[] {
   const tick = mid > 1000 ? 100 : mid > 50 ? 0.05 : 0.01;
   const out: DomLevel[] = [];
   for (let i = levels; i >= 1; i--) {

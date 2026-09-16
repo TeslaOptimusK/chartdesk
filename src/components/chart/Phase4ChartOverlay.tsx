@@ -72,10 +72,25 @@ function FootprintPane({
         const total = lv.bidVol + lv.askVol;
         const askW = (lv.askVol / total) * (barW - 2);
         const bidW = barW - 2 - askW;
-        ctx.fillStyle = "rgba(56,189,248,0.55)";
+        const delta = lv.askVol - lv.bidVol;
+        const deltaTint =
+          delta > 0
+            ? "rgba(56,189,248,0.75)"
+            : delta < 0
+              ? "rgba(239,83,80,0.75)"
+              : "rgba(148,163,184,0.55)";
+        ctx.fillStyle = deltaTint;
+        ctx.fillRect(x0, y, barW - 2, 8);
+        ctx.fillStyle = "rgba(56,189,248,0.45)";
         ctx.fillRect(x0, y, askW, 8);
-        ctx.fillStyle = "rgba(239,83,80,0.55)";
+        ctx.fillStyle = "rgba(239,83,80,0.45)";
         ctx.fillRect(x0 + askW, y, bidW, 8);
+        ctx.fillStyle = "rgba(226,232,240,0.85)";
+        ctx.fillText(
+          delta >= 0 ? `+${delta}` : `${delta}`,
+          x0 + 1,
+          y + 7
+        );
       });
     });
 
@@ -109,7 +124,7 @@ function TpoPane({
         mock TPO · letters
       </div>
       <div className="flex-1 overflow-hidden px-1 py-0.5">
-        {profile.slice(0, 18).map((row) => (
+        {profile.slice(0, 28).map((row) => (
           <div key={row.price} className="flex justify-between gap-1">
             <span className="text-[var(--workspace-fg)]">
               {row.price.toFixed(2)}

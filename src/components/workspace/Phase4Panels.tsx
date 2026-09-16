@@ -331,11 +331,31 @@ function DomDialog({
   ticker: string;
 }) {
   const ladder = useMemo(() => mockDomLadder(mid), [mid, open]);
+  const [flashSide, setFlashSide] = useState<"bid" | "ask" | null>(null);
+  const [lastTrade, setLastTrade] = useState(mid);
+
+  useEffect(() => {
+    if (!open) return;
+    const id = window.setInterval(() => {
+      const side = Math.random() > 0.5 ? "bid" : "ask";
+      setFlashSide(side);
+      setLastTrade(
+        round(mid * (1 + (Math.random() - 0.5) * 0.0004 * (side === "ask" ? 1 : -1)))
+      );
+      window.setTimeout(() => setFlashSide(null), 280);
+    }, 2200);
+    return () => window.clearInterval(id);
+  }, [open, mid]);
+
+  const maxSize = Math.max(...ladder.map((r) => r.bidSize + r.askSize), 1);
+  const bestAsk = ladder.find((r) => r.askSize > 0)?.price ?? mid;
+  const bestBid = [...ladder].reverse().find((r) => r.bidSize > 0)?.price ?? mid;
+  const spread = bestAsk - bestBid;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-w-xs border-[var(--workspace-border)] bg-[var(--workspace-panel)]"
+        className="max-w-sm border-[var(--workspace-border)] bg-[var(--workspace-panel)]"
         data-feature="dom"
       >
         <DialogHeader>
@@ -343,30 +363,69 @@ function DomDialog({
             호가창 · {ticker || "—"} (mock DOM)
           </DialogTitle>
         </DialogHeader>
+        <div className="mb-2 flex items-center justify-between font-mono text-[10px] text-[var(--workspace-muted)]">
+          <span>
+            스프레드{" "}
+            <span className="text-[var(--workspace-fg)]">{spread.toFixed(2)}</span>
+          </span>
+          <span
+            className={cn(
+              "rounded px-1.5 py-0.5 transition-colors",
+              flashSide === "bid" && "bg-rose-500/25 text-rose-200",
+              flashSide === "ask" && "bg-sky-500/25 text-sky-200"
+            )}
+          >
+            체결 {lastTrade.toFixed(2)}
+          </span>
+        </div>
         <div className="font-mono text-[10px]">
-          <div className="mb-1 grid grid-cols-3 text-[var(--workspace-muted)]">
-            <span>매수</span>
+          <div className="mb-1 grid grid-cols-[1fr_4.5rem_1fr] gap-1 text-[var(--workspace-muted)]">
+            <span>매수 · 누적</span>
             <span className="text-center">가격</span>
-            <span className="text-right">매도</span>
+            <span className="text-right">누적 · 매도</span>
           </div>
-          {ladder.map((row) => (
-            <div
-              key={row.price}
-              className="grid grid-cols-3 border-b border-[var(--workspace-border)]/40 py-0.5"
-            >
-              <span className="text-rose-300/90">
-                {row.bidSize > 0 ? row.bidSize : ""}
-              </span>
-              <span className="text-center text-[var(--workspace-fg)]">
-                {row.price.toFixed(2)}
-              </span>
-              <span className="text-right text-sky-300/90">
-                {row.askSize > 0 ? row.askSize : ""}
-              </span>
-            </div>
-          ))}
+          {ladder.map((row) => {
+            const bidPct = (row.bidSize / maxSize) * 100;
+            const askPct = (row.askSize / maxSize) * 100;
+            const isMid = Math.abs(row.price - mid) < 0.0001;
+            return (
+              <div
+                key={row.price}
+                className={cn(
+                  "relative grid grid-cols-[1fr_4.5rem_1fr] gap-1 border-b border-[var(--workspace-border)]/40 py-0.5",
+                  isMid && "bg-[var(--brand-accent)]/10"
+                )}
+              >
+                <div className="relative flex items-center pr-1">
+                  <div
+                    className="absolute inset-y-0 right-0 rounded-sm bg-rose-500/20"
+                    style={{ width: `${bidPct}%` }}
+                  />
+                  <span className="relative z-[1] text-rose-300/90">
+                    {row.bidSize > 0 ? row.bidSize : ""}
+                  </span>
+                </div>
+                <span className="text-center text-[var(--workspace-fg)]">
+                  {row.price.toFixed(2)}
+                </span>
+                <div className="relative flex items-center justify-end pl-1">
+                  <div
+                    className="absolute inset-y-0 left-0 rounded-sm bg-sky-500/20"
+                    style={{ width: `${askPct}%` }}
+                  />
+                  <span className="relative z-[1] text-sky-300/90">
+                    {row.askSize > 0 ? row.askSize : ""}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </DialogContent>
     </Dialog>
   );
+}
+
+function round(n: number) {
+  return Math.round(n * 100) / 100;
 }
