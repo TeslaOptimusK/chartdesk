@@ -8,6 +8,7 @@ import { Phase4Panels } from "@/components/workspace/Phase4Panels";
 import { IngestDialog } from "@/components/workspace/IngestDialog";
 import { RightPanel } from "@/components/workspace/RightPanel";
 import { SymbolChartPane } from "@/components/chart/SymbolChartPane";
+import { MultiChartGrid } from "@/components/workspace/MultiChartGrid";
 import { useWorkspace } from "@/lib/store";
 import type { DrawingTool, Timeframe } from "@/lib/types";
 import {
@@ -48,6 +49,11 @@ export function WorkspaceShell() {
     activeSymbolId,
     secondarySymbolIds,
     layoutMode,
+    sync,
+    activePaneIndex,
+    setActivePaneIndex,
+    paneTimeframes,
+    timeframe,
     showDisclaimer,
     setShowDisclaimer,
     watchlist,
@@ -67,7 +73,6 @@ export function WorkspaceShell() {
     setObjectTreeOpen,
     drawingsLocked,
     setDrawingsLocked,
-    sync,
     extendedHours,
     setPriceWatches,
     setTechnicalAlerts,
@@ -314,32 +319,27 @@ export function WorkspaceShell() {
       )}
 
       <div className="flex min-h-0 flex-1">
-        <main
-          className={cn(
-            "grid min-w-0 flex-1 gap-px bg-[var(--workspace-border)]",
-            layoutMode === "single" && "grid-cols-1",
-            layoutMode === "split2" && "grid-cols-1 md:grid-cols-2",
-            layoutMode === "split4" && "grid-cols-1 md:grid-cols-2"
-          )}
-        >
-          {paneSymbols.map((id, idx) => (
-            <SymbolChartPane
-              key={`${layoutMode}-${id}-${idx}`}
-              symbolId={id}
-              height={
-                fullscreen
-                  ? 720
-                  : layoutMode === "single"
-                    ? 560
-                    : layoutMode === "split2"
-                      ? 520
-                      : 280
-              }
-              interactive={idx === 0}
-              paneIndex={idx}
-              className="min-h-0"
-            />
-          ))}
+        <main className="min-h-0 min-w-0 flex-1 bg-[var(--workspace-border)] p-px">
+          <MultiChartGrid mode={layoutMode}>
+            {paneSymbols.map((id, idx) => {
+              const paneTf =
+                sync.interval || layoutMode === "single"
+                  ? timeframe
+                  : (paneTimeframes[idx] ?? timeframe);
+              return (
+                <SymbolChartPane
+                  key={`${layoutMode}-${idx}-${id}`}
+                  symbolId={id}
+                  paneTimeframe={paneTf}
+                  interactive
+                  paneIndex={idx}
+                  active={activePaneIndex === idx}
+                  onActivate={() => setActivePaneIndex(idx)}
+                  className="h-full min-h-0"
+                />
+              );
+            })}
+          </MultiChartGrid>
         </main>
         {!fullscreen && (
           <div className="hidden w-[360px] shrink-0 lg:block">

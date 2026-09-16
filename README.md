@@ -33,7 +33,7 @@ After clone, create a Desktop `ChartDesk` shortcut once:
 powershell -ExecutionPolicy Bypass -File scripts\create-desktop-shortcut.ps1
 ```
 
-Double-click the shortcut (or run `scripts\start-chartdesk.bat`) to install deps if needed, start the server on port **43127**, and open the browser. Keep the console window open while using the app.
+Double-click the shortcut (or run `scripts\start-chartdesk.bat`) to install deps if needed, start the server on port **43127**, and open a **desktop-like app window** (Chrome/Edge `--app=` mode, falls back to the default browser). Keep the console window open while using the app.
 
 ### Scripts
 

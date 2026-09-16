@@ -66,6 +66,7 @@ export type IndicatorId =
   | "rsi"
   | "macd"
   | "stoch"
+  | "stochRsi"
   | "atr"
   | "vwap"
   | "volMa"
@@ -229,6 +230,10 @@ interface WorkspaceState {
   recentSymbolIds: string[];
   activeSymbolId: string;
   secondarySymbolIds: string[];
+  /** Which multi-chart pane receives symbol/TF changes (0–3). */
+  activePaneIndex: number;
+  /** Per-pane timeframe when layout.sync.interval is off. */
+  paneTimeframes: Timeframe[];
   compareSymbolId: string | null;
   timeframe: Timeframe;
   drawingTool: DrawingTool;
@@ -348,6 +353,8 @@ interface WorkspaceState {
     paperAccount?: PaperAccount;
   }) => void;
   setActiveSymbol: (id: string) => void;
+  setActivePaneIndex: (index: number) => void;
+  setPaneSymbol: (paneIndex: number, symbolId: string) => void;
   setTimeframe: (tf: Timeframe) => void;
   setDrawingTool: (tool: DrawingTool) => void;
   toggleIndicator: (id: IndicatorId) => void;
@@ -538,10 +545,12 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   recentSymbolIds: [],
   activeSymbolId: "us_NVDA",
   secondarySymbolIds: ["kr_005930", "crypto_BTCUSDT", "kr_000660"],
+  activePaneIndex: 0,
+  paneTimeframes: ["D", "D", "D", "D"],
   compareSymbolId: null,
   timeframe: "D",
   drawingTool: "none",
-  indicators: ["sma20", "ema9"],
+  indicators: ["sma20", "ema9", "stochRsi"],
   chartStyle: "candle",
   rightTab: "watchlist",
   layoutMode: "single",
@@ -730,9 +739,48 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       20
     );
     writeRecent(recent);
-    set({ activeSymbolId: id, recentSymbolIds: recent });
+    const pane = get().activePaneIndex;
+    const syncSymbol = get().sync.symbol;
+    if (pane === 0 || syncSymbol) {
+      set({ activeSymbolId: id, recentSymbolIds: recent });
+      return;
+    }
+    const secs = [...get().secondarySymbolIds];
+    while (secs.length < pane) secs.push(id);
+    secs[pane - 1] = id;
+    set({ secondarySymbolIds: secs, recentSymbolIds: recent });
   },
-  setTimeframe: (tf) => set({ timeframe: tf }),
+  setActivePaneIndex: (index) =>
+    set({ activePaneIndex: Math.max(0, Math.min(3, index)) }),
+  setPaneSymbol: (paneIndex, symbolId) => {
+    if (paneIndex <= 0) {
+      get().setActiveSymbol(symbolId);
+      return;
+    }
+    const secs = [...get().secondarySymbolIds];
+    while (secs.length < paneIndex) secs.push(symbolId);
+    secs[paneIndex - 1] = symbolId;
+    set({ secondarySymbolIds: secs });
+  },
+  setTimeframe: (tf) => {
+    const s = get();
+    if (s.sync.interval || s.layoutMode === "single") {
+      set({
+        timeframe: tf,
+        paneTimeframes: [tf, tf, tf, tf],
+      });
+      return;
+    }
+    const pane = s.activePaneIndex;
+    const pts = [...s.paneTimeframes];
+    while (pts.length < 4) pts.push(s.timeframe);
+    pts[pane] = tf;
+    if (pane === 0) {
+      set({ timeframe: tf, paneTimeframes: pts });
+    } else {
+      set({ paneTimeframes: pts });
+    }
+  },
   setDrawingTool: (tool) => set({ drawingTool: tool }),
   toggleIndicator: (id) => {
     const cur = get().indicators;

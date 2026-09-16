@@ -455,7 +455,7 @@ export const INDICATOR_TEMPLATES: IndicatorTemplate[] = [
   {
     id: "tpl_momentum",
     name: "모멘텀",
-    indicators: ["rsi", "macd", "stoch"],
+    indicators: ["rsi", "macd", "stoch", "stochRsi"],
   },
 ];
 

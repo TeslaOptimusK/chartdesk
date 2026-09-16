@@ -11,6 +11,7 @@ import {
   createSeriesMarkers,
   HistogramSeries,
   LineSeries,
+  LineStyle,
   PriceScaleMode,
   type IChartApi,
   type ISeriesApi,
@@ -56,6 +57,7 @@ import {
   anchoredVwap as anchoredVwapSeries,
   ichimoku,
   stochastic,
+  stochasticRsi,
   supertrend,
   wma,
 } from "@/lib/indicators-extra";
@@ -167,6 +169,8 @@ export function ChartCanvas({
   const mainSeriesRef = useRef<AnySeries | null>(null);
   const volumeRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const overlayRefs = useRef<AnySeries[]>([]);
+  const rangeKeyRef = useRef<string>("");
+  const stochPaneEnsured = useRef(false);
   const [chartApi, setChartApi] = useState<ChartApiBundle | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [legend, setLegend] = useState<LegendState | null>(null);
@@ -232,8 +236,10 @@ export function ChartCanvas({
   // Create chart once
   useEffect(() => {
     if (!containerRef.current) return;
-    const chart = createChart(containerRef.current, {
-      height,
+    const el = containerRef.current;
+    const chart = createChart(el, {
+      width: el.clientWidth || undefined,
+      height: el.clientHeight || height || 420,
       layout: {
         background: {
           type: ColorType.Solid,
@@ -241,6 +247,8 @@ export function ChartCanvas({
         },
         textColor: "#9aa7b5",
         fontFamily: "var(--font-chart-mono), ui-monospace, monospace",
+        // Hide lightweight-charts TradingView attribution logo (ChartDesk branding elsewhere).
+        attributionLogo: false,
       },
       grid: {
         vertLines: {
@@ -255,7 +263,27 @@ export function ChartCanvas({
         horzLine: { color: "#3d4f63", labelBackgroundColor: "#1c2836" },
       },
       rightPriceScale: { borderColor: "#1e2a38" },
-      timeScale: { borderColor: "#1e2a38", timeVisible: true },
+      timeScale: {
+        borderColor: "#1e2a38",
+        timeVisible: true,
+        rightOffset: 14,
+        shiftVisibleRangeOnNewBar: false,
+        rightBarStaysOnScroll: false,
+        fixRightEdge: false,
+        fixLeftEdge: false,
+        lockVisibleTimeRangeOnResize: false,
+      },
+      handleScroll: {
+        mouseWheel: true,
+        pressedMouseMove: true,
+        horzTouchDrag: true,
+        vertTouchDrag: true,
+      },
+      handleScale: {
+        axisPressedMouseMove: true,
+        mouseWheel: true,
+        pinch: true,
+      },
     });
 
     const volumeSeries = chart.addSeries(HistogramSeries, {
@@ -263,17 +291,27 @@ export function ChartCanvas({
       priceScaleId: "vol",
     });
     chart.priceScale("vol").applyOptions({
-      scaleMargins: { top: 0.8, bottom: 0 },
+      scaleMargins: { top: 0.82, bottom: 0 },
+    });
+    // Leave room above volume for price; Stoch RSI uses a separate pane when enabled.
+    chart.priceScale("right").applyOptions({
+      scaleMargins: { top: 0.05, bottom: 0.18 },
     });
 
     chartRef.current = chart;
     volumeRef.current = volumeSeries;
+    rangeKeyRef.current = "";
+    stochPaneEnsured.current = false;
 
     const ro = new ResizeObserver(() => {
-      if (!containerRef.current) return;
-      chart.applyOptions({ width: containerRef.current.clientWidth });
+      if (!containerRef.current || !chartRef.current) return;
+      const w = containerRef.current.clientWidth;
+      const h = containerRef.current.clientHeight;
+      if (w > 0 && h > 0) {
+        chartRef.current.applyOptions({ width: w, height: h });
+      }
     });
-    ro.observe(containerRef.current);
+    ro.observe(el);
 
     return () => {
       ro.disconnect();
@@ -282,6 +320,7 @@ export function ChartCanvas({
       chartRef.current = null;
       mainSeriesRef.current = null;
       volumeRef.current = null;
+      stochPaneEnsured.current = false;
     };
     // chartSettings applied in separate effect after mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -586,6 +625,72 @@ export function ChartCanvas({
       addLine(st.k, "#f97316", "stoch");
       addLine(st.d, "#6366f1", "stoch");
     }
+    if (indicators.includes("stochRsi")) {
+      // Dedicated subplot below price (TradingView-style), not price overlay.
+      if (!stochPaneEnsured.current) {
+        while (chart.panes().length < 2) {
+          chart.addPane(true);
+        }
+        const panes = chart.panes();
+        if (panes[0]) panes[0].setStretchFactor(3);
+        if (panes[1]) panes[1].setStretchFactor(1);
+        stochPaneEnsured.current = true;
+      }
+      const sr = stochasticRsi(displayCandles);
+      const addStochLine = (values: (number | null)[], color: string) => {
+        const series = chart.addSeries(
+          LineSeries,
+          {
+            color,
+            lineWidth: 2,
+            priceLineVisible: false,
+            lastValueVisible: true,
+            title: color === "#22d3ee" ? "Stoch RSI K" : "Stoch RSI D",
+          },
+          1
+        );
+        series.setData(
+          displayCandles
+            .map((c, i) =>
+              values[i] == null
+                ? null
+                : { time: c.time as Time, value: values[i]! }
+            )
+            .filter((x): x is { time: Time; value: number } => x != null)
+        );
+        overlayRefs.current.push(series);
+      };
+      addStochLine(sr.k, "#22d3ee");
+      addStochLine(sr.d, "#f472b6");
+      // Reference bands 20 / 80
+      for (const level of [20, 80]) {
+        const band = chart.addSeries(
+          LineSeries,
+          {
+            color: "rgba(148,163,184,0.35)",
+            lineWidth: 1,
+            lineStyle: LineStyle.Dashed,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false,
+          },
+          1
+        );
+        band.setData(
+          displayCandles
+            .filter((_, i) => sr.k[i] != null)
+            .map((c) => ({ time: c.time as Time, value: level }))
+        );
+        overlayRefs.current.push(band);
+      }
+    } else if (stochPaneEnsured.current && chart.panes().length > 1) {
+      try {
+        chart.removePane(1);
+      } catch {
+        /* pane may already be gone */
+      }
+      stochPaneEnsured.current = false;
+    }
     if (customIndicatorSource?.trim()) {
       const vals = runCustomIndicator(customIndicatorSource, displayCandles);
       addLine(vals, "#e879f9");
@@ -694,20 +799,26 @@ export function ChartCanvas({
     }
 
     const barCount = barsForRangePreset(rangePreset, timeframe);
-    if (barCount == null) {
-      chart.timeScale().fitContent();
-    } else {
-      const fromIdx = Math.max(0, displayCandles.length - barCount);
-      const from = displayCandles[fromIdx]?.time;
-      const to = displayCandles[displayCandles.length - 1]?.time;
-      if (from != null && to != null) {
-        chart.timeScale().setVisibleRange({
-          from: from as Time,
-          to: to as Time,
-        });
-      } else {
+    const rangeKey = `${symbolId}|${timeframe}|${rangePreset}|${displayCandles.length > 0 ? displayCandles[0].time : 0}`;
+    if (rangeKeyRef.current !== rangeKey) {
+      rangeKeyRef.current = rangeKey;
+      if (barCount == null) {
         chart.timeScale().fitContent();
+      } else {
+        const fromIdx = Math.max(0, displayCandles.length - barCount);
+        const from = displayCandles[fromIdx]?.time;
+        const to = displayCandles[displayCandles.length - 1]?.time;
+        if (from != null && to != null) {
+          chart.timeScale().setVisibleLogicalRange({
+            from: fromIdx - 2,
+            to: displayCandles.length - 1 + 14,
+          });
+        } else {
+          chart.timeScale().fitContent();
+        }
       }
+      // Keep right breathing room after fit
+      chart.timeScale().applyOptions({ rightOffset: 14 });
     }
     const last = displayCandles[displayCandles.length - 1];
     if (last) {
@@ -721,6 +832,7 @@ export function ChartCanvas({
       });
     }
   }, [
+    symbolId,
     displayCandles,
     indicators,
     patternHits,

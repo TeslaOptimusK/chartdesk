@@ -21,17 +21,24 @@ interface SymbolChartPaneProps {
   className?: string;
   interactive?: boolean;
   paneIndex?: number;
+  /** Override store timeframe for this pane (multi-chart). */
+  paneTimeframe?: Timeframe;
+  active?: boolean;
+  onActivate?: () => void;
 }
 
 export function SymbolChartPane({
   symbolId,
-  height = 420,
+  height,
   className,
   interactive = true,
   paneIndex = 0,
+  paneTimeframe,
+  active = false,
+  onActivate,
 }: SymbolChartPaneProps) {
   const {
-    timeframe,
+    timeframe: storeTimeframe,
     indicators,
     drawingTool,
     patternHits,
@@ -74,6 +81,7 @@ export function SymbolChartPane({
     easyOverlayToggles,
     easyOverlayPreset,
   } = useWorkspace();
+  const timeframe = paneTimeframe ?? storeTimeframe;
   const [candles, setCandles] = useState<Candle[]>([]);
   const [compareCandles, setCompareCandles] = useState<Candle[]>([]);
   const [loading, setLoading] = useState(true);
@@ -319,15 +327,18 @@ export function SymbolChartPane({
   return (
     <div
       className={cn(
-        "relative flex min-h-0 flex-col bg-[var(--chart-bg)]",
+        "relative flex h-full min-h-0 flex-col bg-[var(--chart-bg)]",
+        active && "ring-1 ring-inset ring-[var(--brand-accent)]/70",
         className
       )}
       data-pane-index={paneIndex}
+      data-pane-active={active ? "1" : "0"}
       data-feature="layout.grid"
       data-layout-mode={layoutMode}
+      onMouseDown={() => onActivate?.()}
     >
       <div
-        className="flex items-center justify-between border-b border-[var(--workspace-border)] px-3 py-1.5 text-xs text-[var(--workspace-muted)]"
+        className="flex shrink-0 items-center justify-between border-b border-[var(--workspace-border)] px-3 py-1.5 text-xs text-[var(--workspace-muted)]"
         data-feature="symbol.header"
       >
         <div className="flex items-baseline gap-2">
@@ -361,62 +372,64 @@ export function SymbolChartPane({
           표시할 캔들이 없습니다
         </div>
       )}
-      <ChartCanvas
-        symbolId={symbolId}
-        candles={processedCandles}
-        indicators={indicators as IndicatorId[]}
-        patternHits={hits}
-        drawings={localDrawings}
-        drawingTool={interactive ? drawingTool : "none"}
-        onAddDrawing={interactive ? onAddDrawing : undefined}
-        onDeleteDrawing={interactive ? onDeleteDrawing : undefined}
-        chartStyle={chartStyle}
-        compareCandles={interactive ? compareCandles : undefined}
-        compareLabel={compareSymbol?.ticker}
-        magnet={magnet}
-        goToDate={interactive ? goToDate : null}
-        height={height}
-        className="w-full"
-        chartSettings={chartSettings}
-        locked={drawingsLocked}
-        priceScaleMode={priceScaleMode}
-        rangePreset={rangePreset}
-        dateFormat={dateFormat}
-        extendedHours={extendedHours}
-        showCountdown={showCountdown}
-        timeframe={customIntervalMinutes ? "5" : timeframe}
-        timezone={timezone}
-        eventMarkers={eventMarkers}
-        eventToggles={eventToggles}
-        snapshotTick={interactive ? snapshotTick : 0}
-        syncCrosshair={sync.crosshair}
-        sharedCrosshairTime={sharedCrosshairTime}
-        onCrosshairTime={
-          interactive && sync.crosshair && paneIndex === 0
-            ? (t) => setSharedCrosshairTime(t)
-            : undefined
-        }
-        stayInDrawMode={stayInDrawMode}
-        indicatorOnIndicator={indicatorOnIndicator}
-        customIndicatorSource={customIndicatorSource}
-        easyZones={easyZones}
-        easyToggles={
-          easyOverlayEnabled
-            ? easyOverlayToggles
-            : {
-                ...easyOverlayToggles,
-                ob: false,
-                fvg: false,
-                trend: false,
-                channel: false,
-                fakeout: false,
-                srFlip: false,
-                fib: false,
-                sma365: false,
-              }
-        }
-        easyOverlayOn={easyOverlayEnabled}
-      />
+      <div className="relative min-h-0 flex-1">
+        <ChartCanvas
+          symbolId={symbolId}
+          candles={processedCandles}
+          indicators={indicators as IndicatorId[]}
+          patternHits={hits}
+          drawings={localDrawings}
+          drawingTool={interactive ? drawingTool : "none"}
+          onAddDrawing={interactive ? onAddDrawing : undefined}
+          onDeleteDrawing={interactive ? onDeleteDrawing : undefined}
+          chartStyle={chartStyle}
+          compareCandles={interactive ? compareCandles : undefined}
+          compareLabel={compareSymbol?.ticker}
+          magnet={magnet}
+          goToDate={interactive ? goToDate : null}
+          height={height}
+          className="absolute inset-0 h-full w-full"
+          chartSettings={chartSettings}
+          locked={drawingsLocked}
+          priceScaleMode={priceScaleMode}
+          rangePreset={rangePreset}
+          dateFormat={dateFormat}
+          extendedHours={extendedHours}
+          showCountdown={showCountdown}
+          timeframe={customIntervalMinutes ? "5" : timeframe}
+          timezone={timezone}
+          eventMarkers={eventMarkers}
+          eventToggles={eventToggles}
+          snapshotTick={interactive ? snapshotTick : 0}
+          syncCrosshair={sync.crosshair}
+          sharedCrosshairTime={sharedCrosshairTime}
+          onCrosshairTime={
+            interactive && sync.crosshair
+              ? (t) => setSharedCrosshairTime(t)
+              : undefined
+          }
+          stayInDrawMode={stayInDrawMode}
+          indicatorOnIndicator={indicatorOnIndicator}
+          customIndicatorSource={customIndicatorSource}
+          easyZones={easyZones}
+          easyToggles={
+            easyOverlayEnabled
+              ? easyOverlayToggles
+              : {
+                  ...easyOverlayToggles,
+                  ob: false,
+                  fvg: false,
+                  trend: false,
+                  channel: false,
+                  fakeout: false,
+                  srFlip: false,
+                  fib: false,
+                  sma365: false,
+                }
+          }
+          easyOverlayOn={easyOverlayEnabled}
+        />
+      </div>
     </div>
   );
 }
