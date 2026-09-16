@@ -204,6 +204,12 @@ export function ChartToolbar({ onOpenIngest }: { onOpenIngest: () => void }) {
     setMacroOpen,
     setBrokerOpen,
     setDomOpen,
+    easyOverlayEnabled,
+    setEasyOverlayEnabled,
+    easyOverlayToggles,
+    setEasyOverlayToggle,
+    easyOverlayPreset,
+    setEasyOverlayPreset,
   } = useWorkspace();
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -1013,6 +1019,102 @@ export function ChartToolbar({ onOpenIngest }: { onOpenIngest: () => void }) {
         >
           DOM
         </Button>
+      </div>
+
+      <div
+        className="flex flex-wrap items-center gap-1 rounded border border-[var(--workspace-border)]/60 px-1 py-0.5"
+        data-feature="easychart.pattern_overlay"
+      >
+        <label className="flex items-center gap-0.5 text-[10px] text-[var(--workspace-muted)]">
+          <input
+            type="checkbox"
+            checked={easyOverlayEnabled}
+            onChange={(e) => setEasyOverlayEnabled(e.target.checked)}
+          />
+          EC
+        </label>
+        {(
+          [
+            ["ob", "OB"],
+            ["fvg", "FVG"],
+            ["confluence", "Conf"],
+          ] as const
+        ).map(([key, label]) => (
+          <label
+            key={key}
+            className={cn(
+              "flex items-center gap-0.5 text-[10px]",
+              easyOverlayEnabled
+                ? "text-[var(--workspace-muted)]"
+                : "text-[var(--workspace-faint)]"
+            )}
+          >
+            <input
+              type="checkbox"
+              disabled={!easyOverlayEnabled}
+              checked={easyOverlayToggles[key]}
+              onChange={(e) => setEasyOverlayToggle(key, e.target.checked)}
+            />
+            {label}
+          </label>
+        ))}
+        <select
+          value={easyOverlayPreset}
+          disabled={!easyOverlayEnabled}
+          onChange={(e) => {
+            const p = e.target.value as "scalp" | "swing";
+            setEasyOverlayPreset(p);
+            if (p === "scalp") setTimeframe("15");
+            else setTimeframe("240");
+          }}
+          className="h-6 rounded border border-[var(--workspace-border)] bg-[var(--workspace-elevated)] px-1 text-[10px]"
+          title="단타 5-15-60 / 스윙 4h-D-W"
+        >
+          <option value="scalp">단타</option>
+          <option value="swing">스윙</option>
+        </select>
+        <Popover>
+          <PopoverTrigger
+            render={
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 px-1 text-[9px] text-[var(--workspace-faint)]"
+                disabled={!easyOverlayEnabled}
+              />
+            }
+          >
+            +
+          </PopoverTrigger>
+          <PopoverContent className="w-44 border-[var(--workspace-border)] bg-[var(--workspace-elevated)] p-2">
+            <div className="mb-1 text-[10px] font-semibold text-[var(--workspace-muted)]">
+              Phase 2 스텁
+            </div>
+            {(
+              [
+                ["trend", "추세선"],
+                ["channel", "채널"],
+                ["fakeout", "Fake/Trap"],
+                ["srFlip", "S/R Flip"],
+                ["fib", "피보"],
+                ["overlapOnly", "Overlap only"],
+                ["halfTpLabel", "½TP 라벨"],
+              ] as const
+            ).map(([key, label]) => (
+              <label
+                key={key}
+                className="mb-1 flex items-center gap-1 text-[10px] text-[var(--workspace-muted)]"
+              >
+                <input
+                  type="checkbox"
+                  checked={easyOverlayToggles[key]}
+                  onChange={(e) => setEasyOverlayToggle(key, e.target.checked)}
+                />
+                {label}
+              </label>
+            ))}
+          </PopoverContent>
+        </Popover>
       </div>
 
       <Popover>

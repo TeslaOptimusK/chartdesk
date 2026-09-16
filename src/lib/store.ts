@@ -35,6 +35,11 @@ import {
   INDICATOR_TEMPLATES,
 } from "@/lib/types";
 import { buildCalendarEvents } from "@/lib/phase2-data";
+import {
+  DEFAULT_EASY_TOGGLES,
+  type EasyOverlayPreset,
+  type EasyOverlayToggles,
+} from "@/lib/easychart/types";
 
 /** Feature ID: shell.brand — fixed right-panel tab order */
 export type RightTab =
@@ -84,6 +89,41 @@ const TZ_KEY = "chartdesk-timezone-v1";
 const PHASE2_KEY = "chartdesk-phase2-v1";
 const PHASE3_KEY = "chartdesk-phase3-v1";
 const PHASE4_KEY = "chartdesk-phase4-v1";
+const EASY_KEY = "chartdesk-easychart-overlay-v1";
+
+interface EasyOverlayPrefs {
+  enabled: boolean;
+  toggles: EasyOverlayToggles;
+  preset: EasyOverlayPreset;
+}
+
+const DEFAULT_EASY: EasyOverlayPrefs = {
+  enabled: true,
+  toggles: { ...DEFAULT_EASY_TOGGLES },
+  preset: "scalp",
+};
+
+function readEasyPrefs(): EasyOverlayPrefs {
+  if (typeof window === "undefined") return DEFAULT_EASY;
+  try {
+    const raw = localStorage.getItem(EASY_KEY);
+    if (!raw) return DEFAULT_EASY;
+    const parsed = JSON.parse(raw) as Partial<EasyOverlayPrefs>;
+    return {
+      enabled: parsed.enabled ?? DEFAULT_EASY.enabled,
+      toggles: { ...DEFAULT_EASY_TOGGLES, ...parsed.toggles },
+      preset: parsed.preset ?? DEFAULT_EASY.preset,
+    };
+  } catch {
+    return DEFAULT_EASY;
+  }
+}
+
+function writeEasyPrefs(partial: Partial<EasyOverlayPrefs>) {
+  if (typeof window === "undefined") return;
+  const cur = readEasyPrefs();
+  localStorage.setItem(EASY_KEY, JSON.stringify({ ...cur, ...partial }));
+}
 
 /** Feature ID: indicator.on_indicator */
 export interface IndicatorOnIndicatorConfig {
@@ -282,6 +322,13 @@ interface WorkspaceState {
   setMacroOpen: (v: boolean) => void;
   setBrokerOpen: (v: boolean) => void;
   setDomOpen: (v: boolean) => void;
+  /** easychart pattern overlay (Phase 1) */
+  easyOverlayEnabled: boolean;
+  easyOverlayToggles: EasyOverlayToggles;
+  easyOverlayPreset: EasyOverlayPreset;
+  setEasyOverlayEnabled: (v: boolean) => void;
+  setEasyOverlayToggle: (key: keyof EasyOverlayToggles, v: boolean) => void;
+  setEasyOverlayPreset: (p: EasyOverlayPreset) => void;
   setReady: (v: boolean) => void;
   hydrate: (data: {
     symbols: SymbolMeta[];
@@ -546,6 +593,9 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   macroOpen: false,
   brokerOpen: false,
   domOpen: false,
+  easyOverlayEnabled: true,
+  easyOverlayToggles: { ...DEFAULT_EASY_TOGGLES },
+  easyOverlayPreset: "scalp" as EasyOverlayPreset,
   setIndicatorOnIndicator: (cfg) => {
     writePhase3({ indicatorOnIndicator: cfg });
     set({ indicatorOnIndicator: cfg });
@@ -604,14 +654,31 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     writePhase4({ domOpen: v });
     set({ domOpen: v });
   },
+  setEasyOverlayEnabled: (v) => {
+    writeEasyPrefs({ enabled: v });
+    set({ easyOverlayEnabled: v });
+  },
+  setEasyOverlayToggle: (key, v) => {
+    const toggles = { ...get().easyOverlayToggles, [key]: v };
+    writeEasyPrefs({ toggles });
+    set({ easyOverlayToggles: toggles });
+  },
+  setEasyOverlayPreset: (p) => {
+    writeEasyPrefs({ preset: p });
+    set({ easyOverlayPreset: p });
+  },
   setReady: (v) => set({ ready: v }),
   hydrate: (data) => {
     const p2 = readPhase2();
     const p3 = readPhase3();
     const p4 = readPhase4();
+    const easy = readEasyPrefs();
     set({
       ...data,
       priceWatches: data.priceWatches ?? [],
+      easyOverlayEnabled: easy.enabled,
+      easyOverlayToggles: easy.toggles,
+      easyOverlayPreset: easy.preset,
       comments: data.comments ?? [],
       news: data.news ?? [],
       technicalAlerts: data.technicalAlerts ?? [],

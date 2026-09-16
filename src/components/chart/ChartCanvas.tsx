@@ -66,7 +66,9 @@ import {
   secondsToBarClose,
 } from "@/lib/chart-time";
 import { Phase4ChartOverlay } from "@/components/chart/Phase4ChartOverlay";
+import { PatternOverlay } from "@/components/chart/PatternOverlay";
 import type { SessionTaggedCandle } from "@/lib/extended-hours";
+import type { EasyZone } from "@/lib/easychart";
 import { cn } from "@/lib/utils";
 
 interface ChartCanvasProps {
@@ -105,6 +107,12 @@ interface ChartCanvasProps {
   indicatorOnIndicator?: { parent: string; child: string } | null;
   /** JS custom indicator */
   customIndicatorSource?: string | null;
+  /** easychart pattern overlay zones (separate from drawings) */
+  easyZones?: EasyZone[];
+  easyShowOb?: boolean;
+  easyShowFvg?: boolean;
+  easyShowConfluence?: boolean;
+  easyHalfTpLabel?: boolean;
 }
 
 type AnySeries = ISeriesApi<SeriesType>;
@@ -152,6 +160,11 @@ export function ChartCanvas({
   stayInDrawMode = false,
   indicatorOnIndicator = null,
   customIndicatorSource = null,
+  easyZones = [],
+  easyShowOb = false,
+  easyShowFvg = false,
+  easyShowConfluence = false,
+  easyHalfTpLabel = false,
 }: ChartCanvasProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -915,6 +928,14 @@ export function ChartCanvas({
         stayInDrawMode={stayInDrawMode}
         candlesFull={candles}
         drawingCanvasRef={drawingCanvasRef as RefObject<HTMLCanvasElement | null>}
+      />
+      <PatternOverlay
+        chartApi={chartApi}
+        zones={easyZones}
+        showOb={easyShowOb}
+        showFvg={easyShowFvg}
+        showConfluence={easyShowConfluence}
+        halfTpLabel={easyHalfTpLabel}
       />
       {showCountdown && countdownSec > 0 && (
         <div

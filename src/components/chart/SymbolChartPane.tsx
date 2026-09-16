@@ -3,10 +3,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { ChartCanvas } from "@/components/chart/ChartCanvas";
 import { useWorkspace, type IndicatorId } from "@/lib/store";
-import type { Candle, Drawing, PatternHit } from "@/lib/types";
-import { resampleCandles } from "@/lib/chart-time";
+import type { Candle, Drawing, PatternHit, Timeframe } from "@/lib/types";
+import { resampleCandles, timeframeSeconds } from "@/lib/chart-time";
 import { appendExtendedSessionBars } from "@/lib/extended-hours";
 import { buildEventMarkers } from "@/lib/phase2-data";
+import {
+  detectEasyOverlayZones,
+  SCALP_STRUCTURE_TF,
+  SWING_STRUCTURE_TF,
+  type EasyZone,
+} from "@/lib/easychart";
 import { cn } from "@/lib/utils";
 
 interface SymbolChartPaneProps {
@@ -64,6 +70,9 @@ export function SymbolChartPane({
     layoutMode,
     indicatorOnIndicator,
     customIndicatorSource,
+    easyOverlayEnabled,
+    easyOverlayToggles,
+    easyOverlayPreset,
   } = useWorkspace();
   const [candles, setCandles] = useState<Candle[]>([]);
   const [compareCandles, setCompareCandles] = useState<Candle[]>([]);
@@ -77,6 +86,8 @@ export function SymbolChartPane({
 
   const fetchTf = customIntervalMinutes ? "1" : timeframe;
   const candleLimit = fetchTf === "tick" ? 480 : 240;
+  const structureTf: Timeframe =
+    easyOverlayPreset === "swing" ? SWING_STRUCTURE_TF : SCALP_STRUCTURE_TF;
 
   useEffect(() => {
     let cancelled = false;
@@ -245,6 +256,39 @@ export function SymbolChartPane({
     [symbolId]
   );
 
+  const easyZones: EasyZone[] = useMemo(() => {
+    if (!easyOverlayEnabled || !interactive) return [];
+    if (!easyOverlayToggles.ob && !easyOverlayToggles.fvg) return [];
+    // HTF structure from same series (resample) so confluence shares price space
+    const ltfSec = timeframeSeconds(
+      (customIntervalMinutes ? "5" : timeframe) as Timeframe
+    );
+    const htfSec = timeframeSeconds(structureTf);
+    const structureCandles =
+      htfSec > ltfSec
+        ? resampleCandles(processedCandles, htfSec)
+        : processedCandles;
+    const raw = detectEasyOverlayZones(
+      processedCandles,
+      structureCandles.length >= 10 ? structureCandles : null,
+      { confluenceThreshold: easyOverlayToggles.confluence ? 2 : 1 }
+    );
+    return raw.filter((z) => {
+      if (z.kind === "ob" && !easyOverlayToggles.ob) return false;
+      if (z.kind === "fvg" && !easyOverlayToggles.fvg) return false;
+      if (easyOverlayToggles.overlapOnly && !z.htfOverlap) return false;
+      return true;
+    });
+  }, [
+    easyOverlayEnabled,
+    interactive,
+    processedCandles,
+    structureTf,
+    timeframe,
+    customIntervalMinutes,
+    easyOverlayToggles,
+  ]);
+
   const persist = async (nextLocal: Drawing[]) => {
     const merged = sync.drawings
       ? [
@@ -362,6 +406,11 @@ export function SymbolChartPane({
         stayInDrawMode={stayInDrawMode}
         indicatorOnIndicator={indicatorOnIndicator}
         customIndicatorSource={customIndicatorSource}
+        easyZones={easyZones}
+        easyShowOb={easyOverlayEnabled && easyOverlayToggles.ob}
+        easyShowFvg={easyOverlayEnabled && easyOverlayToggles.fvg}
+        easyShowConfluence={easyOverlayEnabled && easyOverlayToggles.confluence}
+        easyHalfTpLabel={easyOverlayEnabled && easyOverlayToggles.halfTpLabel}
       />
     </div>
   );

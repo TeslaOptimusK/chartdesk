@@ -58,6 +58,13 @@ Optional: `MARKET_DATA_MODE=delayed` + vendor URL/key for free delayed quotes; `
 - Guide: [`docs/chartdesk/fanding-learning-guide.md`](./docs/chartdesk/fanding-learning-guide.md)
 
 Optional: `OPENAI_API_KEY` or `LLM_API_KEY` for richer pattern/opinion extract; heuristics work without keys.
+
+### Easychart pattern overlay (Phase 1)
+
+Spec: [`chartdesk-docs/EASYCHART_PATTERN_OVERLAY.md`](./chartdesk-docs/EASYCHART_PATTERN_OVERLAY.md).
+
+Toolbar **EC** + **OB** / **FVG** / **Conf** + preset **단타** (15m · 60m structure) / **스윙** (4h · D). Separate overlay canvas (not user drawings). Tests: `npm run test:easychart`.
+
 ## Data
 
 JSON store at `data/store.json` (created on first boot from seed). Includes drawings, alerts, **price watches**, comments, news. Safe to delete to reset.
