@@ -287,3 +287,125 @@ export function applyChartTransform(
       return candles;
   }
 }
+
+/** Feature ID: chart.interval.tick — synthetic sub-bar ticks from OHLCV (mock) */
+export function candlesToSyntheticTicks(
+  candles: Candle[],
+  ticksPerBar = 12
+): Candle[] {
+  if (!candles.length) return [];
+  const out: Candle[] = [];
+  for (let bi = 0; bi < candles.length; bi++) {
+    const c = candles[bi];
+    const nextTime = candles[bi + 1]?.time ?? c.time + 60;
+    const span = Math.max(1, nextTime - c.time);
+    const step = Math.max(1, Math.floor(span / ticksPerBar));
+    let price = c.open;
+    for (let i = 0; i < ticksPerBar; i++) {
+      const t = c.time + i * step;
+      if (t >= nextTime) break;
+      const target =
+        i === ticksPerBar - 1
+          ? c.close
+          : c.open + ((c.close - c.open) * (i + 1)) / ticksPerBar;
+      const wiggle =
+        (Math.sin((bi + 1) * (i + 2) * 0.7) * (c.high - c.low)) / 6;
+      const close = Math.min(c.high, Math.max(c.low, target + wiggle));
+      const open = price;
+      const high = Math.max(open, close, Math.min(c.high, close + wiggle * 0.3));
+      const low = Math.min(open, close, Math.max(c.low, close - wiggle * 0.3));
+      const volSlice = Math.floor(c.volume / ticksPerBar);
+      out.push({
+        time: t,
+        open: round2(open),
+        high: round2(high),
+        low: round2(low),
+        close: round2(close),
+        volume: volSlice + (i === 0 ? c.volume % ticksPerBar : 0),
+      });
+      price = close;
+    }
+  }
+  return out.length ? out : candles;
+}
+
+function round2(n: number) {
+  return Math.round(n * 100) / 100;
+}
+
+/** Feature ID: chart.type.volume_footprint — mock bid/ask bins per bar */
+export interface FootprintLevel {
+  price: number;
+  bidVol: number;
+  askVol: number;
+}
+
+export interface FootprintBar {
+  time: number;
+  levels: FootprintLevel[];
+}
+
+export function mockFootprintBars(
+  candles: Candle[],
+  levelsPerBar = 8
+): FootprintBar[] {
+  return candles.map((c, idx) => {
+    const range = Math.max(c.high - c.low, c.close * 0.0005, 0.01);
+    const step = range / levelsPerBar;
+    const base = c.low;
+    const up = c.close >= c.open;
+    const levels: FootprintLevel[] = [];
+    for (let i = 0; i < levelsPerBar; i++) {
+      const price = round2(base + step * (i + 0.5));
+      const seed = Math.sin((idx + 1) * (i + 3) * 1.31) * 0.5 + 0.5;
+      const total = Math.floor((c.volume / levelsPerBar) * (0.6 + seed));
+      const askShare = up ? 0.55 + seed * 0.25 : 0.35 + seed * 0.2;
+      const askVol = Math.floor(total * askShare);
+      levels.push({
+        price,
+        bidVol: total - askVol,
+        askVol,
+      });
+    }
+    return { time: c.time, levels };
+  });
+}
+
+/** Feature ID: chart.type.tpo — mock TPO letters per price level (session profile) */
+export interface TpoLevel {
+  price: number;
+  letters: string;
+}
+
+const TPO_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+export function mockTpoProfile(
+  candles: Candle[],
+  levels = 24
+): TpoLevel[] {
+  if (!candles.length) return [];
+  const lo = Math.min(...candles.map((c) => c.low));
+  const hi = Math.max(...candles.map((c) => c.high));
+  const span = Math.max(hi - lo, 0.01);
+  const step = span / levels;
+  const buckets = new Map<number, string[]>();
+
+  candles.forEach((c, barIdx) => {
+    const letter = TPO_LETTERS[barIdx % TPO_LETTERS.length] ?? "A";
+    const touchLow = Math.floor((c.low - lo) / step);
+    const touchHigh = Math.floor((c.high - lo) / step);
+    for (let b = touchLow; b <= touchHigh; b++) {
+      const price = round2(lo + step * (b + 0.5));
+      const arr = buckets.get(price) ?? [];
+      if (!arr.includes(letter)) arr.push(letter);
+      buckets.set(price, arr);
+    }
+  });
+
+  return [...buckets.entries()]
+    .sort((a, b) => b[0] - a[0])
+    .map(([price, letters]) => ({
+      price,
+      letters: letters.join(""),
+    }));
+}

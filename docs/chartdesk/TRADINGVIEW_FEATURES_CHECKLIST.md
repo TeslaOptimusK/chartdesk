@@ -161,15 +161,15 @@ Phase 1 완료 = 첨부 ChartDesk 스크린샷과 같은 셸.
 | ID | 기능 | 상태 |  
 |----|------|------|  
 | Pine 런타임 | 없음. 약속 금지 | wont (1.x) |  
-| `screener.pine` | Pine 스크리너 | todo |  
-| `chart.type.volume_footprint` | 풋프린트 | todo |  
-| `chart.type.tpo` | TPO | todo |  
-| `options.*` | 옵션 | todo |  
-| `yield_curves` | 금리곡선 | todo |  
-| `macro.maps` | 매크로맵 | todo |  
-| `trade.broker` | 브로커 | todo |  
-| `dom` | 호가창 | todo |  
-| `chart.interval.tick` | 틱봉 | todo |  
+| `screener.pine` | Pine 스크리너 | wont — Pine 런타임 필요 (1.x 범위 밖, 가짜 Pine 실행기 없음) |  
+| `chart.type.volume_footprint` | 풋프린트 | done |  
+| `chart.type.tpo` | TPO | done |  
+| `options.*` | 옵션 | done |  
+| `yield_curves` | 금리곡선 | done |  
+| `macro.maps` | 매크로맵 | done |  
+| `trade.broker` | 브로커 | done |  
+| `dom` | 호가창 | done |  
+| `chart.interval.tick` | 틱봉 | done |  
 
 ---  
 

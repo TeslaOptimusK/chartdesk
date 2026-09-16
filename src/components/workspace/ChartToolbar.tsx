@@ -83,6 +83,12 @@ const CHART_STYLES: { id: ChartStyle; label: string; feature?: string }[] = [
     label: "Vol캔",
     feature: "chart.type.volume_candles",
   },
+  {
+    id: "volume_footprint",
+    label: "FP",
+    feature: "chart.type.volume_footprint",
+  },
+  { id: "tpo", label: "TPO", feature: "chart.type.tpo" },
 ];
 
 const DRAWING_ICONS: Record<
@@ -192,6 +198,11 @@ export function ChartToolbar({ onOpenIngest }: { onOpenIngest: () => void }) {
     setPortfolioOpen,
     setSeasonalsOpen,
     setCustomIndicatorOpen,
+    setOptionsOpen,
+    setYieldOpen,
+    setMacroOpen,
+    setBrokerOpen,
+    setDomOpen,
   } = useWorkspace();
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -314,6 +325,19 @@ export function ChartToolbar({ onOpenIngest }: { onOpenIngest: () => void }) {
             {TIMEFRAME_LABELS[tf]}
           </button>
         ))}
+        <button
+          type="button"
+          onClick={() => setTimeframe("tick")}
+          className={cn(
+            "rounded px-2 py-1 text-xs",
+            timeframe === "tick"
+              ? "bg-[var(--brand-accent)] font-semibold text-[#0b1016]"
+              : "text-[var(--workspace-muted)] hover:text-[var(--workspace-fg)]"
+          )}
+          data-feature="chart.interval.tick"
+        >
+          Tick
+        </button>
       </div>
 
       <div
@@ -939,6 +963,54 @@ export function ChartToolbar({ onOpenIngest }: { onOpenIngest: () => void }) {
           onClick={() => setCustomIndicatorOpen(true)}
         >
           JS
+        </Button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-0.5 border-l border-[var(--workspace-border)] pl-2">
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 px-1.5 text-[10px]"
+          data-feature="options.chain"
+          onClick={() => setOptionsOpen(true)}
+        >
+          Opt
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 px-1.5 text-[10px]"
+          data-feature="yield_curves"
+          onClick={() => setYieldOpen(true)}
+        >
+          Yield
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 px-1.5 text-[10px]"
+          data-feature="macro.maps"
+          onClick={() => setMacroOpen(true)}
+        >
+          Macro
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 px-1.5 text-[10px]"
+          data-feature="trade.broker"
+          onClick={() => setBrokerOpen(true)}
+        >
+          Broker
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 px-1.5 text-[10px]"
+          data-feature="dom"
+          onClick={() => setDomOpen(true)}
+        >
+          DOM
         </Button>
       </div>
 

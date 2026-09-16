@@ -2,6 +2,7 @@ export type AssetClass = "kr_stock" | "us_stock" | "crypto";
 
 /** Feature IDs: chart.interval / chart.interval.full / chart.interval.custom */
 export type Timeframe =
+  | "tick" // Feature ID: chart.interval.tick
   | "1"
   | "3"
   | "5"
@@ -88,7 +89,9 @@ export type ChartStyle =
   | "line_break" // chart.type.line_break
   | "point_figure" // chart.type.point_figure
   | "range" // chart.type.range
-  | "volume_candles"; // chart.type.volume_candles
+  | "volume_candles" // chart.type.volume_candles
+  | "volume_footprint" // chart.type.volume_footprint
+  | "tpo"; // chart.type.tpo
 
 /** Feature ID: scale.log / scale.percent / scale.indexed_100 */
 export type PriceScaleMode = "linear" | "log" | "percent" | "indexed_100";
@@ -439,6 +442,7 @@ export const INDICATOR_TEMPLATES: IndicatorTemplate[] = [
 ];
 
 export const TIMEFRAME_LABELS: Record<Timeframe, string> = {
+  tick: "틱",
   "1": "1분",
   "3": "3분",
   "5": "5분",
@@ -455,6 +459,7 @@ export const TIMEFRAME_LABELS: Record<Timeframe, string> = {
 
 /** Feature ID: chart.interval.full — default picker order */
 export const ALL_TIMEFRAMES: Timeframe[] = [
+  "tick",
   "1",
   "3",
   "5",

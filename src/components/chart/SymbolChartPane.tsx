@@ -69,12 +69,13 @@ export function SymbolChartPane({
   const compareSymbol = symbols.find((s) => s.id === compareSymbolId);
 
   const fetchTf = customIntervalMinutes ? "1" : timeframe;
+  const candleLimit = fetchTf === "tick" ? 480 : 240;
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    fetch(`/api/candles?symbolId=${symbolId}&tf=${fetchTf}&limit=240`)
+    fetch(`/api/candles?symbolId=${symbolId}&tf=${fetchTf}&limit=${candleLimit}`)
       .then(async (r) => {
         if (!r.ok) throw new Error("시세 로드 실패");
         return r.json();
@@ -94,7 +95,7 @@ export function SymbolChartPane({
     return () => {
       cancelled = true;
     };
-  }, [symbolId, fetchTf]);
+  }, [symbolId, fetchTf, candleLimit]);
 
   useEffect(() => {
     if (!compareSymbolId || !interactive) {
@@ -102,7 +103,7 @@ export function SymbolChartPane({
       return;
     }
     let cancelled = false;
-    fetch(`/api/candles?symbolId=${compareSymbolId}&tf=${fetchTf}&limit=240`)
+    fetch(`/api/candles?symbolId=${compareSymbolId}&tf=${fetchTf}&limit=${candleLimit}`)
       .then((r) => r.json())
       .then((data: { candles: Candle[] }) => {
         if (!cancelled) setCompareCandles(data.candles ?? []);
@@ -113,7 +114,7 @@ export function SymbolChartPane({
     return () => {
       cancelled = true;
     };
-  }, [compareSymbolId, fetchTf, interactive]);
+  }, [compareSymbolId, fetchTf, candleLimit, interactive]);
 
   const processedCandles = useMemo(() => {
     let list = candles;

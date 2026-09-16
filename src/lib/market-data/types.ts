@@ -22,6 +22,8 @@ export interface MarketDataAdapter {
 
 export function secondsPerBar(tf: Timeframe): number {
   switch (tf) {
+    case "tick":
+      return 1;
     case "1":
       return 60;
     case "3":

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createMarketDataAdapter } from "@/lib/market-data";
+import { expandToTickCandles } from "@/lib/phase4-data";
 import { readStore } from "@/lib/storage";
 import type { Timeframe } from "@/lib/types";
 
@@ -20,12 +21,16 @@ export async function GET(req: Request) {
   }
 
   const adapter = createMarketDataAdapter();
-  const candles = await adapter.getCandles({
+  let candles = await adapter.getCandles({
     symbolId: symbol.id,
     ticker: symbol.ticker,
-    timeframe,
-    limit,
+    timeframe: timeframe === "tick" ? "1" : timeframe,
+    limit: timeframe === "tick" ? Math.min(120, Math.ceil(limit / 8)) : limit,
   });
+
+  if (timeframe === "tick") {
+    candles = expandToTickCandles(candles, limit);
+  }
 
   return NextResponse.json({
     adapter: { id: adapter.id, label: adapter.label, mode: adapter.mode },

@@ -83,6 +83,7 @@ const SETTINGS_KEY = "chartdesk-settings-v1";
 const TZ_KEY = "chartdesk-timezone-v1";
 const PHASE2_KEY = "chartdesk-phase2-v1";
 const PHASE3_KEY = "chartdesk-phase3-v1";
+const PHASE4_KEY = "chartdesk-phase4-v1";
 
 /** Feature ID: indicator.on_indicator */
 export interface IndicatorOnIndicatorConfig {
@@ -114,6 +115,22 @@ const DEFAULT_PHASE3: Phase3Prefs = {
   portfolioOpen: false,
   seasonalsOpen: false,
   customIndicatorOpen: false,
+};
+
+export interface Phase4Prefs {
+  optionsOpen: boolean;
+  yieldOpen: boolean;
+  macroOpen: boolean;
+  brokerOpen: boolean;
+  domOpen: boolean;
+}
+
+const DEFAULT_PHASE4: Phase4Prefs = {
+  optionsOpen: false,
+  yieldOpen: false,
+  macroOpen: false,
+  brokerOpen: false,
+  domOpen: false,
 };
 
 export interface Phase2Prefs {
@@ -243,6 +260,11 @@ interface WorkspaceState {
   portfolioOpen: boolean;
   seasonalsOpen: boolean;
   customIndicatorOpen: boolean;
+  optionsOpen: boolean;
+  yieldOpen: boolean;
+  macroOpen: boolean;
+  brokerOpen: boolean;
+  domOpen: boolean;
   setIndicatorOnIndicator: (cfg: IndicatorOnIndicatorConfig | null) => void;
   setCustomIndicatorSource: (src: string) => void;
   setMultiConditionAlerts: (alerts: MultiConditionAlert[]) => void;
@@ -254,6 +276,11 @@ interface WorkspaceState {
   setPortfolioOpen: (v: boolean) => void;
   setSeasonalsOpen: (v: boolean) => void;
   setCustomIndicatorOpen: (v: boolean) => void;
+  setOptionsOpen: (v: boolean) => void;
+  setYieldOpen: (v: boolean) => void;
+  setMacroOpen: (v: boolean) => void;
+  setBrokerOpen: (v: boolean) => void;
+  setDomOpen: (v: boolean) => void;
   setReady: (v: boolean) => void;
   hydrate: (data: {
     symbols: SymbolMeta[];
@@ -415,6 +442,23 @@ function writePhase3(partial: Partial<Phase3Prefs>) {
   localStorage.setItem(PHASE3_KEY, JSON.stringify({ ...cur, ...partial }));
 }
 
+function readPhase4(): Phase4Prefs {
+  if (typeof window === "undefined") return DEFAULT_PHASE4;
+  try {
+    const raw = localStorage.getItem(PHASE4_KEY);
+    if (!raw) return DEFAULT_PHASE4;
+    return { ...DEFAULT_PHASE4, ...(JSON.parse(raw) as Partial<Phase4Prefs>) };
+  } catch {
+    return DEFAULT_PHASE4;
+  }
+}
+
+function writePhase4(partial: Partial<Phase4Prefs>) {
+  if (typeof window === "undefined") return;
+  const cur = readPhase4();
+  localStorage.setItem(PHASE4_KEY, JSON.stringify({ ...cur, ...partial }));
+}
+
 function readTimezone(): string {
   if (typeof window === "undefined") return "America/New_York";
   try {
@@ -494,6 +538,11 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   portfolioOpen: false,
   seasonalsOpen: false,
   customIndicatorOpen: false,
+  optionsOpen: false,
+  yieldOpen: false,
+  macroOpen: false,
+  brokerOpen: false,
+  domOpen: false,
   setIndicatorOnIndicator: (cfg) => {
     writePhase3({ indicatorOnIndicator: cfg });
     set({ indicatorOnIndicator: cfg });
@@ -532,10 +581,31 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     writePhase3({ customIndicatorOpen: v });
     set({ customIndicatorOpen: v });
   },
+  setOptionsOpen: (v) => {
+    writePhase4({ optionsOpen: v });
+    set({ optionsOpen: v });
+  },
+  setYieldOpen: (v) => {
+    writePhase4({ yieldOpen: v });
+    set({ yieldOpen: v });
+  },
+  setMacroOpen: (v) => {
+    writePhase4({ macroOpen: v });
+    set({ macroOpen: v });
+  },
+  setBrokerOpen: (v) => {
+    writePhase4({ brokerOpen: v });
+    set({ brokerOpen: v });
+  },
+  setDomOpen: (v) => {
+    writePhase4({ domOpen: v });
+    set({ domOpen: v });
+  },
   setReady: (v) => set({ ready: v }),
   hydrate: (data) => {
     const p2 = readPhase2();
     const p3 = readPhase3();
+    const p4 = readPhase4();
     set({
       ...data,
       priceWatches: data.priceWatches ?? [],
@@ -554,6 +624,11 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       portfolioOpen: p3.portfolioOpen,
       seasonalsOpen: p3.seasonalsOpen,
       customIndicatorOpen: p3.customIndicatorOpen,
+      optionsOpen: p4.optionsOpen,
+      yieldOpen: p4.yieldOpen,
+      macroOpen: p4.macroOpen,
+      brokerOpen: p4.brokerOpen,
+      domOpen: p4.domOpen,
       activeSymbolId:
         data.watchlist.find((id) => id === "us_NVDA") ??
         data.watchlist[0] ??

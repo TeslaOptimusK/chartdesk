@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ChartToolbar } from "@/components/workspace/ChartToolbar";
 import { CommandPalette } from "@/components/workspace/CommandPalette";
 import { Phase3Panels } from "@/components/workspace/Phase3Panels";
+import { Phase4Panels } from "@/components/workspace/Phase4Panels";
 import { IngestDialog } from "@/components/workspace/IngestDialog";
 import { RightPanel } from "@/components/workspace/RightPanel";
 import { SymbolChartPane } from "@/components/chart/SymbolChartPane";
@@ -338,6 +339,7 @@ export function WorkspaceShell() {
       <IngestDialog open={ingestOpen} onOpenChange={setIngestOpen} />
       <CommandPalette />
       <Phase3Panels />
+      <Phase4Panels />
     </div>
   );
 }

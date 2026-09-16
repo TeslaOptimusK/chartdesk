@@ -65,6 +65,7 @@ import {
   formatChartDate,
   secondsToBarClose,
 } from "@/lib/chart-time";
+import { Phase4ChartOverlay } from "@/components/chart/Phase4ChartOverlay";
 import { cn } from "@/lib/utils";
 
 interface ChartCanvasProps {
@@ -625,7 +626,9 @@ export function ChartCanvas({
       chartStyle === "kagi" ||
       chartStyle === "line_break" ||
       chartStyle === "point_figure" ||
-      chartStyle === "range"
+      chartStyle === "range" ||
+      chartStyle === "volume_footprint" ||
+      chartStyle === "tpo"
     ) {
       const markers: SeriesMarker<Time>[] = patternHits.map((h) => ({
         time: h.toTs as Time,
@@ -794,10 +797,15 @@ export function ChartCanvas({
                           ? "chart.type.range"
                           : chartStyle === "volume_candles"
                             ? "chart.type.volume_candles"
-                            : undefined
+                            : chartStyle === "volume_footprint"
+                              ? "chart.type.volume_footprint"
+                              : chartStyle === "tpo"
+                                ? "chart.type.tpo"
+                                : undefined
       }
     >
       <div ref={containerRef} className="absolute inset-0" />
+      <Phase4ChartOverlay chartStyle={chartStyle} candles={displayCandles} />
       {chartSettings.showWatermark && (
         <div
           className="pointer-events-none absolute inset-0 z-[5] flex items-center justify-center text-4xl font-semibold tracking-widest text-white/5"
