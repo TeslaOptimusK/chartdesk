@@ -188,7 +188,7 @@ export interface Phase2Prefs {
 }
 
 const DEFAULT_SYNC: LayoutSyncFlags = {
-  symbol: true,
+  symbol: false,
   interval: true,
   crosshair: false,
   drawings: true,
