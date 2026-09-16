@@ -187,6 +187,17 @@ Phase 1 완료 = 첨부 ChartDesk 스크린샷과 같은 셸.
 | Snapshot composites drawings | done |  
 | Pine / `screener.pine` | wont |  
 
+### Fanding original-text learning
+
+| Area | Status |
+|------|--------|
+| Category ingest + bulk multi-file/JSON | done |
+| PatternDef extract (heuristic + LLM) + `source_post_ids` | done |
+| Pattern review queue (pending → approve/reject) | done |
+| Richer opinion drafts + approval | done |
+| Learning status UI | done |
+| No scrape / Pine wont | done |
+
 ---  
 
 ## 라벨 스모크 (한국어)  

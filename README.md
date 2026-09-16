@@ -49,11 +49,15 @@ Optional: `MARKET_DATA_MODE=delayed` + vendor URL/key for free delayed quotes; `
 - Unified evaluation: `POST /api/alerts/evaluate` with `{ symbolId, candles?, lastClose? }` or `{ scope: "pending" }` for watchlist/multi/technical across symbols. Fires on SSE mock ticks + 12s pending sweep.
 - Alert webhook URL in the 알림 tab → `PUT /api/webhooks`; deliveries POST `{ alert, firedAt }` with retries, else logged to `data/webhook-log.json`.
 
-### Fanding ingest
+### Fanding ingest & learning
 
-- UI: paste or drag-drop `.txt` / `.md` / `.json` (sets `ingestMethod: file_drop`).
-- Webhook: `POST /api/ingest/webhook` JSON `{ category, title, body, externalUrl?, symbolIds? }` or plain text with `?category=` → `202 Accepted`.
+- UI: paste or drag-drop `.txt` / `.md` / `.json` (multi-file + JSON array). Sets `ingestMethod: file_drop`.
+- Bulk: `POST /api/learn/bulk` · status: `GET /api/learn/status`
+- Webhook: `POST /api/ingest/webhook` JSON `{ category, title, body, … }` or `{ posts: […] }` → `202`
+- Patterns extracted from lecture text land in **패턴** review queue (`pending` → approve/reject). Opinions stay draft until **코멘터리** approval.
+- Guide: [`docs/chartdesk/fanding-learning-guide.md`](./docs/chartdesk/fanding-learning-guide.md)
 
+Optional: `OPENAI_API_KEY` or `LLM_API_KEY` for richer pattern/opinion extract; heuristics work without keys.
 ## Data
 
 JSON store at `data/store.json` (created on first boot from seed). Includes drawings, alerts, **price watches**, comments, news. Safe to delete to reset.

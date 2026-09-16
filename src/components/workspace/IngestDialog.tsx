@@ -21,30 +21,63 @@ const CATEGORIES = Object.keys(CATEGORY_LABELS) as PostCategory[];
 
 const FILE_ACCEPT = ".txt,.md,.json";
 
-function titleFromFile(name: string, text: string): string {
-  if (name.endsWith(".json")) {
-    try {
-      const j = JSON.parse(text) as { title?: string };
-      if (j.title?.trim()) return j.title.trim();
-    } catch {
-      /* fall through */
+type BulkDraft = {
+  title: string;
+  body: string;
+  category?: PostCategory;
+  externalUrl?: string;
+  fileName: string;
+};
+
+function parseJsonPayload(
+  text: string,
+  fileName: string,
+  fallbackCategory: PostCategory
+): BulkDraft[] {
+  const j = JSON.parse(text) as unknown;
+  if (Array.isArray(j)) {
+    const out: BulkDraft[] = [];
+    j.forEach((item, idx) => {
+      if (!item || typeof item !== "object") return;
+      const o = item as Record<string, unknown>;
+      const title = String(o.title ?? "").trim();
+      const body = String(o.body ?? o.content ?? "").trim();
+      if (!title || !body) return;
+      out.push({
+        title,
+        body,
+        category: (o.category as PostCategory) || fallbackCategory,
+        externalUrl: String(o.externalUrl ?? ""),
+        fileName: `${fileName}#${idx + 1}`,
+      });
+    });
+    return out;
+  }
+  if (j && typeof j === "object") {
+    const o = j as Record<string, unknown>;
+    if (Array.isArray(o.posts)) {
+      return parseJsonPayload(JSON.stringify(o.posts), fileName, fallbackCategory);
+    }
+    const title = String(o.title ?? "").trim() || fileName.replace(/\.[^.]+$/, "");
+    const body = String(o.body ?? o.content ?? "").trim();
+    if (body) {
+      return [
+        {
+          title,
+          body,
+          category: (o.category as PostCategory) || fallbackCategory,
+          externalUrl: String(o.externalUrl ?? ""),
+          fileName,
+        },
+      ];
     }
   }
-  const line = text.split(/\r?\n/).find((l) => l.trim()) ?? "";
-  return line.slice(0, 120) || name.replace(/\.[^.]+$/, "");
+  return [];
 }
 
-function bodyFromFile(name: string, text: string): string {
-  if (name.endsWith(".json")) {
-    try {
-      const j = JSON.parse(text) as { body?: string; content?: string };
-      if (j.body?.trim()) return j.body.trim();
-      if (j.content?.trim()) return j.content.trim();
-    } catch {
-      /* use raw */
-    }
-  }
-  return text;
+function titleFromText(name: string, text: string): string {
+  const line = text.split(/\r?\n/).find((l) => l.trim()) ?? "";
+  return line.slice(0, 120) || name.replace(/\.[^.]+$/, "");
 }
 
 export function IngestDialog({
@@ -54,7 +87,14 @@ export function IngestDialog({
   open: boolean;
   onOpenChange: (v: boolean) => void;
 }) {
-  const { symbols, upsertPost, upsertOpinions, setAlerts } = useWorkspace();
+  const {
+    symbols,
+    upsertPost,
+    upsertOpinions,
+    setPatterns,
+    patterns,
+    setAlerts,
+  } = useWorkspace();
   const [category, setCategory] = useState<PostCategory>("realtime_chart");
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -67,6 +107,7 @@ export function IngestDialog({
   const [error, setError] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [queue, setQueue] = useState<BulkDraft[]>([]);
 
   const toggleSymbol = (id: string) => {
     setSymbolIds((prev) =>
@@ -74,30 +115,81 @@ export function IngestDialog({
     );
   };
 
-  const applyFile = useCallback((file: File, text: string) => {
+  const mergeQueue = useCallback((items: BulkDraft[]) => {
+    setQueue((prev) => [...prev, ...items]);
     setIngestMethod("file_drop");
-    setTitle(titleFromFile(file.name, text));
-    setBody(bodyFromFile(file.name, text));
-    setOkMsg(`파일 로드: ${file.name}`);
+    if (items.length === 1) {
+      setTitle(items[0].title);
+      setBody(items[0].body);
+      if (items[0].category) setCategory(items[0].category);
+      if (items[0].externalUrl) setExternalUrl(items[0].externalUrl);
+    }
+    setOkMsg(`${items.length}건 대기열에 추가`);
   }, []);
 
   const onFiles = useCallback(
-    (files: FileList | null) => {
+    async (files: FileList | null) => {
       if (!files?.length) return;
-      const file = files[0];
-      const ext = file.name.split(".").pop()?.toLowerCase();
-      if (!ext || !["txt", "md", "json"].includes(ext)) {
-        setError("지원: .txt, .md, .json");
-        return;
+      setError(null);
+      const collected: BulkDraft[] = [];
+      for (const file of Array.from(files)) {
+        const ext = file.name.split(".").pop()?.toLowerCase();
+        if (!ext || !["txt", "md", "json"].includes(ext)) {
+          setError("지원: .txt, .md, .json (복수 선택 가능)");
+          continue;
+        }
+        try {
+          const text = await file.text();
+          if (ext === "json") {
+            const parsed = parseJsonPayload(text, file.name, category);
+            if (!parsed.length) {
+              setError(`${file.name}: JSON에 title/body가 없습니다`);
+              continue;
+            }
+            collected.push(...parsed);
+          } else {
+            collected.push({
+              title: titleFromText(file.name, text),
+              body: text,
+              category,
+              fileName: file.name,
+            });
+          }
+        } catch {
+          setError(`${file.name} 읽기 실패`);
+        }
       }
-      void file.text().then(applyFile.bind(null, file)).catch(() => {
-        setError("파일 읽기 실패");
-      });
+      if (collected.length) mergeQueue(collected);
     },
-    [applyFile]
+    [category, mergeQueue]
   );
 
-  const submit = async () => {
+  const refreshAlerts = async () => {
+    const alertsRes = await fetch("/api/alerts");
+    const alertsData = await alertsRes.json();
+    setAlerts(alertsData.alerts ?? []);
+  };
+
+  const applyLearnResult = (data: {
+    post?: { id: string };
+    posts?: { id: string }[];
+    opinions?: unknown[];
+    patterns?: unknown[];
+  }) => {
+    if (data.post) upsertPost(data.post as never);
+    if (data.posts) {
+      for (const p of data.posts) upsertPost(p as never);
+    }
+    if (data.opinions?.length) upsertOpinions(data.opinions as never);
+    if (data.patterns?.length) {
+      const incoming = data.patterns as { id: string }[];
+      const map = new Map(patterns.map((p) => [p.id, p]));
+      for (const p of incoming) map.set(p.id, p as never);
+      setPatterns([...map.values()] as never);
+    }
+  };
+
+  const submitSingle = async () => {
     setBusy(true);
     setError(null);
     setOkMsg(null);
@@ -113,19 +205,17 @@ export function IngestDialog({
           symbolIds,
           ingestMethod,
           autoOpinion: true,
+          autoPatterns: true,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "인제스트 실패");
-      upsertPost(data.post);
-      if (data.opinions?.length) upsertOpinions(data.opinions);
-      const alertsRes = await fetch("/api/alerts");
-      const alertsData = await alertsRes.json();
-      setAlerts(alertsData.alerts ?? []);
+      applyLearnResult(data);
+      await refreshAlerts();
+      const patN = data.patterns?.length ?? 0;
+      const opN = data.opinions?.length ?? 0;
       setOkMsg(
-        data.opinions?.length
-          ? `저장됨 · 의견 초안 ${data.opinions.length}건 (검수 대기)`
-          : "저장됨 · 종목 미추출 시 수동 태깅 필요"
+        `학습됨 · 패턴 ${patN} · 의견 초안 ${opN} (검수 필요)`
       );
       setTitle("");
       setBody("");
@@ -139,15 +229,58 @@ export function IngestDialog({
     }
   };
 
+  const submitBulk = async () => {
+    if (!queue.length) return;
+    setBusy(true);
+    setError(null);
+    setOkMsg(null);
+    try {
+      const res = await fetch("/api/learn/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          defaultCategory: category,
+          autoOpinion: true,
+          autoPatterns: true,
+          posts: queue.map((q) => ({
+            category: q.category ?? category,
+            title: q.title,
+            body: q.body,
+            externalUrl: q.externalUrl,
+            ingestMethod: "file_drop" as const,
+          })),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok && !data.imported) {
+        throw new Error(data.error ?? "일괄 인제스트 실패");
+      }
+      applyLearnResult(data);
+      await refreshAlerts();
+      setOkMsg(
+        `일괄 학습 ${data.imported}건 · 패턴 ${data.patterns?.length ?? 0} · 의견 ${data.opinions?.length ?? 0}`
+      );
+      setQueue([]);
+      setTitle("");
+      setBody("");
+      setIngestMethod("manual_paste");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "오류");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto border-[var(--workspace-border)] bg-[var(--workspace-elevated)] text-[var(--workspace-fg)] sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>easychart 포스트 수동 인제스트</DialogTitle>
+          <DialogTitle>easychart 원문 학습 인제스트</DialogTitle>
           <DialogDescription className="text-[var(--workspace-muted)]">
             멤버십에서 합법적으로 열람한 글만 붙여넣거나 파일을 드롭하세요.
-            웹훅은 <code className="text-[10px]">POST /api/ingest/webhook</code>
-            을 사용합니다.
+            스크레이핑 없음. 웹훅{" "}
+            <code className="text-[10px]">POST /api/ingest/webhook</code> · 일괄{" "}
+            <code className="text-[10px]">POST /api/learn/bulk</code>
           </DialogDescription>
         </DialogHeader>
 
@@ -167,24 +300,52 @@ export function IngestDialog({
             onDrop={(e) => {
               e.preventDefault();
               setDragOver(false);
-              onFiles(e.dataTransfer.files);
+              void onFiles(e.dataTransfer.files);
             }}
             data-feature="ingest.file_drop"
           >
-            <p className="mb-2">.txt / .md / .json 드래그 앤 드롭</p>
+            <p className="mb-2">
+              .txt / .md / .json 복수 드롭 · JSON 배열 지원
+            </p>
             <label className="cursor-pointer text-[var(--brand-accent)] underline">
-              파일 선택
+              파일 선택 (복수)
               <input
                 type="file"
                 accept={FILE_ACCEPT}
+                multiple
                 className="hidden"
-                onChange={(e) => onFiles(e.target.files)}
+                onChange={(e) => void onFiles(e.target.files)}
               />
             </label>
             {ingestMethod === "file_drop" && (
               <p className="mt-2 text-[10px] text-emerald-300/90">file_drop</p>
             )}
           </div>
+
+          {queue.length > 0 && (
+            <div
+              className="rounded-md border border-[var(--workspace-border)] bg-[var(--workspace-panel)] p-2"
+              data-feature="ingest.bulk"
+            >
+              <div className="mb-1 flex items-center justify-between text-xs font-semibold">
+                <span>일괄 대기 {queue.length}건</span>
+                <button
+                  type="button"
+                  className="text-[10px] text-[var(--workspace-muted)] underline"
+                  onClick={() => setQueue([])}
+                >
+                  비우기
+                </button>
+              </div>
+              <ul className="max-h-24 space-y-0.5 overflow-y-auto text-[10px] text-[var(--workspace-muted)]">
+                {queue.map((q, i) => (
+                  <li key={`${q.fileName}-${i}`}>
+                    {q.fileName} — {q.title.slice(0, 40)}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           <div>
             <Label className="mb-1.5 block text-xs">주제</Label>
@@ -208,7 +369,7 @@ export function IngestDialog({
 
           <div>
             <Label htmlFor="title" className="mb-1.5 block text-xs">
-              제목
+              제목 (단건)
             </Label>
             <Input
               id="title"
@@ -280,16 +441,26 @@ export function IngestDialog({
           {okMsg && <p className="text-xs text-emerald-300">{okMsg}</p>}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="flex-col gap-2 sm:flex-row">
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             닫기
           </Button>
+          {queue.length > 0 && (
+            <Button
+              disabled={busy}
+              onClick={submitBulk}
+              variant="outline"
+              className="border-[var(--brand-accent)] text-[var(--brand-accent)]"
+            >
+              {busy ? "학습 중…" : `일괄 학습 ${queue.length}건`}
+            </Button>
+          )}
           <Button
             disabled={busy || !title.trim() || !body.trim()}
-            onClick={submit}
+            onClick={submitSingle}
             className="bg-[var(--brand-accent)] text-[#0b1016] hover:bg-[var(--brand-accent)]/90"
           >
-            {busy ? "저장 중…" : "인제스트 + 의견 초안"}
+            {busy ? "저장 중…" : "단건 학습 + 패턴/의견"}
           </Button>
         </DialogFooter>
       </DialogContent>

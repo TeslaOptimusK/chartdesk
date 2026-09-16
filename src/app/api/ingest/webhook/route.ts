@@ -1,8 +1,5 @@
 import { NextResponse } from "next/server";
-import { createMarketDataAdapter } from "@/lib/market-data";
-import { draftOpinionWithOptionalLlm, shouldAutoEnqueueOpinion } from "@/lib/opinion-engine";
-import { extractSymbolsWithOptionalLlm } from "@/lib/symbol-extractor";
-import { addAlert, addOpinion, addPost, readStore } from "@/lib/storage";
+import { learnFromPost } from "@/lib/learning";
 import type { IngestMethod, PostCategory } from "@/lib/types";
 
 const CATEGORIES: PostCategory[] = [
@@ -12,14 +9,14 @@ const CATEGORIES: PostCategory[] = [
   "insight",
 ];
 
-function parseCategory(raw: string | null): PostCategory {
+function parseCategory(raw: string | null | undefined): PostCategory {
   if (raw && CATEGORIES.includes(raw as PostCategory)) {
     return raw as PostCategory;
   }
   return "realtime_chart";
 }
 
-/** Fanding ingest webhook — JSON body or plain text with ?category= */
+/** Fanding ingest webhook — JSON body or plain text with ?category= (no scrape). */
 export async function POST(req: Request) {
   const { searchParams } = new URL(req.url);
   const contentType = req.headers.get("content-type") ?? "";
@@ -37,7 +34,49 @@ export async function POST(req: Request) {
       body?: string;
       externalUrl?: string;
       symbolIds?: string[];
+      posts?: {
+        category?: PostCategory;
+        title?: string;
+        body?: string;
+        content?: string;
+        externalUrl?: string;
+        symbolIds?: string[];
+      }[];
     };
+
+    if (Array.isArray(body.posts) && body.posts.length) {
+      const results = [];
+      for (const item of body.posts) {
+        const t = item.title?.trim();
+        const b = (item.body ?? item.content)?.trim();
+        if (!t || !b) continue;
+        results.push(
+          await learnFromPost({
+            category: parseCategory(item.category ?? body.category),
+            title: t,
+            body: b,
+            externalUrl: item.externalUrl,
+            symbolIds: item.symbolIds,
+            ingestMethod: "webhook",
+            autoOpinion: true,
+            autoPatterns: true,
+          })
+        );
+      }
+      return NextResponse.json(
+        {
+          accepted: true,
+          imported: results.length,
+          results,
+          posts: results.map((r) => r.post),
+          patterns: results.flatMap((r) => r.patterns),
+          opinions: results.flatMap((r) => r.opinions),
+          ingestMethod: "webhook" as IngestMethod,
+        },
+        { status: 202 }
+      );
+    }
+
     if (body.category) category = parseCategory(body.category);
     title = body.title ?? title;
     bodyText = body.body ?? "";
@@ -58,60 +97,20 @@ export async function POST(req: Request) {
     title = "Webhook ingest";
   }
 
-  const store = await readStore();
-  let resolvedSymbolIds = symbolIds ?? [];
-  if (!resolvedSymbolIds.length) {
-    const extracted = await extractSymbolsWithOptionalLlm(
-      { title, body: bodyText },
-      store.symbols
-    );
-    resolvedSymbolIds = extracted.symbolIds;
-  }
-
   const ingestMethod: IngestMethod = "webhook";
-  const post = await addPost({
+  const result = await learnFromPost({
     category,
     title: title.trim(),
     body: bodyText.trim(),
-    publishedAt: new Date().toISOString(),
     externalUrl: externalUrl.trim(),
-    source: "fanding_easychart",
+    symbolIds,
     ingestMethod,
-    symbolIds: resolvedSymbolIds,
+    autoOpinion: true,
+    autoPatterns: true,
   });
 
-  const opinions = [];
-  const auto = shouldAutoEnqueueOpinion(category);
-  if (auto && resolvedSymbolIds.length) {
-    const adapter = createMarketDataAdapter();
-    for (const symbolId of resolvedSymbolIds) {
-      const symbol = store.symbols.find((s) => s.id === symbolId);
-      if (!symbol) continue;
-      const candles = await adapter.getCandles({
-        symbolId,
-        ticker: symbol.ticker,
-        timeframe: "D",
-        limit: 120,
-      });
-      const draft = await draftOpinionWithOptionalLlm({
-        post,
-        symbol,
-        candles,
-      });
-      const opinion = await addOpinion(draft);
-      opinions.push(opinion);
-      await addAlert({
-        type: "opinion",
-        title: "새 의견 초안 (webhook)",
-        message: `${opinion.summary} — 검수 대기`,
-        symbolId,
-        opinionId: opinion.id,
-      });
-    }
-  }
-
   return NextResponse.json(
-    { accepted: true, post, opinions, ingestMethod },
+    { accepted: true, ...result, ingestMethod },
     { status: 202 }
   );
 }

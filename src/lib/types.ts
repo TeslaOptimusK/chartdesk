@@ -167,6 +167,9 @@ export interface PatternRule {
   params?: Record<string, number | string | boolean>;
 }
 
+/** Human review for patterns learned from Fanding/easychart originals */
+export type PatternReviewStatus = "pending" | "approved" | "rejected";
+
 export interface PatternDef {
   id: string;
   name: string;
@@ -178,6 +181,21 @@ export interface PatternDef {
   alert: { cooldownMinutes: number };
   enabled: boolean;
   dsl?: string;
+  /** New extracts start as pending until human review */
+  reviewStatus?: PatternReviewStatus;
+  learnedAt?: string;
+  extractMethod?: "heuristic" | "llm" | "seed";
+}
+
+export interface LearningStatus {
+  postsLearned: number;
+  postsByCategory: Record<PostCategory, number>;
+  patternsDerived: number;
+  patternsPendingReview: number;
+  patternsApproved: number;
+  opinionsDraft: number;
+  opinionsApproved: number;
+  llmConfigured: boolean;
 }
 
 export interface PatternHit {

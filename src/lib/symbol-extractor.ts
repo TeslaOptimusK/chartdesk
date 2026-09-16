@@ -1,4 +1,9 @@
 import type { Post, SymbolMeta } from "@/lib/types";
+import {
+  resolveLlmApiKey,
+  resolveLlmEndpoint,
+  resolveLlmModel,
+} from "@/lib/llm-env";
 
 const TICKER_RE = /\b([A-Z]{1,5}|0\d{5})\b/g;
 
@@ -42,16 +47,15 @@ export async function extractSymbolsWithOptionalLlm(
   universe: SymbolMeta[]
 ): Promise<{ symbolIds: string[]; method: string }> {
   const base = extractSymbolsFromText(`${post.title}\n${post.body}`, universe);
-  const apiKey = process.env.LLM_API_KEY;
+  const apiKey = resolveLlmApiKey();
   if (!apiKey || base.symbolIds.length > 0) {
     return base;
   }
 
   // Optional LLM path — graceful no-op if endpoint missing/fails.
   try {
-    const endpoint =
-      process.env.LLM_BASE_URL ?? "https://api.openai.com/v1/chat/completions";
-    const model = process.env.LLM_MODEL ?? "gpt-4o-mini";
+    const endpoint = resolveLlmEndpoint();
+    const model = resolveLlmModel();
     const res = await fetch(endpoint, {
       method: "POST",
       headers: {

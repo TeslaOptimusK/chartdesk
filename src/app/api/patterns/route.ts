@@ -4,6 +4,7 @@ import { matchAllPatterns, parsePatternDsl } from "@/lib/pattern-matcher";
 import {
   addAlert,
   readStore,
+  reviewPattern,
   setPatternEnabled,
   setPatternFeedback,
   upsertPatternHits,
@@ -15,12 +16,40 @@ export async function GET() {
   return NextResponse.json({
     patterns: store.patterns,
     hits: store.patternHits,
+    pendingReview: store.patterns.filter(
+      (p) => (p.reviewStatus ?? "approved") === "pending"
+    ),
   });
+}
+
+export async function PATCH(req: Request) {
+  const body = (await req.json()) as {
+    id?: string;
+    patternId?: string;
+    enabled?: boolean;
+    reviewStatus?: "approved" | "rejected";
+  };
+  const id = body.id ?? body.patternId;
+  if (!id) {
+    return NextResponse.json({ error: "id required" }, { status: 400 });
+  }
+  if (body.reviewStatus === "approved" || body.reviewStatus === "rejected") {
+    const pattern = await reviewPattern(id, body.reviewStatus);
+    return NextResponse.json({ pattern });
+  }
+  if (body.enabled == null) {
+    return NextResponse.json(
+      { error: "enabled or reviewStatus required" },
+      { status: 400 }
+    );
+  }
+  const pattern = await setPatternEnabled(id, body.enabled);
+  return NextResponse.json({ pattern });
 }
 
 export async function POST(req: Request) {
   const body = (await req.json()) as {
-    action?: "scan" | "feedback" | "toggle" | "parse-dsl";
+    action?: "scan" | "feedback" | "toggle" | "parse-dsl" | "review";
     symbolId?: string;
     timeframe?: Timeframe;
     hitId?: string;
@@ -28,6 +57,7 @@ export async function POST(req: Request) {
     patternId?: string;
     enabled?: boolean;
     dsl?: string;
+    reviewStatus?: "approved" | "rejected";
   };
 
   if (body.action === "parse-dsl") {
@@ -35,6 +65,20 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "dsl required" }, { status: 400 });
     }
     return NextResponse.json({ rules: parsePatternDsl(body.dsl) });
+  }
+
+  if (body.action === "review") {
+    if (
+      !body.patternId ||
+      (body.reviewStatus !== "approved" && body.reviewStatus !== "rejected")
+    ) {
+      return NextResponse.json(
+        { error: "patternId and reviewStatus required" },
+        { status: 400 }
+      );
+    }
+    const pattern = await reviewPattern(body.patternId, body.reviewStatus);
+    return NextResponse.json({ pattern });
   }
 
   if (body.action === "toggle") {
@@ -59,7 +103,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ hit });
   }
 
-  // scan
+  // scan — only enabled + approved patterns match via matchPattern.enabled
   if (!body.symbolId) {
     return NextResponse.json({ error: "symbolId required" }, { status: 400 });
   }
@@ -76,7 +120,10 @@ export async function POST(req: Request) {
     timeframe,
     limit: 180,
   });
-  const hits = matchAllPatterns(store.patterns, symbol, timeframe, candles);
+  const active = store.patterns.filter(
+    (p) => p.enabled && (p.reviewStatus ?? "approved") !== "rejected"
+  );
+  const hits = matchAllPatterns(active, symbol, timeframe, candles);
   await upsertPatternHits(hits);
   for (const hit of hits) {
     await addAlert({

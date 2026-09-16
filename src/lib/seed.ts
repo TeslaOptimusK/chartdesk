@@ -350,6 +350,9 @@ export const SEED_PATTERNS: PatternDef[] = [
     alert: { cooldownMinutes: 240 },
     enabled: true,
     dsl: "swing_low_pair tolerancePct=2; neckline_break",
+    reviewStatus: "approved",
+    extractMethod: "seed",
+    learnedAt: "2026-09-09T12:00:00.000Z",
   },
   {
     id: "pat_ma_cross",
@@ -362,6 +365,9 @@ export const SEED_PATTERNS: PatternDef[] = [
     alert: { cooldownMinutes: 120 },
     enabled: true,
     dsl: "ma_cross fast=9 slow=21",
+    reviewStatus: "approved",
+    extractMethod: "seed",
+    learnedAt: "2026-09-10T02:00:00.000Z",
   },
   {
     id: "pat_support_bounce",
@@ -374,6 +380,9 @@ export const SEED_PATTERNS: PatternDef[] = [
     alert: { cooldownMinutes: 180 },
     enabled: true,
     dsl: "support_bounce",
+    reviewStatus: "approved",
+    extractMethod: "seed",
+    learnedAt: "2026-09-11T08:00:00.000Z",
   },
   {
     id: "pat_rsi_oversold",
@@ -386,6 +395,9 @@ export const SEED_PATTERNS: PatternDef[] = [
     alert: { cooldownMinutes: 360 },
     enabled: true,
     dsl: "rsi_oversold period=14 threshold=30",
+    reviewStatus: "approved",
+    extractMethod: "seed",
+    learnedAt: "2026-09-08T09:00:00.000Z",
   },
   {
     id: "pat_engulfing",
@@ -398,6 +410,9 @@ export const SEED_PATTERNS: PatternDef[] = [
     alert: { cooldownMinutes: 60 },
     enabled: true,
     dsl: "bullish_engulfing",
+    reviewStatus: "approved",
+    extractMethod: "seed",
+    learnedAt: "2026-09-09T12:05:00.000Z",
   },
   {
     id: "pat_volume_spike",
@@ -410,6 +425,25 @@ export const SEED_PATTERNS: PatternDef[] = [
     alert: { cooldownMinutes: 90 },
     enabled: true,
     dsl: "volume_spike mult=2",
+    reviewStatus: "approved",
+    extractMethod: "seed",
+    learnedAt: "2026-09-12T06:10:00.000Z",
+  },
+  {
+    id: "pat_pending_demo",
+    name: "넥라인 돌파 (검수 대기 데모)",
+    description:
+      "데모: 실제 멤버십 원문을 드롭하면 이런 항목이 검수 큐에 쌓입니다. 승인 전 매칭 비활성.",
+    sourcePostIds: ["post_rt_01"],
+    timeframes: ["60", "240", "D"],
+    rules: [{ type: "neckline_break" }],
+    display: { label: "넥라인?", color: "#94a3b8" },
+    alert: { cooldownMinutes: 180 },
+    enabled: false,
+    dsl: "neckline_break",
+    reviewStatus: "pending",
+    extractMethod: "heuristic",
+    learnedAt: "2026-09-15T10:00:00.000Z",
   },
 ];
 

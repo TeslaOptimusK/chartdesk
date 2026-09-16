@@ -18,7 +18,7 @@ import type {
   WebhookConfig,
 } from "@/lib/types";
 import { DEFAULT_PAPER_ACCOUNT, DEFAULT_WEBHOOK_CONFIG } from "@/lib/types";
-import { createSeedStore } from "@/lib/seed";
+import { createSeedStore, SEED_PATTERNS } from "@/lib/seed";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const STORE_PATH = path.join(DATA_DIR, "store.json");
@@ -26,8 +26,18 @@ const STORE_PATH = path.join(DATA_DIR, "store.json");
 let writeQueue: Promise<unknown> = Promise.resolve();
 
 function migrateStore(raw: AppStoreData): AppStoreData {
+  let patterns: PatternDef[] = (raw.patterns ?? []).map((p) => ({
+    ...p,
+    reviewStatus: p.reviewStatus ?? "approved",
+    extractMethod: p.extractMethod ?? "seed",
+  }));
+  const pendingDemo = SEED_PATTERNS.find((p) => p.id === "pat_pending_demo");
+  if (pendingDemo && !patterns.some((p) => p.id === "pat_pending_demo")) {
+    patterns = [pendingDemo, ...patterns];
+  }
   return {
     ...raw,
+    patterns,
     priceWatches: raw.priceWatches ?? [],
     comments: raw.comments ?? [],
     news: raw.news ?? [],
@@ -229,6 +239,57 @@ export async function setPatternEnabled(
     p.enabled = enabled;
     updated = p;
   });
+  return updated;
+}
+
+export async function addPattern(pattern: PatternDef): Promise<PatternDef> {
+  await mutate((d) => {
+    d.patterns.unshift(pattern);
+  });
+  return pattern;
+}
+
+export async function linkPatternSourcePost(
+  patternId: string,
+  postId: string
+): Promise<PatternDef | null> {
+  let updated: PatternDef | null = null;
+  await mutate((d) => {
+    const p = d.patterns.find((x) => x.id === patternId);
+    if (!p) return;
+    if (!p.sourcePostIds.includes(postId)) {
+      p.sourcePostIds = [...p.sourcePostIds, postId];
+    }
+    updated = p;
+  });
+  return updated;
+}
+
+export async function reviewPattern(
+  id: string,
+  status: "approved" | "rejected",
+  reviewer = "local-user"
+): Promise<PatternDef | null> {
+  let updated: PatternDef | null = null;
+  await mutate((d) => {
+    const p = d.patterns.find((x) => x.id === id);
+    if (!p) return;
+    p.reviewStatus = status;
+    p.enabled = status === "approved";
+    updated = p;
+    if (status === "approved") {
+      d.alerts.unshift({
+        id: `alert_${randomUUID().slice(0, 8)}`,
+        type: "pattern",
+        title: "패턴 승인됨",
+        message: `${p.name} 이(가) 매칭에 활성화되었습니다.`,
+        patternId: p.id,
+        firedAt: new Date().toISOString(),
+        read: false,
+      });
+    }
+  });
+  void reviewer;
   return updated;
 }
 

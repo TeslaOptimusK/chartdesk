@@ -248,6 +248,26 @@ function PatternsTab() {
   const [autoPatterns, setAutoPatterns] = useState<
     { from: number; to: number; label: string }[]
   >([]);
+  const [learnStatus, setLearnStatus] = useState<{
+    postsLearned: number;
+    patternsDerived: number;
+    patternsPendingReview: number;
+    opinionsDraft: number;
+    llmConfigured: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/learn/status")
+      .then((r) => r.json())
+      .then((d: { status?: typeof learnStatus }) => {
+        if (!cancelled && d.status) setLearnStatus(d.status);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [patterns]);
 
   useEffect(() => {
     let cancelled = false;
@@ -286,8 +306,94 @@ function PatternsTab() {
     }
   };
 
+  const review = async (id: string, reviewStatus: "approved" | "rejected") => {
+    const res = await fetch("/api/patterns", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, reviewStatus }),
+    });
+    const data = await res.json();
+    if (data.pattern) {
+      setPatterns(
+        patterns.map((p) => (p.id === data.pattern.id ? data.pattern : p))
+      );
+    }
+  };
+
+  const pending = patterns.filter(
+    (p) => (p.reviewStatus ?? "approved") === "pending"
+  );
+
   return (
     <div className="space-y-3 p-2">
+      {learnStatus && (
+        <div
+          className="rounded-md border border-[var(--workspace-border)] bg-[var(--workspace-elevated)] p-2 text-[10px] text-[var(--workspace-muted)]"
+          data-feature="learning.status"
+        >
+          <div className="mb-1 text-xs font-semibold text-[var(--workspace-fg)]">
+            원문 학습 현황
+          </div>
+          <div className="grid grid-cols-2 gap-1">
+            <span>학습 포스트 {learnStatus.postsLearned}</span>
+            <span>파생 패턴 {learnStatus.patternsDerived}</span>
+            <span className="text-amber-200/90">
+              검수 대기 {learnStatus.patternsPendingReview}
+            </span>
+            <span>의견 초안 {learnStatus.opinionsDraft}</span>
+          </div>
+          <div className="mt-1 text-[9px] text-[var(--workspace-faint)]">
+            LLM {learnStatus.llmConfigured ? "연결됨" : "휴리스틱만 (키 없음)"}
+          </div>
+        </div>
+      )}
+
+      {pending.length > 0 && (
+        <div data-feature="learning.pattern_review">
+          <div className="mb-1 px-1 text-[10px] font-semibold uppercase text-amber-200/80">
+            패턴 검수 큐
+          </div>
+          {pending.map((p) => (
+            <div
+              key={p.id}
+              className="mb-1.5 rounded-md border border-amber-500/30 bg-amber-500/5 p-2"
+            >
+              <div className="text-sm font-medium text-[var(--workspace-fg)]">
+                {p.name}
+              </div>
+              <div className="text-[10px] text-[var(--workspace-muted)]">
+                {p.description}
+              </div>
+              {p.dsl && (
+                <code className="mt-1 block rounded bg-black/30 px-1.5 py-1 text-[10px] text-[var(--brand-accent)]">
+                  {p.dsl}
+                </code>
+              )}
+              <div className="mt-1 text-[9px] text-[var(--workspace-faint)]">
+                원문 {(p.sourcePostIds ?? []).length} · {p.extractMethod ?? "—"}
+              </div>
+              <div className="mt-1.5 flex gap-1">
+                <Button
+                  size="sm"
+                  className="h-6 bg-emerald-600/80 text-[10px] text-white"
+                  onClick={() => review(p.id, "approved")}
+                >
+                  승인·활성
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 text-[10px] text-rose-300"
+                  onClick={() => review(p.id, "rejected")}
+                >
+                  거절
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div data-feature="pattern.candlestick">
         <div className="mb-1 px-1 text-[10px] font-semibold uppercase text-[var(--workspace-faint)]">
           캔들 패턴
@@ -319,6 +425,9 @@ function PatternsTab() {
         ))}
       </div>
       <div className="space-y-2">
+        <div className="px-1 text-[10px] font-semibold uppercase text-[var(--workspace-faint)]">
+          학습·시드 패턴
+        </div>
         {patterns.map((p) => (
           <div
             key={p.id}
@@ -328,14 +437,21 @@ function PatternsTab() {
               <div>
                 <div className="text-sm font-medium text-[var(--workspace-fg)]">
                   {p.name}
+                  {(p.reviewStatus ?? "approved") === "pending" && (
+                    <span className="ml-1 text-[9px] text-amber-300">검수중</span>
+                  )}
                 </div>
                 <div className="text-[10px] text-[var(--workspace-muted)]">
                   {p.description}
+                </div>
+                <div className="text-[9px] text-[var(--workspace-faint)]">
+                  source_post {(p.sourcePostIds ?? []).length}건
                 </div>
               </div>
               <Switch
                 checked={p.enabled}
                 onCheckedChange={(v) => toggle(p.id, v)}
+                disabled={(p.reviewStatus ?? "approved") === "rejected"}
               />
             </div>
             {p.dsl && (
@@ -374,6 +490,25 @@ function PatternsTab() {
 
 function PostsTab() {
   const { posts, setActiveSymbol, setRightTab } = useWorkspace();
+  const [learnStatus, setLearnStatus] = useState<{
+    postsLearned: number;
+    patternsPendingReview: number;
+    opinionsDraft: number;
+  } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/learn/status")
+      .then((r) => r.json())
+      .then((d: { status?: typeof learnStatus }) => {
+        if (!cancelled && d.status) setLearnStatus(d.status);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [posts.length]);
+
   const byCat = (Object.keys(CATEGORY_LABELS) as PostCategory[]).map((cat) => ({
     cat,
     items: posts.filter((p) => p.category === cat),
@@ -381,6 +516,22 @@ function PostsTab() {
 
   return (
     <div className="space-y-3 p-2" data-feature="social.posts">
+      {learnStatus && (
+        <div
+          className="rounded-md border border-[var(--workspace-border)] bg-[var(--workspace-elevated)] px-2 py-1.5 text-[10px] text-[var(--workspace-muted)]"
+          data-feature="learning.status"
+        >
+          학습 {learnStatus.postsLearned} · 패턴 검수{" "}
+          <button
+            type="button"
+            className="text-amber-200 underline"
+            onClick={() => setRightTab("patterns")}
+          >
+            {learnStatus.patternsPendingReview}
+          </button>{" "}
+          · 의견 초안 {learnStatus.opinionsDraft}
+        </div>
+      )}
       <PublishPostForm onPublished={() => undefined} />
       {byCat.map(({ cat, items }) => {
         if (!items.length) return null;
@@ -404,7 +555,7 @@ function PostsTab() {
                   {p.body}
                 </div>
                 <div className="mt-1 text-[10px] text-[var(--workspace-faint)]">
-                  {p.ingestMethod} · 원문은 멤버십 계정으로만
+                  {p.ingestMethod} · 종목 {p.symbolIds.length} · 원문은 멤버십 계정으로만
                 </div>
               </button>
             ))}
@@ -957,8 +1108,15 @@ function CommentaryTab() {
               {o.summary}
             </button>
             <div className="mt-0.5 text-[10px] text-[var(--workspace-muted)]">
-              {DIRECTION_LABELS[o.direction]} · {o.status}
+              {DIRECTION_LABELS[o.direction]} · {o.status} · {o.confidence}
             </div>
+            <ul className="mt-1 space-y-0.5 text-[10px] text-[var(--workspace-muted)]">
+              {o.rationale.slice(0, 3).map((r) => (
+                <li key={r.slice(0, 24)} className="line-clamp-2">
+                  · {r}
+                </li>
+              ))}
+            </ul>
             {o.status === "draft" && (
               <div className="mt-1.5 flex gap-1">
                 <Button
