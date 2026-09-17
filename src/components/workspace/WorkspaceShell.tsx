@@ -81,17 +81,49 @@ export function WorkspaceShell() {
   } = useWorkspace();
   const [ingestOpen, setIngestOpen] = useState(false);
   const [bootError, setBootError] = useState<string | null>(null);
+  const [bootAttempt, setBootAttempt] = useState(0);
   const [clock, setClock] = useState(() => new Date());
 
   useEffect(() => {
-    fetch("/api/bootstrap")
+    if (ready) return;
+    let cancelled = false;
+    const ac = new AbortController();
+    const timeoutId = window.setTimeout(() => ac.abort(), 20_000);
+    setBootError(null);
+
+    fetch("/api/bootstrap", { signal: ac.signal, cache: "no-store" })
       .then(async (r) => {
-        if (!r.ok) throw new Error("부트스트랩 실패");
+        if (!r.ok) {
+          const body = await r.text().catch(() => "");
+          throw new Error(
+            `부트스트랩 실패 (HTTP ${r.status})${body ? `: ${body.slice(0, 120)}` : ""}`
+          );
+        }
         return r.json();
       })
-      .then((data) => hydrate(data))
-      .catch((e: Error) => setBootError(e.message));
-  }, [hydrate]);
+      .then((data) => {
+        if (cancelled) return;
+        hydrate(data);
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        if (ac.signal.aborted) {
+          setBootError(
+            "부트스트랩 시간 초과 — ChartDesk Server 창에서 Next.js가 살아 있는지, http://127.0.0.1:43127/api/bootstrap 응답을 확인하세요."
+          );
+          return;
+        }
+        const msg = e instanceof Error ? e.message : String(e);
+        setBootError(msg || "부트스트랩 실패");
+      })
+      .finally(() => window.clearTimeout(timeoutId));
+
+    return () => {
+      cancelled = true;
+      ac.abort();
+      window.clearTimeout(timeoutId);
+    };
+  }, [hydrate, ready, bootAttempt]);
 
   useEffect(() => {
     const id = window.setInterval(() => setClock(new Date()), 1000);
@@ -250,16 +282,33 @@ export function WorkspaceShell() {
 
   if (bootError) {
     return (
-      <div className="flex h-screen items-center justify-center bg-[var(--workspace-bg)] text-rose-300">
-        {bootError}
+      <div className="flex h-screen flex-col items-center justify-center gap-4 bg-[var(--workspace-bg)] px-6 text-center">
+        <p className="max-w-lg text-sm text-rose-300">{bootError}</p>
+        <p className="max-w-md text-xs text-[var(--workspace-muted)]">
+          `scripts\start-chartdesk.bat`로 다시 실행하고, 제목 &quot;ChartDesk
+          Server&quot; 콘솔이 열려 있는지 확인하세요.
+        </p>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={() => {
+            setBootError(null);
+            setBootAttempt((n) => n + 1);
+          }}
+        >
+          다시 시도
+        </Button>
       </div>
     );
   }
 
   if (!ready) {
     return (
-      <div className="flex h-screen items-center justify-center bg-[var(--workspace-bg)] text-[var(--workspace-muted)]">
-        ChartDesk 로딩 중…
+      <div className="flex h-screen flex-col items-center justify-center gap-2 bg-[var(--workspace-bg)] text-[var(--workspace-muted)]">
+        <div>ChartDesk 로딩 중…</div>
+        <div className="text-xs text-[var(--workspace-faint)]">
+          /api/bootstrap 연결 중
+        </div>
       </div>
     );
   }

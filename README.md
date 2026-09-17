@@ -20,7 +20,7 @@ Phase 1 feature contracts: [`docs/chartdesk/TRADINGVIEW_FEATURES.md`](./docs/cha
 ```bash
 npm install
 cp .env.example .env.local   # optional — works with zero keys (mock data)
-npm run dev -- -p 43127
+npm run dev -- -H 127.0.0.1 -p 43127
 ```
 
 Open [http://127.0.0.1:43127](http://127.0.0.1:43127).
@@ -33,7 +33,7 @@ After clone, create a Desktop `ChartDesk` shortcut once:
 powershell -ExecutionPolicy Bypass -File scripts\create-desktop-shortcut.ps1
 ```
 
-Double-click the shortcut (or run `scripts\start-chartdesk.bat`) to install deps if needed, start the server on port **43127**, wait until it responds, then open **Chrome or Edge with `--app=http://127.0.0.1:43127`** (desktop-like window, not a normal browser tab). Falls back to the default browser only if Chrome/Edge are missing. Keep the server console open while using the app.
+Double-click the shortcut (or run `scripts\start-chartdesk.bat`) to install deps if needed, start **ChartDesk Server** in its own console (`npm run dev -- -H 127.0.0.1 -p 43127`), wait until **`/api/bootstrap` returns 200**, then open **Chrome or Edge with `--app=http://127.0.0.1:43127`**. Falls back to the default browser only if Chrome/Edge are missing. Leave the **ChartDesk Server** window open while using the app (closing it stops the app and leaves the UI stuck on loading).
 
 ### Update on your PC
 

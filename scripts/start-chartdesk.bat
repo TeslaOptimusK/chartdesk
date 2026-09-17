@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableExtensions
-REM ChartDesk — start Next.js on 43127 and open Chrome/Edge in --app= window mode.
-REM Works from any cwd; resolves repo root from this script's location.
+REM ChartDesk — keep Next.js alive in a titled console, health-check /api/bootstrap,
+REM then open Chrome/Edge in --app= window mode.
 
 cd /d "%~dp0.."
 if errorlevel 1 (
@@ -27,7 +27,10 @@ if not exist "node_modules\" (
   )
 )
 
-set "APP_URL=http://127.0.0.1:43127"
+set "APP_HOST=127.0.0.1"
+set "APP_PORT=43127"
+set "APP_URL=http://%APP_HOST%:%APP_PORT%"
+set "BOOT_URL=%APP_URL%/api/bootstrap"
 set "CHROME="
 set "EDGE="
 
@@ -40,25 +43,32 @@ if not defined EDGE if exist "%ProgramFiles(x86)%\Microsoft\Edge\Application\mse
 if not defined EDGE if exist "%LocalAppData%\Microsoft\Edge\Application\msedge.exe" set "EDGE=%LocalAppData%\Microsoft\Edge\Application\msedge.exe"
 
 echo Starting ChartDesk on %APP_URL%
-echo Keep this window open while using the app. Ctrl+C to stop.
+echo Server window title: ChartDesk Server — leave it open. Ctrl+C there to stop.
 
-REM Start the Next.js server in a separate minimized console so we can wait then open --app=.
-start "ChartDesk Server" /MIN cmd /c "npm run dev -- -p 43127"
+REM /k keeps the console open if npm exits so errors stay visible.
+REM Bind 127.0.0.1 explicitly (avoid localhost/::1 vs 127.0.0.1 mismatch).
+REM Do NOT use cmd /c — that closes the window when the process dies and looks "running" from this launcher.
+start "ChartDesk Server" cmd /k "npm run dev -- -H %APP_HOST% -p %APP_PORT%"
 
-REM Wait until the HTTP port answers (up to ~60s).
+REM Wait until bootstrap API returns HTTP 200 (up to ~90s). Root HTML alone is not enough —
+REM SSR can paint "로딩 중…" while /api/bootstrap or client JS still fails.
 set /a "TRIES=0"
 :wait_ready
 set /a "TRIES+=1"
-if %TRIES% GTR 60 (
-  echo Server did not become ready on %APP_URL%
+if %TRIES% GTR 90 (
+  echo.
+  echo Server did not become ready: %BOOT_URL%
+  echo Check the "ChartDesk Server" window for npm/Next errors.
   pause
   exit /b 1
 )
-powershell -NoProfile -Command "try { $r = Invoke-WebRequest -UseBasicParsing -Uri '%APP_URL%' -TimeoutSec 2; exit 0 } catch { exit 1 }" >nul 2>&1
+powershell -NoProfile -Command "try { $r = Invoke-WebRequest -UseBasicParsing -Uri '%BOOT_URL%' -TimeoutSec 2; if ($r.StatusCode -ge 200 -and $r.StatusCode -lt 300) { exit 0 } else { exit 1 } } catch { exit 1 }" >nul 2>&1
 if errorlevel 1 (
   timeout /t 1 /nobreak >nul
   goto wait_ready
 )
+
+echo Bootstrap OK: %BOOT_URL%
 
 REM Open as a desktop-like app window. Quote --app= so Windows start does not strip it.
 REM Do NOT use bare `start http://...` — that always opens a normal browser tab.
@@ -80,6 +90,7 @@ if not defined OPENED (
 )
 
 echo.
-echo ChartDesk is running. Close the "ChartDesk Server" window or end node to stop.
+echo ChartDesk is running. Close the "ChartDesk Server" window or Ctrl+C there to stop.
+echo This launcher window can stay open or be closed; the server window is separate.
 pause
 endlocal

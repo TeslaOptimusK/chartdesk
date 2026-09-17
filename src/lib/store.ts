@@ -682,8 +682,21 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     const p3 = readPhase3();
     const p4 = readPhase4();
     const easy = readEasyPrefs();
+    const symbols = Array.isArray(data?.symbols) ? data.symbols : [];
+    const watchlist = Array.isArray(data?.watchlist) ? data.watchlist : [];
+    if (symbols.length === 0) {
+      throw new Error("부트스트랩 데이터에 심볼이 없습니다");
+    }
     set({
       ...data,
+      symbols,
+      watchlist,
+      posts: Array.isArray(data.posts) ? data.posts : [],
+      opinions: Array.isArray(data.opinions) ? data.opinions : [],
+      patterns: Array.isArray(data.patterns) ? data.patterns : [],
+      patternHits: Array.isArray(data.patternHits) ? data.patternHits : [],
+      alerts: Array.isArray(data.alerts) ? data.alerts : [],
+      drawings: Array.isArray(data.drawings) ? data.drawings : [],
       priceWatches: data.priceWatches ?? [],
       easyOverlayEnabled: easy.enabled,
       easyOverlayToggles: easy.toggles,
@@ -709,9 +722,9 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       brokerOpen: p4.brokerOpen,
       domOpen: p4.domOpen,
       activeSymbolId:
-        data.watchlist.find((id) => id === "us_NVDA") ??
-        data.watchlist[0] ??
-        data.symbols[0]?.id ??
+        watchlist.find((id) => id === "us_NVDA") ??
+        watchlist[0] ??
+        symbols[0]?.id ??
         "us_NVDA",
       ready: true,
       layouts: readLayouts(),
