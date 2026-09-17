@@ -140,7 +140,7 @@ export function ChartCanvas({
   compareLabel,
   magnet = true,
   goToDate = null,
-  height = 420,
+  height,
   className,
   chartSettings = DEFAULT_CHART_SETTINGS,
   locked = false,
@@ -244,7 +244,9 @@ export function ChartCanvas({
     const el = containerRef.current;
     const chart = createChart(el, {
       width: el.clientWidth || undefined,
-      height: el.clientHeight || height || 420,
+      // Prefer live container size so the chart fills the flex parent; fixed
+      // height prop is only a fallback when the container has not laid out yet.
+      height: el.clientHeight || height || Math.max(el.parentElement?.clientHeight ?? 0, 1),
       layout: {
         background: {
           type: ColorType.Solid,
@@ -333,6 +335,16 @@ export function ChartCanvas({
       }
     });
     ro.observe(el);
+    if (wrapRef.current) ro.observe(wrapRef.current);
+    // First layout pass may report 0×0 before flex settles — sync once after paint.
+    requestAnimationFrame(() => {
+      if (!containerRef.current || !chartRef.current) return;
+      const w = containerRef.current.clientWidth;
+      const h = containerRef.current.clientHeight;
+      if (w > 0 && h > 0) {
+        chartRef.current.applyOptions({ width: w, height: h });
+      }
+    });
 
     return () => {
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(onVisibleRange);
@@ -344,9 +356,11 @@ export function ChartCanvas({
       volumeRef.current = null;
       stochPaneEnsured.current = false;
     };
+    // ResizeObserver owns size; do not recreate the chart when an optional
+    // height prop changes — applyOptions on resize is enough.
     // chartSettings applied in separate effect after mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [height]);
+  }, []);
 
   // Feature ID: chart.settings — live apply colors/grid
   useEffect(() => {
@@ -980,8 +994,8 @@ export function ChartCanvas({
   return (
     <div
       ref={wrapRef}
-      className={cn("relative w-full", className)}
-      style={{ height }}
+      className={cn("relative h-full min-h-0 w-full", className)}
+      style={height != null ? { height } : undefined}
       data-testid="chart-canvas"
       data-drawing-tool={drawingTool}
       data-chart-style={chartStyle}

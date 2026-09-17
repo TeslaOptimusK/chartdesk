@@ -368,8 +368,8 @@ export function WorkspaceShell() {
       )}
 
       <div className="flex min-h-0 flex-1">
-        <main className="min-h-0 min-w-0 flex-1 bg-[var(--workspace-border)] p-px">
-          <MultiChartGrid mode={layoutMode}>
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--workspace-border)] p-px">
+          <MultiChartGrid mode={layoutMode} className="h-full min-h-0 flex-1">
             {paneSymbols.map((id, idx) => {
               const paneTf =
                 sync.interval || layoutMode === "single"
