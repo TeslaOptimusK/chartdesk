@@ -9,16 +9,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
-  mockBrokerConnected,
-  mockBrokerDisconnected,
   mockDomLadder,
   mockMacroRegions,
   mockOptionsChain,
   mockYieldCurve,
-  type BrokerStubStatus,
 } from "@/lib/phase4-data";
 import { cn } from "@/lib/utils";
+import type { KiwoomOrderSide, KiwoomOrderType } from "@/lib/kiwoom/types";
+import type { PaperAccount } from "@/lib/types";
 
 function spotFromSymbol(key: string): number {
   if (key.includes("BTC")) return 68000;
@@ -43,6 +43,8 @@ export function Phase4Panels() {
     setDomOpen,
     symbols,
     activeSymbolId,
+    paperAccount,
+    setPaperAccount,
   } = useWorkspace();
 
   const symbol = symbols.find((s) => s.id === activeSymbolId);
@@ -58,10 +60,14 @@ export function Phase4Panels() {
       />
       <YieldDialog open={yieldOpen} onOpenChange={setYieldOpen} />
       <MacroDialog open={macroOpen} onOpenChange={setMacroOpen} />
-      <BrokerDialog
+      <KiwoomTradeDialog
         open={brokerOpen}
         onOpenChange={setBrokerOpen}
-        accountSeed={activeSymbolId}
+        activeSymbolId={activeSymbolId}
+        symbols={symbols}
+        account={paperAccount}
+        setAccount={setPaperAccount}
+        spotHint={spot}
       />
       <DomDialog
         open={domOpen}
@@ -244,76 +250,200 @@ function MacroDialog({
   );
 }
 
-function BrokerDialog({
+function KiwoomTradeDialog({
   open,
   onOpenChange,
-  accountSeed,
+  activeSymbolId,
+  symbols,
+  account,
+  setAccount,
+  spotHint,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  accountSeed: string;
+  activeSymbolId: string;
+  symbols: ReturnType<typeof useWorkspace.getState>["symbols"];
+  account: PaperAccount;
+  setAccount: (a: PaperAccount) => void;
+  spotHint: number;
 }) {
-  const [status, setStatus] = useState<BrokerStubStatus>(
-    mockBrokerDisconnected()
-  );
+  const [qty, setQty] = useState("1");
+  const [side, setSide] = useState<KiwoomOrderSide>("buy");
+  const [type, setType] = useState<KiwoomOrderType>("market");
+  const [limit, setLimit] = useState("");
+  const [statusLine, setStatusLine] = useState("어댑터 확인 중…");
+  const [adapterLabel, setAdapterLabel] = useState("—");
+  const [busy, setBusy] = useState(false);
+  const [lastMsg, setLastMsg] = useState<string | null>(null);
+  const sym = symbols.find((s) => s.id === activeSymbolId);
 
   useEffect(() => {
-    if (!open) setStatus(mockBrokerDisconnected());
+    if (!open) return;
+    let cancelled = false;
+    fetch("/api/kiwoom/order")
+      .then((r) => r.json())
+      .then(
+        (d: {
+          status?: { label?: string; ready?: boolean; mode?: string; notes?: string[] };
+        }) => {
+          if (cancelled) return;
+          const s = d.status;
+          setAdapterLabel(s?.label ?? "unknown");
+          setStatusLine(
+            s?.ready
+              ? `${s.mode ?? "mock"} · 주문 가능`
+              : `${s?.mode ?? "ocx"} · ${s?.notes?.[0] ?? "준비 안 됨"}`
+          );
+        }
+      )
+      .catch(() => {
+        if (!cancelled) setStatusLine("어댑터 상태 조회 실패");
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [open]);
 
-  const connect = () => {
-    setStatus({ ...mockBrokerDisconnected(), state: "connecting" });
-    window.setTimeout(() => {
-      setStatus(mockBrokerConnected(accountSeed));
-    }, 600);
+  const submit = async () => {
+    const n = Number(qty);
+    if (!Number.isFinite(n) || n <= 0) {
+      setLastMsg("수량을 확인하세요");
+      return;
+    }
+    setBusy(true);
+    setLastMsg(null);
+    try {
+      const res = await fetch("/api/kiwoom/order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          symbolId: activeSymbolId,
+          side,
+          type,
+          qty: n,
+          limitPrice: type === "limit" && limit ? Number(limit) : undefined,
+          lastPrice: spotHint,
+        }),
+      });
+      const data = (await res.json()) as {
+        result?: { ok?: boolean; message?: string; fillPrice?: number; orderNo?: string };
+        error?: string;
+      };
+      const msg =
+        data.result?.message ?? data.error ?? (res.ok ? "완료" : "주문 실패");
+      setLastMsg(msg);
+      if (data.result?.ok) {
+        const paper = await fetch("/api/paper").then((r) => r.json());
+        if (paper.account) setAccount(paper.account);
+      }
+    } catch {
+      setLastMsg("네트워크 오류");
+    } finally {
+      setBusy(false);
+    }
   };
+
+  const equity =
+    account.cash +
+    account.positions.reduce((a, p) => a + p.qty * p.avgCost, 0);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="border-[var(--workspace-border)] bg-[var(--workspace-panel)]"
-        data-feature="trade.broker"
+        className="max-w-md border-[var(--workspace-border)] bg-[var(--workspace-panel)]"
+        data-feature="trade.kiwoom"
       >
         <DialogHeader>
-          <DialogTitle>브로커 연결 (stub)</DialogTitle>
+          <DialogTitle>매매 · 키움</DialogTitle>
         </DialogHeader>
-        <p className="text-[11px] text-[var(--workspace-muted)]">
-          {status.message}
+        <div className="space-y-1 text-[11px] text-[var(--workspace-muted)]">
+          <div>
+            어댑터: <span className="text-[var(--workspace-fg)]">{adapterLabel}</span>
+          </div>
+          <div>{statusLine}</div>
+          <div>
+            종목{" "}
+            <span className="font-mono text-[var(--workspace-fg)]">
+              {sym?.ticker ?? activeSymbolId}
+            </span>
+            {sym?.nameKo ? ` · ${sym.nameKo}` : ""} · 참고가 {spotHint}
+          </div>
+          <div>
+            현금 {account.cash.toFixed(0)} · 추정 {equity.toFixed(0)}
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-1">
+          <select
+            value={side}
+            onChange={(e) => setSide(e.target.value as KiwoomOrderSide)}
+            className="h-8 rounded border border-[var(--workspace-border)] bg-transparent px-1 text-xs"
+            data-feature="trade.kiwoom.side"
+          >
+            <option value="buy">매수</option>
+            <option value="sell">매도</option>
+          </select>
+          <select
+            value={type}
+            onChange={(e) => setType(e.target.value as KiwoomOrderType)}
+            className="h-8 rounded border border-[var(--workspace-border)] bg-transparent px-1 text-xs"
+          >
+            <option value="market">시장가</option>
+            <option value="limit">지정가</option>
+          </select>
+          <Input
+            value={qty}
+            onChange={(e) => setQty(e.target.value)}
+            className="h-8 w-16 text-xs"
+            aria-label="수량"
+          />
+          {type === "limit" && (
+            <Input
+              value={limit}
+              onChange={(e) => setLimit(e.target.value)}
+              placeholder="가격"
+              className="h-8 w-24 text-xs"
+            />
+          )}
+          <Button
+            size="sm"
+            className={cn(
+              "h-8 text-xs",
+              side === "buy" ? "bg-rose-600 hover:bg-rose-500" : "bg-blue-600 hover:bg-blue-500"
+            )}
+            disabled={busy}
+            onClick={submit}
+            data-feature="trade.kiwoom.submit"
+          >
+            {busy ? "전송…" : side === "buy" ? "매수" : "매도"}
+          </Button>
+        </div>
+        {lastMsg && (
+          <div
+            className="rounded border border-[var(--workspace-border)] px-2 py-1.5 text-[11px]"
+            data-feature="trade.kiwoom.status"
+          >
+            {lastMsg}
+          </div>
+        )}
+        <div className="max-h-36 space-y-1 overflow-y-auto text-[11px]">
+          {account.orders.slice(0, 8).map((o) => (
+            <div key={o.id} className="flex justify-between font-mono">
+              <span>
+                {o.side === "buy" ? "매수" : "매도"} {o.qty}
+                {o.fillPrice != null ? ` @ ${o.fillPrice}` : ""}
+              </span>
+              <span className="text-[var(--workspace-faint)]">
+                {o.id.replace(/^kiwoom_/, "")}
+              </span>
+            </div>
+          ))}
+          {account.orders.length === 0 && (
+            <div className="text-[var(--workspace-faint)]">주문 기록 없음</div>
+          )}
+        </div>
+        <p className="text-[10px] text-[var(--workspace-faint)]">
+          기본은 로컬 모의(mock). 실계좌·영웅문 OCX는 스텁만 — 키는 저장소에 넣지 마세요.
         </p>
-        <dl className="space-y-1 font-mono text-[11px]">
-          <div className="flex justify-between">
-            <dt>상태</dt>
-            <dd>{status.state}</dd>
-          </div>
-          <div className="flex justify-between">
-            <dt>브로커</dt>
-            <dd>{status.brokerName}</dd>
-          </div>
-          <div className="flex justify-between">
-            <dt>계좌</dt>
-            <dd>{status.accountId}</dd>
-          </div>
-          <div className="flex justify-between">
-            <dt>매수가능</dt>
-            <dd>
-              {status.buyingPower > 0
-                ? `$${status.buyingPower.toLocaleString()}`
-                : "—"}
-            </dd>
-          </div>
-        </dl>
-        <Button
-          size="sm"
-          className="h-8"
-          disabled={status.state === "connecting" || status.state === "connected_mock"}
-          onClick={connect}
-        >
-          {status.state === "connecting"
-            ? "연결 중…"
-            : status.state === "connected_mock"
-              ? "연결됨 (mock)"
-              : "모의 연결"}
-        </Button>
       </DialogContent>
     </Dialog>
   );
