@@ -550,7 +550,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   compareSymbolId: null,
   timeframe: "D",
   drawingTool: "none",
-  indicators: ["sma20", "ema9", "stochRsi"],
+  indicators: ["sma20", "ema9", "volume", "stochRsi"],
   chartStyle: "candle",
   rightTab: "watchlist",
   layoutMode: "single",

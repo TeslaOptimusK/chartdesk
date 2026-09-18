@@ -59,6 +59,7 @@ const INDICATORS: { id: IndicatorId; label: string }[] = [
   { id: "sma20", label: "SMA20" },
   { id: "ema9", label: "EMA9" },
   { id: "bb", label: "BB" },
+  { id: "volume", label: "Vol" },
   { id: "rsi", label: "RSI" },
   { id: "macd", label: "MACD" },
   { id: "stochRsi", label: "StochRSI" },

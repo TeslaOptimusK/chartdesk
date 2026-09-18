@@ -293,20 +293,14 @@ export function ChartCanvas({
       },
     });
 
-    const volumeSeries = chart.addSeries(HistogramSeries, {
-      priceFormat: { type: "volume" },
-      priceScaleId: "vol",
-    });
-    chart.priceScale("vol").applyOptions({
-      scaleMargins: { top: 0.82, bottom: 0 },
-    });
-    // Leave room above volume for price; Stoch RSI uses a separate pane when enabled.
+    // Volume / oscillators live in dedicated panes (managed in the data effect).
+    // Price pane keeps full vertical range — no bottom volume strip on candles.
     chart.priceScale("right").applyOptions({
-      scaleMargins: { top: 0.05, bottom: 0.18 },
+      scaleMargins: { top: 0.05, bottom: 0.05 },
     });
 
     chartRef.current = chart;
-    volumeRef.current = volumeSeries;
+    volumeRef.current = null;
     viewKeyRef.current = "";
     followRealtimeRef.current = true;
     firstBarTimeRef.current = null;
@@ -485,8 +479,7 @@ export function ChartCanvas({
   useEffect(() => {
     const chart = chartRef.current;
     const main = mainSeriesRef.current;
-    const volumeSeries = volumeRef.current;
-    if (!chart || !main || !volumeSeries || displayCandles.length === 0) return;
+    if (!chart || !main || displayCandles.length === 0) return;
 
     const prevLogical = chart.timeScale().getVisibleLogicalRange();
     const prevFirst = firstBarTimeRef.current;
@@ -559,40 +552,42 @@ export function ChartCanvas({
       );
     }
 
-    volumeSeries.setData(
-      displayCandles.map((c) => ({
-        time: c.time as Time,
-        value: c.volume,
-        color:
-          c.close >= c.open
-            ? "rgba(45,212,168,0.35)"
-            : "rgba(240,113,120,0.35)",
-      }))
-    );
-
     for (const s of overlayRefs.current) {
       chart.removeSeries(s);
     }
     overlayRefs.current = [];
+    if (volumeRef.current) {
+      try {
+        chart.removeSeries(volumeRef.current);
+      } catch {
+        /* already removed */
+      }
+      volumeRef.current = null;
+    }
 
     const closes = displayCandles.map((c) => c.close);
     const addLine = (
       values: (number | null)[],
       color: string,
-      scaleId?: string
-    ) => {
-      const series = chart.addSeries(LineSeries, {
-        color,
-        lineWidth: 2,
-        priceLineVisible: false,
-        lastValueVisible: false,
-        priceScaleId: scaleId,
-      });
-      if (scaleId) {
-        chart.priceScale(scaleId).applyOptions({
-          scaleMargins: { top: 0.72, bottom: 0.02 },
-        });
+      opts?: {
+        scaleId?: string;
+        paneIndex?: number;
+        title?: string;
+        lastValueVisible?: boolean;
       }
+    ) => {
+      const series = chart.addSeries(
+        LineSeries,
+        {
+          color,
+          lineWidth: 2,
+          priceLineVisible: false,
+          lastValueVisible: opts?.lastValueVisible ?? false,
+          priceScaleId: opts?.scaleId,
+          title: opts?.title,
+        },
+        opts?.paneIndex ?? 0
+      );
       series.setData(
         displayCandles
           .map((c, i) =>
@@ -603,7 +598,54 @@ export function ChartCanvas({
           .filter((x): x is { time: Time; value: number } => x != null)
       );
       overlayRefs.current.push(series);
+      return series;
     };
+
+    // Sub-panes below price: Volume, then oscillators (no overlap with candles).
+    let nextPane = 1;
+    const ensurePane = () => {
+      const idx = nextPane++;
+      while (chart.panes().length <= idx) {
+        chart.addPane(true);
+      }
+      return idx;
+    };
+
+    const showVolume =
+      indicators.includes("volume") || indicators.includes("volMa");
+    let volumePane = 0;
+    if (showVolume) {
+      volumePane = ensurePane();
+      const volumeSeries = chart.addSeries(
+        HistogramSeries,
+        {
+          priceFormat: { type: "volume" },
+          priceScaleId: "vol",
+          title: "Volume",
+        },
+        volumePane
+      );
+      volumeSeries.setData(
+        displayCandles.map((c) => ({
+          time: c.time as Time,
+          value: c.volume,
+          color:
+            c.close >= c.open
+              ? "rgba(45,212,168,0.45)"
+              : "rgba(240,113,120,0.45)",
+        }))
+      );
+      volumeRef.current = volumeSeries;
+      if (indicators.includes("volMa")) {
+        const vols = displayCandles.map((c) => c.volume);
+        const ma = sma(vols, 20);
+        addLine(ma, "#a78bfa", {
+          scaleId: "vol",
+          paneIndex: volumePane,
+          title: "VolMA",
+        });
+      }
+    }
 
     if (indicators.includes("sma20")) addLine(sma(closes, 20), "#fbbf24");
     if (indicators.includes("ema9")) addLine(ema(closes, 9), "#38bdf8");
@@ -629,26 +671,50 @@ export function ChartCanvas({
     }
     if (indicators.includes("vwap")) addLine(vwap(displayCandles), "#e8b86d");
     if (indicators.includes("rsi")) {
+      const pane = ensurePane();
       const rsiVals = rsi(displayCandles, 14);
-      addLine(rsiVals, "#c084fc", "rsi");
+      addLine(rsiVals, "#c084fc", {
+        scaleId: "rsi",
+        paneIndex: pane,
+        title: "RSI",
+        lastValueVisible: true,
+      });
       if (
         indicatorOnIndicator?.parent === "rsi" &&
         indicatorOnIndicator.child === "sma20"
       ) {
-        addLine(sma(rsiVals.map((v) => v ?? 0), 14), "#fbbf24", "rsi");
+        addLine(
+          sma(
+            rsiVals.map((v) => v ?? 0),
+            14
+          ),
+          "#fbbf24",
+          { scaleId: "rsi", paneIndex: pane }
+        );
       }
     }
-    if (indicators.includes("atr")) addLine(atr(displayCandles, 14), "#fb7185", "atr");
+    if (indicators.includes("atr")) {
+      const pane = ensurePane();
+      addLine(atr(displayCandles, 14), "#fb7185", {
+        scaleId: "atr",
+        paneIndex: pane,
+        title: "ATR",
+        lastValueVisible: true,
+      });
+    }
     if (indicators.includes("macd")) {
+      const pane = ensurePane();
       const m = macd(displayCandles);
-      const hist = chart.addSeries(HistogramSeries, {
-        priceScaleId: "macd",
-        priceLineVisible: false,
-        lastValueVisible: false,
-      });
-      chart.priceScale("macd").applyOptions({
-        scaleMargins: { top: 0.78, bottom: 0.02 },
-      });
+      const hist = chart.addSeries(
+        HistogramSeries,
+        {
+          priceScaleId: "macd",
+          priceLineVisible: false,
+          lastValueVisible: false,
+          title: "MACD",
+        },
+        pane
+      );
       hist.setData(
         displayCandles
           .map((c, i) =>
@@ -668,52 +734,37 @@ export function ChartCanvas({
           )
       );
       overlayRefs.current.push(hist);
-      addLine(m.macd, "#38bdf8", "macd");
-      addLine(m.signal, "#fbbf24", "macd");
+      addLine(m.macd, "#38bdf8", { scaleId: "macd", paneIndex: pane });
+      addLine(m.signal, "#fbbf24", { scaleId: "macd", paneIndex: pane });
     }
     if (indicators.includes("stoch")) {
+      const pane = ensurePane();
       const st = stochastic(displayCandles);
-      addLine(st.k, "#f97316", "stoch");
-      addLine(st.d, "#6366f1", "stoch");
+      addLine(st.k, "#f97316", {
+        scaleId: "stoch",
+        paneIndex: pane,
+        title: "Stoch K",
+      });
+      addLine(st.d, "#6366f1", {
+        scaleId: "stoch",
+        paneIndex: pane,
+        title: "Stoch D",
+      });
     }
     if (indicators.includes("stochRsi")) {
-      // Dedicated subplot below price (TradingView-style), not price overlay.
-      if (!stochPaneEnsured.current) {
-        while (chart.panes().length < 2) {
-          chart.addPane(true);
-        }
-        const panes = chart.panes();
-        if (panes[0]) panes[0].setStretchFactor(3);
-        if (panes[1]) panes[1].setStretchFactor(1);
-        stochPaneEnsured.current = true;
-      }
+      const pane = ensurePane();
+      stochPaneEnsured.current = true;
       const sr = stochasticRsi(displayCandles);
-      const addStochLine = (values: (number | null)[], color: string) => {
-        const series = chart.addSeries(
-          LineSeries,
-          {
-            color,
-            lineWidth: 2,
-            priceLineVisible: false,
-            lastValueVisible: true,
-            title: color === "#22d3ee" ? "Stoch RSI K" : "Stoch RSI D",
-          },
-          1
-        );
-        series.setData(
-          displayCandles
-            .map((c, i) =>
-              values[i] == null
-                ? null
-                : { time: c.time as Time, value: values[i]! }
-            )
-            .filter((x): x is { time: Time; value: number } => x != null)
-        );
-        overlayRefs.current.push(series);
-      };
-      addStochLine(sr.k, "#22d3ee");
-      addStochLine(sr.d, "#f472b6");
-      // Reference bands 20 / 80
+      addLine(sr.k, "#22d3ee", {
+        paneIndex: pane,
+        title: "Stoch RSI K",
+        lastValueVisible: true,
+      });
+      addLine(sr.d, "#f472b6", {
+        paneIndex: pane,
+        title: "Stoch RSI D",
+        lastValueVisible: true,
+      });
       for (const level of [20, 80]) {
         const band = chart.addSeries(
           LineSeries,
@@ -725,7 +776,7 @@ export function ChartCanvas({
             lastValueVisible: false,
             crosshairMarkerVisible: false,
           },
-          1
+          pane
         );
         band.setData(
           displayCandles
@@ -734,12 +785,7 @@ export function ChartCanvas({
         );
         overlayRefs.current.push(band);
       }
-    } else if (stochPaneEnsured.current && chart.panes().length > 1) {
-      try {
-        chart.removePane(1);
-      } catch {
-        /* pane may already be gone */
-      }
+    } else {
       stochPaneEnsured.current = false;
     }
     if (customIndicatorSource?.trim()) {
@@ -747,24 +793,18 @@ export function ChartCanvas({
       addLine(vals, "#e879f9");
     }
 
-    if (indicators.includes("volMa")) {
-      const vols = displayCandles.map((c) => c.volume);
-      const ma = sma(vols, 20);
-      const series = chart.addSeries(LineSeries, {
-        color: "#a78bfa",
-        lineWidth: 2,
-        priceScaleId: "vol",
-        priceLineVisible: false,
-        lastValueVisible: false,
-      });
-      series.setData(
-        displayCandles
-          .map((c, i) =>
-            ma[i] == null ? null : { time: c.time as Time, value: ma[i]! }
-          )
-          .filter((x): x is { time: Time; value: number } => x != null)
-      );
-      overlayRefs.current.push(series);
+    // Drop empty trailing panes; stretch price vs sub-panes.
+    while (chart.panes().length > nextPane) {
+      try {
+        chart.removePane(chart.panes().length - 1);
+      } catch {
+        break;
+      }
+    }
+    const panes = chart.panes();
+    if (panes[0]) panes[0].setStretchFactor(3);
+    for (let i = 1; i < panes.length; i++) {
+      panes[i]?.setStretchFactor(1);
     }
 
     // Compare overlay (normalized to primary first close)
