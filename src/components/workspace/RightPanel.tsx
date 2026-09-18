@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { PublishPostForm } from "@/components/workspace/Phase3Panels";
+import { LiveQuoteBadge } from "@/components/market/LiveQuoteBadge";
 import type { MultiAlertCondition, MultiAlertLogic } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -116,6 +117,7 @@ function WatchlistTab() {
                 {s.nameKo} · {s.exchange}
               </div>
             </button>
+            <LiveQuoteBadge symbolId={s.id} compact />
             <button
               type="button"
               className={cn(

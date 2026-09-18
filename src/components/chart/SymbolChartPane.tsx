@@ -14,6 +14,8 @@ import {
   type EasyZone,
 } from "@/lib/easychart";
 import { cn } from "@/lib/utils";
+import { useQuotesStore } from "@/lib/quotes-store";
+import { LiveQuoteBadge } from "@/components/market/LiveQuoteBadge";
 
 interface SymbolChartPaneProps {
   symbolId: string;
@@ -89,6 +91,8 @@ export function SymbolChartPane({
   const [marketMode, setMarketMode] = useState<"mock" | "delayed" | "realtime">(
     "mock"
   );
+  const setFromCandles = useQuotesStore((s) => s.setFromCandles);
+  const setFromTick = useQuotesStore((s) => s.setFromTick);
   const symbol = symbols.find((s) => s.id === symbolId);
   const compareSymbol = symbols.find((s) => s.id === compareSymbolId);
 
@@ -120,6 +124,7 @@ export function SymbolChartPane({
       .then((data: { candles: Candle[] }) => {
         if (!cancelled) {
           setCandles(data.candles);
+          setFromCandles(symbolId, data.candles);
           setLoading(false);
         }
       })
@@ -132,7 +137,7 @@ export function SymbolChartPane({
     return () => {
       cancelled = true;
     };
-  }, [symbolId, fetchTf, candleLimit]);
+  }, [symbolId, fetchTf, candleLimit, setFromCandles]);
 
   useEffect(() => {
     let cancelled = false;
@@ -223,6 +228,17 @@ export function SymbolChartPane({
       es.close();
     };
   }, [interactive, marketMode, symbolId, fetchTf, candleLimit]);
+
+  // Keep shared quote store in sync with this pane's live series (header + watchlist).
+  useEffect(() => {
+    if (!candles.length) return;
+    const existing = useQuotesStore.getState().quotes[symbolId];
+    if (!existing) {
+      setFromCandles(symbolId, candles);
+    } else {
+      setFromTick(symbolId, candles[candles.length - 1]!);
+    }
+  }, [candles, symbolId, setFromCandles, setFromTick]);
 
   useEffect(() => {
     if (!compareSymbolId || !interactive) {
@@ -404,12 +420,13 @@ export function SymbolChartPane({
         className="flex shrink-0 items-center justify-between border-b border-[var(--workspace-border)] px-3 py-1.5 text-xs text-[var(--workspace-muted)]"
         data-feature="symbol.header"
       >
-        <div className="flex items-baseline gap-2">
+        <div className="flex min-w-0 flex-wrap items-baseline gap-2">
           <span className="font-semibold tracking-wide text-[var(--workspace-fg)]">
             {symbol?.ticker ?? symbolId}
           </span>
           <span>{symbol?.nameKo}</span>
           <span className="text-[var(--workspace-faint)]">{symbol?.exchange}</span>
+          <LiveQuoteBadge symbolId={symbolId} />
         </div>
         <span>
           {customIntervalMinutes
