@@ -150,26 +150,69 @@ export function SymbolChartPane({
   // Mock / delayed / realtime — SSE ticks drive candle updates + alert evaluate
   useEffect(() => {
     if (!interactive) return;
+    let cancelled = false;
+    const streamTf = fetchTf;
     const es = new EventSource(
-      `/api/market/sse?symbolId=${encodeURIComponent(symbolId)}&tf=${encodeURIComponent(fetchTf)}`
+      `/api/market/sse?symbolId=${encodeURIComponent(symbolId)}&tf=${encodeURIComponent(streamTf)}`
     );
     es.onmessage = (ev) => {
+      if (cancelled) return;
       try {
         const msg = JSON.parse(ev.data) as { type?: string; candle?: Candle };
         if (msg.type !== "candle" || !msg.candle) return;
         setCandles((prev) => {
-          if (!prev.length) return [msg.candle!];
-          const last = prev[prev.length - 1];
-          if (last.time === msg.candle!.time) {
-            return [...prev.slice(0, -1), msg.candle!];
+          const next = msg.candle!;
+          if (!prev.length) {
+            // Wait for the HTTP series for this TF — avoid seeding with a lone
+            // 1m SSE bar while Tick synthetic bars are still loading.
+            return prev;
           }
-          return [...prev.slice(-(candleLimit - 1)), msg.candle!];
+          const last = prev[prev.length - 1];
+          // Stale stream from a prior TF (or 1m SSE onto Tick) can send an older
+          // timestamp and crash lightweight-charts ("data must be asc ordered").
+          if (next.time < last.time) {
+            if (streamTf === "tick") {
+              return [
+                ...prev.slice(0, -1),
+                {
+                  ...last,
+                  close: next.close,
+                  high: Math.max(last.high, next.high, next.close),
+                  low: Math.min(last.low, next.low, next.close),
+                  volume: last.volume,
+                },
+              ];
+            }
+            return prev;
+          }
+          if (last.time === next.time) {
+            return [...prev.slice(0, -1), next];
+          }
+          // Tick series uses synthetic sub-minute bars; a new 1m SSE bar should
+          // update the last tick rather than append a coarse bar mid-series.
+          if (streamTf === "tick") {
+            return [
+              ...prev.slice(0, -1),
+              {
+                time: last.time,
+                open: last.open,
+                close: next.close,
+                high: Math.max(last.high, next.high, next.close),
+                low: Math.min(last.low, next.low, next.close),
+                volume: last.volume + Math.max(1, Math.floor(next.volume / 20)),
+              },
+            ];
+          }
+          return [...prev.slice(-(candleLimit - 1)), next];
         });
       } catch {
         /* ignore */
       }
     };
-    return () => es.close();
+    return () => {
+      cancelled = true;
+      es.close();
+    };
   }, [interactive, marketMode, symbolId, fetchTf, candleLimit]);
 
   useEffect(() => {
