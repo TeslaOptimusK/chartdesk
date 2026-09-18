@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChartCanvas } from "@/components/chart/ChartCanvas";
 import { useWorkspace, type IndicatorId } from "@/lib/store";
 import type { Candle, Drawing, PatternHit, Timeframe } from "@/lib/types";
@@ -101,6 +101,8 @@ export function SymbolChartPane({
   // previous series under the new viewKey (blank / wrong price scale).
   const candleSourceKey = `${symbolId}|${fetchTf}|${candleLimit}`;
   const [activeCandleKey, setActiveCandleKey] = useState(candleSourceKey);
+  const candleSourceKeyRef = useRef(candleSourceKey);
+  candleSourceKeyRef.current = candleSourceKey;
   if (candleSourceKey !== activeCandleKey) {
     setActiveCandleKey(candleSourceKey);
     setCandles([]);
@@ -110,6 +112,7 @@ export function SymbolChartPane({
 
   useEffect(() => {
     let cancelled = false;
+    const requestKey = candleSourceKey;
     setLoading(true);
     setError(null);
     fetch(`/api/candles?symbolId=${symbolId}&tf=${fetchTf}&limit=${candleLimit}`)
@@ -118,13 +121,12 @@ export function SymbolChartPane({
         return r.json();
       })
       .then((data: { candles: Candle[] }) => {
-        if (!cancelled) {
-          setCandles(data.candles);
-          setLoading(false);
-        }
+        if (cancelled || candleSourceKeyRef.current !== requestKey) return;
+        setCandles(data.candles);
+        setLoading(false);
       })
       .catch((e: Error) => {
-        if (!cancelled) {
+        if (!cancelled && candleSourceKeyRef.current === requestKey) {
           setError(e.message);
           setLoading(false);
         }
@@ -132,7 +134,7 @@ export function SymbolChartPane({
     return () => {
       cancelled = true;
     };
-  }, [symbolId, fetchTf, candleLimit]);
+  }, [symbolId, fetchTf, candleLimit, candleSourceKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -160,7 +162,11 @@ export function SymbolChartPane({
       try {
         const msg = JSON.parse(ev.data) as { type?: string; candle?: Candle };
         if (msg.type !== "candle" || !msg.candle) return;
+        const expectedKey = `${symbolId}|${streamTf}|${candleLimit}`;
         setCandles((prev) => {
+          // Drop updates from a prior TF/symbol EventSource whose setState
+          // landed after the series was replaced (causes asc-order crashes).
+          if (candleSourceKeyRef.current !== expectedKey) return prev;
           const next = msg.candle!;
           if (!prev.length) {
             // Wait for the HTTP series for this TF — avoid seeding with a lone

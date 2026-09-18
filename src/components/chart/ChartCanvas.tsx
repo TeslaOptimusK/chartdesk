@@ -117,6 +117,19 @@ interface ChartCanvasProps {
 
 type AnySeries = ISeriesApi<SeriesType>;
 
+/** Ensure lightweight-charts setData never sees descending / duplicate times. */
+function sanitizeCandleOrder(candles: Candle[]): Candle[] {
+  if (candles.length < 2) return candles;
+  for (let i = 1; i < candles.length; i++) {
+    if (candles[i].time <= candles[i - 1].time) {
+      const byTime = new Map<number, Candle>();
+      for (const c of candles) byTime.set(c.time, c);
+      return [...byTime.values()].sort((a, b) => a.time - b.time);
+    }
+  }
+  return candles;
+}
+
 interface LegendState {
   time: number;
   open: number;
@@ -501,6 +514,8 @@ export function ChartCanvas({
     const main = mainSeriesRef.current;
     if (!chart || !main || displayCandles.length === 0) return;
 
+    const bars = sanitizeCandleOrder(displayCandles);
+
     const prevLogical = chart.timeScale().getVisibleLogicalRange();
     const prevFirst = firstBarTimeRef.current;
     const prevCount = candleCountRef.current;
@@ -512,21 +527,21 @@ export function ChartCanvas({
 
     if (chartStyle === "line" || chartStyle === "area") {
       (main as ISeriesApi<"Line">).setData(
-        displayCandles.map((c) => ({
+        bars.map((c) => ({
           time: c.time as Time,
           value: c.close,
         }))
       );
     } else if (chartStyle === "baseline") {
       (main as ISeriesApi<"Baseline">).setData(
-        displayCandles.map((c) => ({
+        bars.map((c) => ({
           time: c.time as Time,
           value: c.close,
         }))
       );
     } else if (chartStyle === "hollow_candle") {
       (main as ISeriesApi<"Candlestick">).setData(
-        displayCandles.map((c) => {
+        bars.map((c) => {
           const up = c.close >= c.open;
           return {
             time: c.time as Time,
@@ -542,7 +557,7 @@ export function ChartCanvas({
       );
     } else if (chartStyle === "volume_candles") {
       (main as ISeriesApi<"Candlestick">).setData(
-        displayCandles.map((c, i) => {
+        bars.map((c, i) => {
           const up = c.close >= c.open;
           const w = volumeWeights[i] ?? 0.5;
           const alpha = 0.35 + w * 0.65;
@@ -562,7 +577,7 @@ export function ChartCanvas({
       );
     } else {
       (main as ISeriesApi<"Candlestick">).setData(
-        displayCandles.map((c) => ({
+        bars.map((c) => ({
           time: c.time as Time,
           open: c.open,
           high: c.high,
