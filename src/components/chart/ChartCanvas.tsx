@@ -172,6 +172,12 @@ export function ChartCanvas({
   /** Only re-fit on symbol / timeframe / range-preset changes — never on live ticks. */
   const viewKeyRef = useRef<string>("");
   const followRealtimeRef = useRef(true);
+  /**
+   * After a viewKey change, re-fit until candle data fingerprint changes.
+   * Covers the race where TF/symbol updates one frame before fresh bars arrive.
+   */
+  const pendingViewFitRef = useRef(false);
+  const staleDataFpRef = useRef<string>("");
   const suppressRangeEventRef = useRef(false);
   const candleCountRef = useRef(0);
   const firstBarTimeRef = useRef<number | null>(null);
@@ -238,6 +244,18 @@ export function ChartCanvas({
     return () => window.clearInterval(id);
   }, [displayCandles, showCountdown, timeframe]);
 
+  // Parent clears bars on TF/symbol switch — forget the prior viewKey so the next
+  // non-empty series always recenters (do not restore stale logical indices).
+  useEffect(() => {
+    if (displayCandles.length > 0) return;
+    viewKeyRef.current = "";
+    followRealtimeRef.current = true;
+    pendingViewFitRef.current = false;
+    staleDataFpRef.current = "";
+    firstBarTimeRef.current = null;
+    candleCountRef.current = 0;
+  }, [displayCandles.length]);
+
   // Create chart once
   useEffect(() => {
     if (!containerRef.current) return;
@@ -303,6 +321,8 @@ export function ChartCanvas({
     volumeRef.current = null;
     viewKeyRef.current = "";
     followRealtimeRef.current = true;
+    pendingViewFitRef.current = false;
+    staleDataFpRef.current = "";
     firstBarTimeRef.current = null;
     candleCountRef.current = 0;
     stochPaneEnsured.current = false;
@@ -894,7 +914,9 @@ export function ChartCanvas({
     // and previously re-triggered fitContent / setVisibleLogicalRange (pan snap-back).
     const viewKey = `${symbolId}|${timeframe}|${rangePreset}`;
     const newFirst = displayCandles[0]?.time ?? null;
+    const newLast = displayCandles[displayCandles.length - 1]?.time ?? null;
     const newCount = displayCandles.length;
+    const dataFp = `${newFirst}|${newLast}|${newCount}`;
     candleCountRef.current = newCount;
 
     const applyLogical = (from: number, to: number) => {
@@ -905,9 +927,14 @@ export function ChartCanvas({
       }
     };
 
-    if (viewKeyRef.current !== viewKey) {
-      viewKeyRef.current = viewKey;
+    const recenterToLatest = () => {
       followRealtimeRef.current = true;
+      // Blank chart after TF change is often a stuck Y-axis from the prior series.
+      try {
+        chart.priceScale("right").applyOptions({ autoScale: true });
+      } catch {
+        /* ignore */
+      }
       if (barCount == null) {
         chart.timeScale().fitContent();
         chart.timeScale().applyOptions({ rightOffset: 14 });
@@ -915,6 +942,32 @@ export function ChartCanvas({
         const fromIdx = Math.max(0, displayCandles.length - barCount);
         applyLogical(fromIdx - 2, displayCandles.length - 1 + 14);
         chart.timeScale().applyOptions({ rightOffset: 14 });
+      }
+      try {
+        chart.timeScale().scrollToRealTime();
+      } catch {
+        /* ignore */
+      }
+    };
+
+    if (viewKeyRef.current !== viewKey) {
+      // Symbol / timeframe / rangePreset changed — never restore prior logical range
+      // (those indices belong to a different series and blank the canvas).
+      viewKeyRef.current = viewKey;
+      followRealtimeRef.current = true;
+      pendingViewFitRef.current = true;
+      staleDataFpRef.current = dataFp;
+      recenterToLatest();
+      // If bars were cleared before this paint, dataFp is already the new series —
+      // one fit is enough. Otherwise keep pending until fingerprint changes.
+      if (prevCount === 0 || prevFirst == null) {
+        pendingViewFitRef.current = false;
+      }
+    } else if (pendingViewFitRef.current) {
+      // TF/symbol updated before fresh candles arrived — re-fit, skip prevLogical.
+      recenterToLatest();
+      if (dataFp !== staleDataFpRef.current) {
+        pendingViewFitRef.current = false;
       }
     } else if (!wasFollowing && prevLogical) {
       // Keep the user's pan. Compensate when the rolling window drops bars on the left.
@@ -926,7 +979,7 @@ export function ChartCanvas({
       applyLogical(prevLogical.from - leftShift, prevLogical.to - leftShift);
       followRealtimeRef.current = false;
     }
-    // When wasFollowing, leave the library range alone (no fitContent / scrollToRealTime).
+    // When wasFollowing and not pending a view fit, leave the library range alone.
 
     firstBarTimeRef.current = newFirst;
     suppressRangeEventRef.current = false;

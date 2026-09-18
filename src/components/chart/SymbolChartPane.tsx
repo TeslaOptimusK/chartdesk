@@ -97,6 +97,17 @@ export function SymbolChartPane({
   const structureTf: Timeframe =
     easyOverlayPreset === "swing" ? SWING_STRUCTURE_TF : SCALP_STRUCTURE_TF;
 
+  // Drop stale bars as soon as symbol/TF changes so ChartCanvas does not fit the
+  // previous series under the new viewKey (blank / wrong price scale).
+  const candleSourceKey = `${symbolId}|${fetchTf}|${candleLimit}`;
+  const [activeCandleKey, setActiveCandleKey] = useState(candleSourceKey);
+  if (candleSourceKey !== activeCandleKey) {
+    setActiveCandleKey(candleSourceKey);
+    setCandles([]);
+    setLoading(true);
+    setError(null);
+  }
+
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
