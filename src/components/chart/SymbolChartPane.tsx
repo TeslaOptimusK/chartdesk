@@ -158,12 +158,22 @@ export function SymbolChartPane({
         const msg = JSON.parse(ev.data) as { type?: string; candle?: Candle };
         if (msg.type !== "candle" || !msg.candle) return;
         setCandles((prev) => {
-          if (!prev.length) return [msg.candle!];
+          const next = msg.candle!;
+          if (!prev.length) return [next];
           const last = prev[prev.length - 1];
-          if (last.time === msg.candle!.time) {
-            return [...prev.slice(0, -1), msg.candle!];
+          if (last.time === next.time) {
+            // Forming bar: keep open, expand high/low across ticks.
+            const merged: Candle = {
+              time: next.time,
+              open: last.open,
+              close: next.close,
+              high: Math.max(last.high, next.high, next.close, last.open),
+              low: Math.min(last.low, next.low, next.close, last.open),
+              volume: Math.max(last.volume, next.volume),
+            };
+            return [...prev.slice(0, -1), merged];
           }
-          return [...prev.slice(-(candleLimit - 1)), msg.candle!];
+          return [...prev.slice(-(candleLimit - 1)), next];
         });
       } catch {
         /* ignore */

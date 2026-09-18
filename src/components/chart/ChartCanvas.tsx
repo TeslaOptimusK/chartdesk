@@ -978,8 +978,15 @@ export function ChartCanvas({
       }
       applyLogical(prevLogical.from - leftShift, prevLogical.to - leftShift);
       followRealtimeRef.current = false;
+    } else if (wasFollowing) {
+      // Live ticks: keep Y autoScale so forming-bar wicks/body stay visible.
+      try {
+        chart.priceScale("right").applyOptions({ autoScale: true });
+      } catch {
+        /* ignore */
+      }
     }
-    // When wasFollowing and not pending a view fit, leave the library range alone.
+    // When wasFollowing and not pending a view fit, leave the time-scale range alone.
 
     firstBarTimeRef.current = newFirst;
     suppressRangeEventRef.current = false;

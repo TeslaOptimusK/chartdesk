@@ -69,6 +69,101 @@ function round(n: number) {
   return Math.round(n * 100) / 100;
 }
 
+function barTime(nowSec: number, step: number): number {
+  return nowSec - (nowSec % step);
+}
+
+/**
+ * Live forming-bar ticker for mock/realtime demos.
+ * Keeps in-memory OHLC so each tick visibly moves wick/body (~1s),
+ * instead of re-sampling a deterministic bar every 15s with a tiny close nudge.
+ */
+export function createFormingBarSubscriber(
+  query: CandleQuery,
+  onCandle: (candle: Candle) => void,
+  getSeedBars: (q: CandleQuery) => Promise<Candle[]>
+): () => void {
+  const step = secondsPerBar(query.timeframe);
+  const tickMs = Math.max(
+    250,
+    Number(process.env.MARKET_DATA_TICK_MS ?? 1000)
+  );
+  // Slightly wider walk on short TFs so 1m / tick motion is obvious on a full pane.
+  const walkPct =
+    step <= 60 ? 0.0045 : step <= 300 ? 0.003 : 0.002;
+
+  let forming: Candle | null = null;
+  let stopped = false;
+
+  const emit = (c: Candle) => {
+    if (!stopped) onCandle({ ...c });
+  };
+
+  const rollOrSeed = (prevClose: number, t: number): Candle => {
+    const open = round(Math.max(0.01, prevClose));
+    return {
+      time: t,
+      open,
+      high: open,
+      low: open,
+      close: open,
+      volume: Math.floor(1_000 + Math.random() * 4_000),
+    };
+  };
+
+  const tickOnce = () => {
+    const t = barTime(Math.floor(Date.now() / 1000), step);
+    if (!forming || forming.time !== t) {
+      const prevClose =
+        forming?.close ?? basePrice(query.ticker);
+      forming = rollOrSeed(prevClose, t);
+    } else {
+      const bump = (Math.random() - 0.5) * walkPct * 2;
+      const nextClose = Math.max(0.01, forming.close * (1 + bump));
+      forming = {
+        ...forming,
+        close: round(nextClose),
+        high: round(Math.max(forming.high, nextClose, forming.open)),
+        low: round(
+          Math.max(0.01, Math.min(forming.low, nextClose, forming.open))
+        ),
+        volume: forming.volume + Math.floor(200 + Math.random() * 6_000),
+      };
+    }
+    emit(forming);
+  };
+
+  void (async () => {
+    try {
+      const bars = await getSeedBars({ ...query, limit: 2 });
+      if (stopped) return;
+      const last = bars.at(-1);
+      const t = barTime(Math.floor(Date.now() / 1000), step);
+      if (last && last.time === t) {
+        forming = { ...last };
+      } else if (last) {
+        forming = rollOrSeed(last.close, t);
+      } else {
+        forming = rollOrSeed(basePrice(query.ticker), t);
+      }
+      emit(forming);
+    } catch {
+      if (stopped) return;
+      forming = rollOrSeed(
+        basePrice(query.ticker),
+        barTime(Math.floor(Date.now() / 1000), step)
+      );
+      emit(forming);
+    }
+  })();
+
+  const interval = setInterval(tickOnce, tickMs);
+  return () => {
+    stopped = true;
+    clearInterval(interval);
+  };
+}
+
 export class MockMarketDataAdapter implements MarketDataAdapter {
   readonly id = "mock";
   readonly label = "Mock (offline)";
@@ -79,18 +174,8 @@ export class MockMarketDataAdapter implements MarketDataAdapter {
   }
 
   subscribe(query: CandleQuery, onCandle: (candle: Candle) => void) {
-    const step = secondsPerBar(query.timeframe);
-    const interval = setInterval(async () => {
-      const bars = await this.getCandles({ ...query, limit: 1 });
-      const last = bars[bars.length - 1];
-      if (last) {
-        onCandle({
-          ...last,
-          time: Math.floor(Date.now() / 1000) - (Math.floor(Date.now() / 1000) % step),
-          close: round(last.close * (1 + (Math.random() - 0.5) * 0.002)),
-        });
-      }
-    }, Math.min(step * 1000, 15_000));
-    return () => clearInterval(interval);
+    return createFormingBarSubscriber(query, onCandle, (q) =>
+      this.getCandles(q)
+    );
   }
 }
