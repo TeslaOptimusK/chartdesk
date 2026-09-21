@@ -33,17 +33,11 @@ After clone, create a Desktop `ChartDesk` shortcut once:
 powershell -ExecutionPolicy Bypass -File scripts\create-desktop-shortcut.ps1
 ```
 
-Double-click the shortcut (or run `scripts\start-chartdesk.bat`) to install deps if needed, start **ChartDesk Server** in its own console (`npm run dev -- -H 127.0.0.1 -p 43127`), wait until **`/api/bootstrap` returns 200**, then open **Chrome or Edge with `--app=http://127.0.0.1:43127`**. Falls back to the default browser only if Chrome/Edge are missing. Leave the **ChartDesk Server** window open while using the app (closing it stops the app and leaves the UI stuck on loading).
+Double-click the shortcut (or run `scripts\start-chartdesk.bat`). It fetches `origin`, checks out `cursor/chartdesk-desktop`, and fast-forwards (`git pull --ff-only`). It does not reset or discard local edits. Then it runs `npm install` only when `node_modules` is missing or `package.json` / `package-lock.json` changed, starts **ChartDesk Server** (`npm run dev -- -H 127.0.0.1 -p 43127`), waits until **`/api/bootstrap` returns 200**, and opens **Chrome or Edge with `--app=http://127.0.0.1:43127`**. Falls back to the default browser only if Chrome/Edge are missing. Leave the **ChartDesk Server** window open while using the app (closing it stops the app and leaves the UI stuck on loading).
 
 ### Update on your PC
 
-```bash
-git fetch origin
-git checkout cursor/tradingview-workspace-1626   # or the fix branch you were given
-git pull
-```
-
-Then re-run `scripts\start-chartdesk.bat` (or the Desktop ChartDesk shortcut).
+Do not run git yourself. Double-click the Desktop **ChartDesk** icon. The launcher fast-forwards `cursor/chartdesk-desktop` and opens the app.
 
 ### Scripts
 

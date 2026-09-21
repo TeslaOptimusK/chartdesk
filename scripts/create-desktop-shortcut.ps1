@@ -17,6 +17,10 @@ if ([string]::IsNullOrWhiteSpace($desktop) -or -not (Test-Path -LiteralPath $des
 }
 
 $lnkPath = Join-Path $desktop "ChartDesk.lnk"
+$iconPath = Join-Path $repoRoot "public\chartdesk.ico"
+if (-not (Test-Path -LiteralPath $iconPath)) {
+  throw "Missing icon: $iconPath"
+}
 
 $shell = New-Object -ComObject WScript.Shell
 $shortcut = $shell.CreateShortcut($lnkPath)
@@ -24,8 +28,10 @@ $shortcut.TargetPath = $batPath
 $shortcut.WorkingDirectory = $repoRoot
 $shortcut.WindowStyle = 1
 $shortcut.Description = "Start ChartDesk (http://127.0.0.1:43127)"
+$shortcut.IconLocation = "$iconPath,0"
 $shortcut.Save()
 
 Write-Host "Created: $lnkPath"
 Write-Host "Target:  $batPath"
 Write-Host "WorkDir: $repoRoot"
+Write-Host "Icon:    $iconPath"
