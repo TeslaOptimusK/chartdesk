@@ -709,7 +709,9 @@ function paintDrawing(
       ctx.globalAlpha = 0.9;
       ctx.font = "11px ui-monospace, monospace";
       ctx.fillText(
-        `${(lvl * 100).toFixed(1)}%  ${formatQuotePrice(price)}`,
+        `${(lvl * 100).toFixed(1)}%  ${formatQuotePrice(
+          Math.abs(price) >= 1000 ? Math.round(price) : price
+        )}`,
         left + 4,
         y - 3
       );
