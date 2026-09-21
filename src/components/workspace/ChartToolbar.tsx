@@ -1011,10 +1011,10 @@ export function ChartToolbar({ onOpenIngest }: { onOpenIngest: () => void }) {
           size="sm"
           variant="ghost"
           className="h-7 px-1.5 text-[10px]"
-          data-feature="trade.broker"
+          data-feature="trade.kiwoom"
           onClick={() => setBrokerOpen(true)}
         >
-          Broker
+          매매
         </Button>
         <Button
           size="sm"

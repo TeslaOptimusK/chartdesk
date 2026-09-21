@@ -64,6 +64,12 @@ See `.env.example`. Without keys:
 
 Optional: `MARKET_DATA_MODE=delayed` + vendor URL/key for free delayed quotes; `MARKET_DATA_MODE=realtime` for SSE ticks (`GET /api/market/sse?symbolId=&tf=`) and optional `MARKET_DATA_WS_URL`; `LLM_API_KEY` for draft enrichment.
 
+Mock/realtime SSE keeps an in-memory **forming bar** and ticks about every `MARKET_DATA_TICK_MS` (default 1000ms) so 1분봉 wicks/body visibly move. Without keys, delayed mode uses the same live mock stream.
+
+### Kiwoom 매매 (mock first)
+
+Toolbar **매매** → `POST /api/kiwoom/order` (default `KIWOOM_MODE=mock` paper fills). Windows OpenAPI+/OCX is a non-ordering stub only — never commit app keys. See project store `docs/kiwoom-trading.md`.
+
 ### Alerts & webhooks
 
 - Unified evaluation: `POST /api/alerts/evaluate` with `{ symbolId, candles?, lastClose? }` or `{ scope: "pending" }` for watchlist/multi/technical across symbols. Fires on SSE mock ticks + 12s pending sweep.

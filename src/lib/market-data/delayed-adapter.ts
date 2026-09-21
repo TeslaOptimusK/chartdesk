@@ -43,6 +43,14 @@ export class DelayedMarketDataAdapter implements MarketDataAdapter {
   }
 
   subscribe(query: CandleQuery, onCandle: (candle: Candle) => void) {
+    const apiKey = process.env.MARKET_DATA_API_KEY;
+    const baseUrl = process.env.MARKET_DATA_BASE_URL;
+
+    // Offline / no keys: same live forming-bar stream as mock so 1m wicks move.
+    if (!apiKey || !baseUrl) {
+      return this.fallback.subscribe(query, onCandle);
+    }
+
     // Realtime WS not available on free delayed tier — poll slowly.
     const pollMs = Number(process.env.MARKET_DATA_POLL_MS ?? 30_000);
     const timer = setInterval(() => {

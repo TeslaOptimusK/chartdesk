@@ -1,14 +1,10 @@
 import type { Candle } from "@/lib/types";
 import type { CandleQuery, MarketDataAdapter } from "@/lib/market-data/types";
-import { secondsPerBar } from "@/lib/market-data/types";
 import {
   MockMarketDataAdapter,
+  createFormingBarSubscriber,
   generateMockCandles,
 } from "@/lib/market-data/mock-adapter";
-
-function round(n: number) {
-  return Math.round(n * 100) / 100;
-}
 
 type WsCandleMsg = { type: "candle"; payload: Candle };
 
@@ -91,16 +87,8 @@ export class RealtimeMarketDataAdapter implements MarketDataAdapter {
       return () => clearInterval(timer);
     }
 
-    return this.fallback.subscribe(query, (c) => {
-      const step = secondsPerBar(query.timeframe);
-      const bump = (Math.random() - 0.5) * 0.003;
-      onCandle({
-        ...c,
-        time: Math.floor(Date.now() / 1000) - (Math.floor(Date.now() / 1000) % step),
-        close: round(c.close * (1 + bump)),
-        high: round(Math.max(c.high, c.close * (1 + Math.abs(bump)))),
-        low: round(Math.min(c.low, c.close * (1 - Math.abs(bump)))),
-      });
-    });
+    return createFormingBarSubscriber(query, onCandle, (q) =>
+      this.getCandles(q)
+    );
   }
 }

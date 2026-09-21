@@ -14,6 +14,8 @@ import {
   type EasyZone,
 } from "@/lib/easychart";
 import { cn } from "@/lib/utils";
+import { useQuotesStore } from "@/lib/quotes-store";
+import { LiveQuoteBadge } from "@/components/market/LiveQuoteBadge";
 
 interface SymbolChartPaneProps {
   symbolId: string;
@@ -89,6 +91,8 @@ export function SymbolChartPane({
   const [marketMode, setMarketMode] = useState<"mock" | "delayed" | "realtime">(
     "mock"
   );
+  const setFromCandles = useQuotesStore((s) => s.setFromCandles);
+  const setFromTick = useQuotesStore((s) => s.setFromTick);
   const symbol = symbols.find((s) => s.id === symbolId);
   const compareSymbol = symbols.find((s) => s.id === compareSymbolId);
 
@@ -123,6 +127,7 @@ export function SymbolChartPane({
       .then((data: { candles: Candle[] }) => {
         if (cancelled || candleSourceKeyRef.current !== requestKey) return;
         setCandles(data.candles);
+        setFromCandles(symbolId, data.candles);
         setLoading(false);
       })
       .catch((e: Error) => {
@@ -134,7 +139,7 @@ export function SymbolChartPane({
     return () => {
       cancelled = true;
     };
-  }, [symbolId, fetchTf, candleLimit, candleSourceKey]);
+  }, [symbolId, fetchTf, candleLimit, candleSourceKey, setFromCandles]);
 
   useEffect(() => {
     let cancelled = false;
@@ -192,10 +197,19 @@ export function SymbolChartPane({
             return prev;
           }
           if (last.time === next.time) {
-            return [...prev.slice(0, -1), next];
+            // Forming bar: keep open, expand high/low across ticks.
+            const merged: Candle = {
+              time: next.time,
+              open: last.open,
+              close: next.close,
+              high: Math.max(last.high, next.high, next.close, last.open),
+              low: Math.min(last.low, next.low, next.close, last.open),
+              volume: Math.max(last.volume, next.volume),
+            };
+            return [...prev.slice(0, -1), merged];
           }
           // Tick series uses synthetic sub-minute bars; a new 1m SSE bar should
-          // update the last tick rather than append a coarse bar mid-series.
+          // extend the last tick rather than inject a coarse bar mid-series.
           if (streamTf === "tick") {
             return [
               ...prev.slice(0, -1),
@@ -220,6 +234,17 @@ export function SymbolChartPane({
       es.close();
     };
   }, [interactive, marketMode, symbolId, fetchTf, candleLimit]);
+
+  // Keep shared quote store in sync with this pane's live series (header + watchlist).
+  useEffect(() => {
+    if (!candles.length) return;
+    const existing = useQuotesStore.getState().quotes[symbolId];
+    if (!existing) {
+      setFromCandles(symbolId, candles);
+    } else {
+      setFromTick(symbolId, candles[candles.length - 1]!);
+    }
+  }, [candles, symbolId, setFromCandles, setFromTick]);
 
   useEffect(() => {
     if (!compareSymbolId || !interactive) {
@@ -401,12 +426,13 @@ export function SymbolChartPane({
         className="flex shrink-0 items-center justify-between border-b border-[var(--workspace-border)] px-3 py-1.5 text-xs text-[var(--workspace-muted)]"
         data-feature="symbol.header"
       >
-        <div className="flex items-baseline gap-2">
+        <div className="flex min-w-0 flex-wrap items-baseline gap-2">
           <span className="font-semibold tracking-wide text-[var(--workspace-fg)]">
             {symbol?.ticker ?? symbolId}
           </span>
           <span>{symbol?.nameKo}</span>
           <span className="text-[var(--workspace-faint)]">{symbol?.exchange}</span>
+          <LiveQuoteBadge symbolId={symbolId} />
         </div>
         <span>
           {customIntervalMinutes
