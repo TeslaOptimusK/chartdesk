@@ -112,6 +112,8 @@ interface ChartCanvasProps {
   /** easychart pattern overlay zones (separate from drawings) */
   easyZones?: EasyZone[];
   easyToggles?: import("@/lib/easychart").EasyOverlayToggles;
+  /** Decimal places on the price scale. KRX mock series is whole won. */
+  pricePrecision?: number;
   easyOverlayOn?: boolean;
 }
 
@@ -175,6 +177,7 @@ export function ChartCanvas({
   customIndicatorSource = null,
   easyZones = [],
   easyToggles,
+  pricePrecision = 2,
 }: ChartCanvasProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -515,6 +518,13 @@ export function ChartCanvas({
     if (!chart || !main || displayCandles.length === 0) return;
 
     const bars = sanitizeCandleOrder(displayCandles);
+    main.applyOptions({
+      priceFormat: {
+        type: "price",
+        precision: pricePrecision,
+        minMove: pricePrecision <= 0 ? 1 : 10 ** -pricePrecision,
+      },
+    });
 
     const prevLogical = chart.timeScale().getVisibleLogicalRange();
     const prevFirst = firstBarTimeRef.current;
@@ -1032,6 +1042,7 @@ export function ChartCanvas({
     volumeWeights,
     indicatorOnIndicator,
     customIndicatorSource,
+    pricePrecision,
   ]);
 
   // Crosshair legend + layout.sync.crosshair
@@ -1174,14 +1185,14 @@ export function ChartCanvas({
           <span className="mr-2 text-[var(--workspace-fg)]">
             {formatChartDate(legend.time, dateFormat, timezone)}
           </span>
-          O {legend.open.toFixed(2)} H {legend.high.toFixed(2)} L{" "}
-          {legend.low.toFixed(2)} C{" "}
+          O {legend.open.toFixed(pricePrecision)} H {legend.high.toFixed(pricePrecision)} L{" "}
+          {legend.low.toFixed(pricePrecision)} C{" "}
           <span
             className={
               legend.close >= legend.open ? "text-emerald-300" : "text-rose-300"
             }
           >
-            {legend.close.toFixed(2)}
+            {legend.close.toFixed(pricePrecision)}
           </span>
           {(() => {
             const idx = displayCandles.findIndex((c) => c.time === legend.time);

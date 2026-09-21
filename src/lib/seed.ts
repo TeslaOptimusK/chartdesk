@@ -1,6 +1,7 @@
 import type {
   AlertItem,
   AppStoreData,
+  Candle,
   ChartComment,
   Drawing,
   NewsItem,
@@ -14,29 +15,33 @@ import type {
 import { defaultColor } from "@/lib/drawings";
 import { generateMockCandles } from "@/lib/market-data/mock-adapter";
 
-function buildDemoDrawings(): Drawing[] {
-  const symbolId = "kr_005930";
-  const candles = generateMockCandles({
-    symbolId,
-    ticker: "005930",
-    timeframe: "D",
-    limit: 120,
-  });
+function snapDrawPrice(n: number): number {
+  if (!Number.isFinite(n)) return n;
+  if (Math.abs(n) >= 1000) return Math.round(n);
+  return Math.round(n * 100) / 100;
+}
+
+/** Demo fib / channel / support note anchored to a real candle window. */
+export function buildDemoDrawingsForCandles(
+  symbolId: string,
+  candles: Candle[]
+): Drawing[] {
   if (candles.length < 80) return [];
-  const a = candles[Math.floor(candles.length * 0.25)];
-  const b = candles[Math.floor(candles.length * 0.45)];
-  const c = candles[Math.floor(candles.length * 0.55)];
-  const d = candles[Math.floor(candles.length * 0.7)];
-  const e = candles[Math.floor(candles.length * 0.8)];
+  const a = candles[Math.floor(candles.length * 0.25)]!;
+  const b = candles[Math.floor(candles.length * 0.45)]!;
+  const c = candles[Math.floor(candles.length * 0.55)]!;
+  const d = candles[Math.floor(candles.length * 0.7)]!;
+  const e = candles[Math.floor(candles.length * 0.8)]!;
   const now = new Date().toISOString();
+  const px = snapDrawPrice;
   return [
     {
       id: "draw_seed_trend",
       symbolId,
       tool: "trend",
       points: [
-        { time: a.time, price: a.low },
-        { time: b.time, price: b.high },
+        { time: a.time, price: px(a.low) },
+        { time: b.time, price: px(b.high) },
       ],
       color: defaultColor("trend"),
       createdAt: now,
@@ -45,7 +50,7 @@ function buildDemoDrawings(): Drawing[] {
       id: "draw_seed_horizontal",
       symbolId,
       tool: "horizontal",
-      points: [{ time: c.time, price: c.close }],
+      points: [{ time: c.time, price: px(c.close) }],
       color: defaultColor("horizontal"),
       createdAt: now,
     },
@@ -54,9 +59,9 @@ function buildDemoDrawings(): Drawing[] {
       symbolId,
       tool: "channel",
       points: [
-        { time: a.time, price: a.low * 0.995 },
-        { time: d.time, price: d.low * 1.002 },
-        { time: c.time, price: c.high },
+        { time: a.time, price: px(a.low * 0.995) },
+        { time: d.time, price: px(d.low * 1.002) },
+        { time: c.time, price: px(c.high) },
       ],
       color: defaultColor("channel"),
       createdAt: now,
@@ -66,8 +71,8 @@ function buildDemoDrawings(): Drawing[] {
       symbolId,
       tool: "fibonacci",
       points: [
-        { time: b.time, price: Math.max(b.high, d.high) },
-        { time: e.time, price: Math.min(e.low, c.low) },
+        { time: b.time, price: px(Math.max(b.high, d.high)) },
+        { time: e.time, price: px(Math.min(e.low, c.low)) },
       ],
       color: defaultColor("fibonacci"),
       createdAt: now,
@@ -77,8 +82,8 @@ function buildDemoDrawings(): Drawing[] {
       symbolId,
       tool: "rectangle",
       points: [
-        { time: c.time, price: c.high },
-        { time: e.time, price: e.low },
+        { time: c.time, price: px(c.high) },
+        { time: e.time, price: px(e.low) },
       ],
       color: defaultColor("rectangle"),
       createdAt: now,
@@ -87,12 +92,65 @@ function buildDemoDrawings(): Drawing[] {
       id: "draw_seed_text",
       symbolId,
       tool: "text",
-      points: [{ time: d.time, price: d.high }],
+      points: [{ time: d.time, price: px(d.high) }],
       color: defaultColor("text"),
       text: "데모: 지지 관찰",
       createdAt: now,
     },
   ];
+}
+
+function buildDemoDrawings(): Drawing[] {
+  const symbolId = "kr_005930";
+  const candles = generateMockCandles({
+    symbolId,
+    ticker: "005930",
+    timeframe: "D",
+    limit: 120,
+  });
+  return buildDemoDrawingsForCandles(symbolId, candles);
+}
+
+function candleEnvelope(candles: Candle[]): { hi: number; lo: number } {
+  let hi = -Infinity;
+  let lo = Infinity;
+  for (const c of candles) {
+    if (c.high > hi) hi = c.high;
+    if (c.low < lo) lo = c.low;
+  }
+  return { hi, lo };
+}
+
+/**
+ * Seed drawings are persisted from an older mock walk. If their prices sit
+ * outside the candles on screen, rebuild them on this series so fib, channel,
+ * and the demo support note land on the bars instead of empty scale space.
+ */
+export function alignSeedDrawings(
+  drawings: Drawing[],
+  symbolId: string,
+  candles: Candle[]
+): Drawing[] {
+  if (candles.length < 80) return drawings;
+  const seeds = drawings.filter(
+    (d) => d.symbolId === symbolId && d.id.startsWith("draw_seed_")
+  );
+  if (!seeds.length) return drawings;
+  const recent = candles.slice(-Math.min(80, candles.length));
+  const { hi, lo } = candleEnvelope(recent);
+  const mid = (hi + lo) / 2 || 1;
+  const span = Math.max(hi - lo, Math.abs(mid) * 0.01);
+  const pad = Math.max(span * 0.5, Math.abs(mid) * 0.02);
+  const misaligned = seeds.some((d) =>
+    d.points.some((p) => p.price > hi + pad || p.price < lo - pad)
+  );
+  if (!misaligned) return drawings;
+  const fresh = buildDemoDrawingsForCandles(symbolId, candles);
+  if (!fresh.length) return drawings;
+  const rest = drawings.filter(
+    (d) => !(d.symbolId === symbolId && d.id.startsWith("draw_seed_"))
+  );
+  return [...rest, ...fresh];
 }
 
 export const SEED_SYMBOLS: SymbolMeta[] = [

@@ -52,7 +52,7 @@ export async function GET(req: Request) {
 
       const unsubs: Array<() => void> = [];
       const prevCloseById = new Map<string, number>();
-      const barTimeById = new Map<string, number>();
+      const liveById = new Map<string, boolean>();
 
       for (const symbol of symbols) {
         const query = {
@@ -62,13 +62,14 @@ export async function GET(req: Request) {
           limit: 2,
         };
 
-        // Seed prevClose from history once, then stream ticks.
+        // History is only a fallback before the shared forming bar emits.
+        // A late snapshot must not overwrite a live tick (that was a second price).
         void adapter.getCandles({ ...query, limit: 2 }).then((bars) => {
+          if (liveById.get(symbol.id)) return;
           const last = bars.at(-1);
           const prev = bars.length > 1 ? bars[bars.length - 2] : null;
           if (last) {
             prevCloseById.set(symbol.id, prev?.close ?? last.open);
-            barTimeById.set(symbol.id, last.time);
             send({
               type: "quote",
               symbolId: symbol.id,
@@ -79,38 +80,22 @@ export async function GET(req: Request) {
         });
 
         const unsub = adapter.subscribe!(query, (candle: Candle) => {
-          const prevTime = barTimeById.get(symbol.id);
-          if (prevTime != null && candle.time !== prevTime) {
-            // Rolled to a new bar — keep last published close as reference.
-            // (tick path may not have prior close; seed used until first roll)
-            const published = prevCloseById.get(symbol.id);
-            if (published == null) {
-              prevCloseById.set(symbol.id, candle.open);
-            }
-          }
+          liveById.set(symbol.id, true);
           if (!prevCloseById.has(symbol.id)) {
             prevCloseById.set(symbol.id, candle.open);
           }
-          // When same bar, prevClose stays; when new bar without prior tick,
-          // use open until we track properly via client store.
+          const prevTime = prevCloseById.get(`${symbol.id}:bar`);
           if (prevTime != null && candle.time !== prevTime) {
-            // Client store handles bar roll with previous last; send open as hint.
-            send({
-              type: "quote",
-              symbolId: symbol.id,
-              candle,
-              prevClose: prevCloseById.get(symbol.id),
-              barRoll: true,
-            });
-          } else {
-            send({
-              type: "quote",
-              symbolId: symbol.id,
-              candle,
-              prevClose: prevCloseById.get(symbol.id),
-            });
+            prevCloseById.set(symbol.id, candle.open);
           }
-          barTimeById.set(symbol.id, candle.time);
+          send({
+            type: "quote",
+            symbolId: symbol.id,
+            candle,
+            prevClose: prevCloseById.get(symbol.id),
+            barRoll: prevTime != null && candle.time !== prevTime,
+          });
+          prevCloseById.set(`${symbol.id}:bar`, candle.time);
         });
         unsubs.push(unsub);
       }

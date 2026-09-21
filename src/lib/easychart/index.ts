@@ -18,6 +18,7 @@ export {
   detectRawZones,
   scoreAndFilterZones,
   zonesOverlap,
+  zonesInsideCandleRange,
   CONFLUENCE_THRESHOLD,
 } from "@/lib/easychart/confluence";
 export type {

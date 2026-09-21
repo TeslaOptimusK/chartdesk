@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo } from "react";
 import { useWorkspace } from "@/lib/store";
-import { useQuotesStore } from "@/lib/quotes-store";
+import { isChartQuoteOwner, useQuotesStore } from "@/lib/quotes-store";
 import type { Candle } from "@/lib/types";
 
 /**
@@ -12,6 +12,7 @@ import type { Candle } from "@/lib/types";
 export function LiveQuotesBridge() {
   const symbols = useWorkspace((s) => s.symbols);
   const ready = useWorkspace((s) => s.ready);
+  const timeframe = useWorkspace((s) => s.timeframe);
   const setFromTick = useQuotesStore((s) => s.setFromTick);
   const setFromCandles = useQuotesStore((s) => s.setFromCandles);
 
@@ -27,7 +28,7 @@ export function LiveQuotesBridge() {
 
     let cancelled = false;
     const es = new EventSource(
-      `/api/market/quotes-sse?ids=${encodeURIComponent(idsKey)}&tf=1`
+      `/api/market/quotes-sse?ids=${encodeURIComponent(idsKey)}&tf=${encodeURIComponent(timeframe)}`
     );
 
     es.onmessage = (ev) => {
@@ -41,6 +42,8 @@ export function LiveQuotesBridge() {
           barRoll?: boolean;
         };
         if (msg.type !== "quote" || !msg.symbolId || !msg.candle) return;
+        // A visible chart pane is the only quote source for that symbol.
+        if (isChartQuoteOwner(msg.symbolId)) return;
 
         // Prefer tick path so forming-bar updates animate; seed first quote
         // may arrive before any prior store entry.
@@ -69,7 +72,7 @@ export function LiveQuotesBridge() {
       cancelled = true;
       es.close();
     };
-  }, [ready, idsKey, setFromTick, setFromCandles]);
+  }, [ready, idsKey, timeframe, setFromTick, setFromCandles]);
 
   return null;
 }

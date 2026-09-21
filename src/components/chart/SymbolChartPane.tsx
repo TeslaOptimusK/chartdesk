@@ -9,13 +9,16 @@ import { appendExtendedSessionBars } from "@/lib/extended-hours";
 import { buildEventMarkers } from "@/lib/phase2-data";
 import {
   detectEasyOverlayZones,
+  zonesInsideCandleRange,
   SCALP_STRUCTURE_TF,
   SWING_STRUCTURE_TF,
   type EasyZone,
 } from "@/lib/easychart";
 import { cn } from "@/lib/utils";
-import { useQuotesStore } from "@/lib/quotes-store";
+import { retainChartQuote, useQuotesStore } from "@/lib/quotes-store";
 import { LiveQuoteBadge } from "@/components/market/LiveQuoteBadge";
+import { alignSeedDrawings } from "@/lib/seed";
+import { applyLiveCandle } from "@/lib/market-data/mock-adapter";
 
 interface SymbolChartPaneProps {
   symbolId: string;
@@ -82,6 +85,7 @@ export function SymbolChartPane({
     easyOverlayEnabled,
     easyOverlayToggles,
     easyOverlayPreset,
+    activeSymbolId,
   } = useWorkspace();
   const timeframe = paneTimeframe ?? storeTimeframe;
   const [candles, setCandles] = useState<Candle[]>([]);
@@ -92,7 +96,6 @@ export function SymbolChartPane({
     "mock"
   );
   const setFromCandles = useQuotesStore((s) => s.setFromCandles);
-  const setFromTick = useQuotesStore((s) => s.setFromTick);
   const symbol = symbols.find((s) => s.id === symbolId);
   const compareSymbol = symbols.find((s) => s.id === compareSymbolId);
 
@@ -127,7 +130,6 @@ export function SymbolChartPane({
       .then((data: { candles: Candle[] }) => {
         if (cancelled || candleSourceKeyRef.current !== requestKey) return;
         setCandles(data.candles);
-        setFromCandles(symbolId, data.candles);
         setLoading(false);
       })
       .catch((e: Error) => {
@@ -139,7 +141,7 @@ export function SymbolChartPane({
     return () => {
       cancelled = true;
     };
-  }, [symbolId, fetchTf, candleLimit, candleSourceKey, setFromCandles]);
+  }, [symbolId, fetchTf, candleLimit, candleSourceKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -179,51 +181,12 @@ export function SymbolChartPane({
             return prev;
           }
           const last = prev[prev.length - 1];
-          // Stale stream from a prior TF (or 1m SSE onto Tick) can send an older
-          // timestamp and crash lightweight-charts ("data must be asc ordered").
-          if (next.time < last.time) {
-            if (streamTf === "tick") {
-              return [
-                ...prev.slice(0, -1),
-                {
-                  ...last,
-                  close: next.close,
-                  high: Math.max(last.high, next.high, next.close),
-                  low: Math.min(last.low, next.low, next.close),
-                  volume: last.volume,
-                },
-              ];
-            }
-            return prev;
-          }
-          if (last.time === next.time) {
-            // Forming bar: keep open, expand high/low across ticks.
-            const merged: Candle = {
-              time: next.time,
-              open: last.open,
-              close: next.close,
-              high: Math.max(last.high, next.high, next.close, last.open),
-              low: Math.min(last.low, next.low, next.close, last.open),
-              volume: Math.max(last.volume, next.volume),
-            };
-            return [...prev.slice(0, -1), merged];
-          }
-          // Tick series uses synthetic sub-minute bars; a new 1m SSE bar should
-          // extend the last tick rather than inject a coarse bar mid-series.
-          if (streamTf === "tick") {
-            return [
-              ...prev.slice(0, -1),
-              {
-                time: last.time,
-                open: last.open,
-                close: next.close,
-                high: Math.max(last.high, next.high, next.close),
-                low: Math.min(last.low, next.low, next.close),
-                volume: last.volume + Math.max(1, Math.floor(next.volume / 20)),
-              },
-            ];
-          }
-          return [...prev.slice(-(candleLimit - 1)), next];
+          if (!last) return prev;
+          const merged = applyLiveCandle(prev, next, { streamTf });
+          if (merged === prev) return prev;
+          return merged.length > candleLimit
+            ? merged.slice(-candleLimit)
+            : merged;
         });
       } catch {
         /* ignore */
@@ -234,17 +197,6 @@ export function SymbolChartPane({
       es.close();
     };
   }, [interactive, marketMode, symbolId, fetchTf, candleLimit]);
-
-  // Keep shared quote store in sync with this pane's live series (header + watchlist).
-  useEffect(() => {
-    if (!candles.length) return;
-    const existing = useQuotesStore.getState().quotes[symbolId];
-    if (!existing) {
-      setFromCandles(symbolId, candles);
-    } else {
-      setFromTick(symbolId, candles[candles.length - 1]!);
-    }
-  }, [candles, symbolId, setFromCandles, setFromTick]);
 
   useEffect(() => {
     if (!compareSymbolId || !interactive) {
@@ -286,6 +238,21 @@ export function SymbolChartPane({
     }
     return list;
   }, [baseCandles, replayActive, replayIndex]);
+
+  useEffect(() => retainChartQuote(symbolId), [symbolId]);
+
+  // Header + watchlist read this pane's displayed series for symbols on screen.
+  useEffect(() => {
+    if (!processedCandles.length) return;
+    if (symbolId === activeSymbolId && !active) return;
+    setFromCandles(symbolId, processedCandles);
+  }, [
+    processedCandles,
+    symbolId,
+    activeSymbolId,
+    active,
+    setFromCandles,
+  ]);
 
   useEffect(() => {
     if (interactive) setReplayTotalBars(Math.max(baseCandles.length, 10));
@@ -343,7 +310,15 @@ export function SymbolChartPane({
   const hits = patternHits.filter(
     (h: PatternHit) => h.symbolId === symbolId && h.timeframe === timeframe
   );
-  const localDrawings = drawings.filter((d) => d.symbolId === symbolId);
+  const localDrawings = useMemo(
+    () =>
+      alignSeedDrawings(
+        drawings.filter((d) => d.symbolId === symbolId),
+        symbolId,
+        processedCandles
+      ),
+    [drawings, symbolId, processedCandles]
+  );
   const eventMarkers = useMemo(
     () => buildEventMarkers(symbolId),
     [symbolId]
@@ -359,11 +334,14 @@ export function SymbolChartPane({
       htfSec > ltfSec
         ? resampleCandles(processedCandles, htfSec)
         : processedCandles;
-    return detectEasyOverlayZones(
-      processedCandles,
-      structureCandles.length >= 10 ? structureCandles : null,
-      { confluenceThreshold: easyOverlayToggles.confluence ? 2 : 1 },
-      easyOverlayToggles
+    return zonesInsideCandleRange(
+      detectEasyOverlayZones(
+        processedCandles,
+        structureCandles.length >= 10 ? structureCandles : null,
+        { confluenceThreshold: easyOverlayToggles.confluence ? 2 : 1 },
+        easyOverlayToggles
+      ),
+      processedCandles
     );
   }, [
     easyOverlayEnabled,
@@ -483,6 +461,7 @@ export function SymbolChartPane({
           extendedHours={extendedHours}
           showCountdown={showCountdown}
           timeframe={customIntervalMinutes ? "5" : timeframe}
+          pricePrecision={/^\d{6}$/.test(symbol?.ticker ?? "") ? 0 : 2}
           timezone={timezone}
           eventMarkers={eventMarkers}
           eventToggles={eventToggles}

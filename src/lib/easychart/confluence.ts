@@ -199,6 +199,40 @@ export function detectEasyOverlayZones(
   return scored;
 }
 
+/**
+ * Hide zones whose prices sit far outside the displayed candle range.
+ * Callers should already detect on those candles; this stops a stale
+ * series from painting fib/channel/OB into empty scale space.
+ */
+export function zonesInsideCandleRange(
+  zones: EasyZone[],
+  candles: Candle[],
+  factor = 1.5
+): EasyZone[] {
+  if (!zones.length || !candles.length) return zones.length && !candles.length ? [] : zones;
+  let hi = -Infinity;
+  let lo = Infinity;
+  for (const c of candles) {
+    if (c.high > hi) hi = c.high;
+    if (c.low < lo) lo = c.low;
+  }
+  const mid = (hi + lo) / 2;
+  const span = Math.max(hi - lo, Math.abs(mid) * 0.004, 1e-9);
+  const pad = span * factor;
+  const minP = lo - pad;
+  const maxP = hi + pad;
+  return zones.filter((z) => {
+    const zMid = (z.priceTop + z.priceBottom) / 2;
+    if (zMid > hi + pad || zMid < lo - pad) return false;
+    if (z.priceBottom > maxP || z.priceTop < minP) return false;
+    const levels = z.fibLevels ?? [];
+    if (levels.some((lv) => lv.price > maxP || lv.price < minP)) return false;
+    const pts = [...(z.points ?? []), ...(z.parallelPoints ?? [])];
+    if (pts.some((p) => p.price > maxP || p.price < minP)) return false;
+    return true;
+  });
+}
+
 export function detectRawZones(candles: Candle[], opts?: EasyDetectOptions) {
   return {
     orderBlocks: detectOrderBlocks(candles, opts),

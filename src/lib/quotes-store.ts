@@ -84,11 +84,32 @@ export const useQuotesStore = create<QuotesState>((set, get) => ({
   },
 }));
 
+const chartQuoteOwners = new Map<string, number>();
+
+/** Chart pane owns this symbol's quote so the watchlist SSE cannot overwrite it. */
+export function retainChartQuote(symbolId: string): () => void {
+  chartQuoteOwners.set(symbolId, (chartQuoteOwners.get(symbolId) ?? 0) + 1);
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    const n = (chartQuoteOwners.get(symbolId) ?? 1) - 1;
+    if (n <= 0) chartQuoteOwners.delete(symbolId);
+    else chartQuoteOwners.set(symbolId, n);
+  };
+}
+
+export function isChartQuoteOwner(symbolId: string): boolean {
+  return (chartQuoteOwners.get(symbolId) ?? 0) > 0;
+}
+
 export function formatQuotePrice(n: number): string {
   if (!Number.isFinite(n)) return "—";
   const abs = Math.abs(n);
-  if (abs >= 1000) return n.toFixed(2);
-  if (abs >= 100) return n.toFixed(2);
+  // Whole-won prints (KRX mock) should not show bogus cents.
+  if (abs >= 1000 && Math.abs(n - Math.round(n)) < 1e-6) {
+    return Math.round(n).toString();
+  }
   if (abs >= 1) return n.toFixed(2);
   return n.toFixed(4);
 }

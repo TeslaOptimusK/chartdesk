@@ -18,6 +18,7 @@ import {
   isBrushTool,
 } from "@/lib/drawings";
 import { snapToCandle } from "@/lib/indicators";
+import { formatQuotePrice } from "@/lib/quotes-store";
 import { anchoredVwap, volumeProfile } from "@/lib/indicators-extra";
 
 export type ChartApiBundle = {
@@ -708,7 +709,7 @@ function paintDrawing(
       ctx.globalAlpha = 0.9;
       ctx.font = "11px ui-monospace, monospace";
       ctx.fillText(
-        `${(lvl * 100).toFixed(1)}%  ${price.toFixed(2)}`,
+        `${(lvl * 100).toFixed(1)}%  ${formatQuotePrice(price)}`,
         left + 4,
         y - 3
       );
