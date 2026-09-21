@@ -13,6 +13,13 @@ where git >nul 2>&1
 if errorlevel 1 goto fail_git
 
 set "GIT_TERMINAL_PROMPT=0"
+REM This repo clears credential.helper. Use GitHub CLI when it is installed so
+REM a double-click can fetch without asking the user to run git.
+if exist "C:\Program Files\GitHub CLI\gh.exe" (
+  set "GIT_CONFIG_COUNT=1"
+  set "GIT_CONFIG_KEY_0=credential.helper"
+  set "GIT_CONFIG_VALUE_0=!'C:\Program Files\GitHub CLI\gh.exe' auth git-credential"
+)
 REM This block is parsed before it runs, so a pull that replaces this file
 REM cannot desync the rest of the update. The new file is started afterwards.
 (
