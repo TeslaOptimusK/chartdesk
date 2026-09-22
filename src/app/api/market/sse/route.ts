@@ -23,6 +23,8 @@ export async function GET(req: Request) {
   const query = {
     symbolId: symbol.id,
     ticker: symbol.ticker,
+    exchange: symbol.exchange,
+    assetClass: symbol.assetClass,
     timeframe: tf === "tick" ? ("1" as Timeframe) : tf,
     limit: 2,
   };

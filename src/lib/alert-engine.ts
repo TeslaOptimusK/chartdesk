@@ -283,6 +283,8 @@ export async function evaluatePendingWatchlistAlerts(opts?: {
     const candles = await adapter.getCandles({
       symbolId: symbol.id,
       ticker: symbol.ticker,
+      exchange: symbol.exchange,
+      assetClass: symbol.assetClass,
       timeframe: tf === "tick" ? "1" : tf,
       limit,
     });

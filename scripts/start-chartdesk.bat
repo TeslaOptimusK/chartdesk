@@ -58,6 +58,9 @@ REM cannot desync the rest of the update. The new file is started afterwards.
 where node >nul 2>&1
 if errorlevel 1 goto fail_node
 
+REM Default to delayed Yahoo quotes unless the user already set a mode.
+if not defined MARKET_DATA_MODE set "MARKET_DATA_MODE=delayed"
+
 set "NEED_NPM=0"
 if not exist "node_modules\next\" set "NEED_NPM=1"
 if exist "package-lock.json" if exist "node_modules\.chartdesk-package-lock.json" (

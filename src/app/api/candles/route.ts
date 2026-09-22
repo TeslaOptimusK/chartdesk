@@ -24,6 +24,8 @@ export async function GET(req: Request) {
   let candles = await adapter.getCandles({
     symbolId: symbol.id,
     ticker: symbol.ticker,
+    exchange: symbol.exchange,
+    assetClass: symbol.assetClass,
     timeframe: timeframe === "tick" ? "1" : timeframe,
     limit: timeframe === "tick" ? Math.min(120, Math.ceil(limit / 8)) : limit,
   });

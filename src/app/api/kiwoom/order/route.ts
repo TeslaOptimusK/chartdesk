@@ -43,6 +43,8 @@ export async function POST(req: Request) {
       const bars = await md.getCandles({
         symbolId: symbol.id,
         ticker: symbol.ticker,
+        exchange: symbol.exchange,
+        assetClass: symbol.assetClass,
         timeframe: "1",
         limit: 1,
       });

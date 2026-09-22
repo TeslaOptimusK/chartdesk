@@ -19,7 +19,7 @@ Phase 1 feature contracts: [`docs/chartdesk/TRADINGVIEW_FEATURES.md`](./docs/cha
 
 ```bash
 npm install
-cp .env.example .env.local   # optional — works with zero keys (mock data)
+cp .env.example .env.local   # optional — defaults to delayed Yahoo quotes (no API key)
 npm run dev -- -H 127.0.0.1 -p 43127
 ```
 
@@ -51,14 +51,9 @@ Do not run git yourself. Double-click the Desktop **ChartDesk** icon. The launch
 
 ## Environment
 
-See `.env.example`. Without keys:
+See `.env.example`. Default `MARKET_DATA_MODE=delayed` pulls **Yahoo Finance** chart OHLCV (no API key) for KR `.KS`, US tickers, `BTC-USD`/`ETH-USD`, `^GSPC`/`^SOX`. Synthetic symbols (`MAG7`, `VNPA`) and fetch failures fall back to mock. Set `MARKET_DATA_MODE=mock` for offline deterministic candles. `MARKET_DATA_MODE=realtime` uses Yahoo poll (or optional `MARKET_DATA_WS_URL`); `LLM_API_KEY` for draft enrichment.
 
-- Market data → deterministic mock candles
-- LLM → rule-based symbol extract + opinion drafts
-
-Optional: `MARKET_DATA_MODE=delayed` + vendor URL/key for free delayed quotes; `MARKET_DATA_MODE=realtime` for SSE ticks (`GET /api/market/sse?symbolId=&tf=`) and optional `MARKET_DATA_WS_URL`; `LLM_API_KEY` for draft enrichment.
-
-Mock/realtime SSE keeps an in-memory **forming bar** and ticks about every `MARKET_DATA_TICK_MS` (default 1000ms) so 1분봉 wicks/body visibly move. Without keys, delayed mode uses the same live mock stream.
+Mock SSE keeps an in-memory **forming bar** and ticks about every `MARKET_DATA_TICK_MS` (default 1000ms) so 1분봉 wicks/body visibly move. Delayed/realtime Yahoo shares one poll subscriber so chart + watchlist show the same last print.
 
 ### Kiwoom 매매 (mock first)
 

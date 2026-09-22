@@ -111,6 +111,8 @@ export async function learnFromPost(
       const candles = await adapter.getCandles({
         symbolId,
         ticker: symbol.ticker,
+        exchange: symbol.exchange,
+        assetClass: symbol.assetClass,
         timeframe: "D",
         limit: 120,
       });

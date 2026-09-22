@@ -117,6 +117,8 @@ export async function POST(req: Request) {
   const candles = await adapter.getCandles({
     symbolId: symbol.id,
     ticker: symbol.ticker,
+    exchange: symbol.exchange,
+    assetClass: symbol.assetClass,
     timeframe,
     limit: 180,
   });

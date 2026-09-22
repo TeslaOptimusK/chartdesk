@@ -4,6 +4,10 @@ export interface CandleQuery {
   symbolId: string;
   ticker: string;
   timeframe: Timeframe;
+  /** Exchange code from SymbolMeta (e.g. KRX, NASDAQ) — used for Yahoo mapping. */
+  exchange?: string;
+  /** Asset class from SymbolMeta — used for Yahoo mapping (KR .KS, crypto BTC-USD). */
+  assetClass?: string;
   from?: number;
   to?: number;
   limit?: number;

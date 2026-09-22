@@ -51,6 +51,8 @@ export async function POST(req: Request) {
     candles = await adapter.getCandles({
       symbolId: symbol.id,
       ticker: symbol.ticker,
+      exchange: symbol.exchange,
+      assetClass: symbol.assetClass,
       timeframe: tf === "tick" ? "1" : tf,
       limit: body.limit ?? 240,
     });

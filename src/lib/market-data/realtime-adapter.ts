@@ -5,20 +5,35 @@ import {
   createFormingBarSubscriber,
   generateMockCandles,
 } from "@/lib/market-data/mock-adapter";
+import {
+  createYahooPollSubscriber,
+  fetchYahooCandles,
+  toYahooSymbol,
+} from "@/lib/market-data/yahoo";
 
 type WsCandleMsg = { type: "candle"; payload: Candle };
 
 /**
- * Realtime adapter — WebSocket stub when MARKET_DATA_WS_URL is set,
- * otherwise fast REST poll or mock tick stream.
+ * Realtime adapter — optional WebSocket when MARKET_DATA_WS_URL is set,
+ * otherwise Yahoo poll (shared with delayed), then mock forming-bar fallback.
  */
 export class RealtimeMarketDataAdapter implements MarketDataAdapter {
   readonly id = "realtime";
-  readonly label = "Realtime (WS / fast poll)";
+  readonly label = "Realtime (Yahoo / WS)";
   readonly mode = "realtime" as const;
   private fallback = new MockMarketDataAdapter();
 
   async getCandles(query: CandleQuery): Promise<Candle[]> {
+    const mapped = toYahooSymbol(
+      query.ticker,
+      query.exchange,
+      query.assetClass
+    );
+    if (mapped) {
+      const bars = await fetchYahooCandles(query);
+      if (bars?.length) return bars;
+    }
+
     const baseUrl = process.env.MARKET_DATA_BASE_URL;
     const apiKey = process.env.MARKET_DATA_API_KEY;
     if (baseUrl && apiKey) {
@@ -73,18 +88,14 @@ export class RealtimeMarketDataAdapter implements MarketDataAdapter {
       }
     }
 
-    const pollMs = Number(process.env.MARKET_DATA_POLL_MS ?? 3000);
-    const apiKey = process.env.MARKET_DATA_API_KEY;
-    const baseUrl = process.env.MARKET_DATA_BASE_URL;
-
-    if (baseUrl && apiKey) {
-      const timer = setInterval(() => {
-        void this.getCandles({ ...query, limit: 2 }).then((bars) => {
-          const last = bars.at(-1);
-          if (last) onCandle(last);
-        });
-      }, pollMs);
-      return () => clearInterval(timer);
+    const mapped = toYahooSymbol(
+      query.ticker,
+      query.exchange,
+      query.assetClass
+    );
+    if (mapped) {
+      const pollMs = Number(process.env.MARKET_DATA_POLL_MS ?? 3000);
+      return createYahooPollSubscriber(query, onCandle, pollMs);
     }
 
     return createFormingBarSubscriber(query, onCandle, (q) =>
