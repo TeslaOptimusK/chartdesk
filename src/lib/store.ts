@@ -104,6 +104,25 @@ const DEFAULT_EASY: EasyOverlayPrefs = {
   preset: "scalp",
 };
 
+const ENTRY_SIGNAL_KEY = "chartdesk-entry-signals-v1";
+
+function readEntrySignalsEnabled(): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    const raw = localStorage.getItem(ENTRY_SIGNAL_KEY);
+    if (raw == null) return true;
+    const parsed = JSON.parse(raw) as { enabled?: boolean };
+    return parsed.enabled ?? true;
+  } catch {
+    return true;
+  }
+}
+
+function writeEntrySignalsEnabled(enabled: boolean) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(ENTRY_SIGNAL_KEY, JSON.stringify({ enabled }));
+}
+
 function readEasyPrefs(): EasyOverlayPrefs {
   if (typeof window === "undefined") return DEFAULT_EASY;
   try {
@@ -334,6 +353,9 @@ interface WorkspaceState {
   setEasyOverlayEnabled: (v: boolean) => void;
   setEasyOverlayToggle: (key: keyof EasyOverlayToggles, v: boolean) => void;
   setEasyOverlayPreset: (p: EasyOverlayPreset) => void;
+  /** Feature ID: signal.entry.auto — Stoch RSI / MACD / channel markers */
+  entrySignalsEnabled: boolean;
+  setEntrySignalsEnabled: (v: boolean) => void;
   setReady: (v: boolean) => void;
   hydrate: (data: {
     symbols: SymbolMeta[];
@@ -605,6 +627,11 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   easyOverlayEnabled: true,
   easyOverlayToggles: { ...DEFAULT_EASY_TOGGLES },
   easyOverlayPreset: "scalp" as EasyOverlayPreset,
+  entrySignalsEnabled: true,
+  setEntrySignalsEnabled: (v) => {
+    writeEntrySignalsEnabled(v);
+    set({ entrySignalsEnabled: v });
+  },
   setIndicatorOnIndicator: (cfg) => {
     writePhase3({ indicatorOnIndicator: cfg });
     set({ indicatorOnIndicator: cfg });
@@ -701,6 +728,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       easyOverlayEnabled: easy.enabled,
       easyOverlayToggles: easy.toggles,
       easyOverlayPreset: easy.preset,
+      entrySignalsEnabled: readEntrySignalsEnabled(),
       comments: data.comments ?? [],
       news: data.news ?? [],
       technicalAlerts: data.technicalAlerts ?? [],

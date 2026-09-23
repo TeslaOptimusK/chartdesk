@@ -1,4 +1,5 @@
 import { rsi } from "@/lib/indicators";
+import { entrySignalForAlertTarget } from "@/lib/entry-signals";
 import { createMarketDataAdapter } from "@/lib/market-data";
 import { deliverAlertWebhook } from "@/lib/webhook-deliver";
 import {
@@ -114,6 +115,10 @@ function evalTechnical(
       (prevClose < level && close >= level) ||
       (prevClose > level && close <= level)
     );
+  }
+  // Feature ID: signal.entry.auto — transparent indicator entry targets
+  if (ta.targetId.startsWith("entry.")) {
+    return entrySignalForAlertTarget(candles, ta.targetId) != null;
   }
   const rv = lastRsi(candles);
   if (rv == null) return false;

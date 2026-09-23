@@ -115,6 +115,9 @@ interface ChartCanvasProps {
   /** Decimal places on the price scale. KRX mock series is whole won. */
   pricePrecision?: number;
   easyOverlayOn?: boolean;
+  /** Feature ID: signal.entry.auto */
+  entrySignals?: import("@/lib/entry-signals").EntrySignal[];
+  entrySignalsEnabled?: boolean;
 }
 
 type AnySeries = ISeriesApi<SeriesType>;
@@ -178,6 +181,8 @@ export function ChartCanvas({
   easyZones = [],
   easyToggles,
   pricePrecision = 2,
+  entrySignals = [],
+  entrySignalsEnabled = false,
 }: ChartCanvasProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -905,6 +910,26 @@ export function ChartCanvas({
         shape: "arrowDown",
         text: h.label,
       }));
+      if (entrySignalsEnabled) {
+        for (const s of entrySignals) {
+          const isSetup = s.kind === "setup";
+          const isEntry =
+            s.kind === "confluence_entry" || s.kind === "channel_break_up";
+          markers.push({
+            time: s.time as Time,
+            position: isSetup ? "aboveBar" : "belowBar",
+            color: isEntry
+              ? "#34d399"
+              : isSetup
+                ? "#fbbf24"
+                : s.kind === "macd_hist_flip_up"
+                  ? "#22d3ee"
+                  : "#a78bfa",
+            shape: isSetup ? "circle" : "arrowUp",
+            text: s.label,
+          });
+        }
+      }
       for (const ev of eventMarkers) {
         if (eventToggles && !eventToggles[ev.kind]) continue;
         markers.push({
@@ -1058,6 +1083,8 @@ export function ChartCanvas({
     indicatorOnIndicator,
     customIndicatorSource,
     pricePrecision,
+    entrySignals,
+    entrySignalsEnabled,
   ]);
 
   // Crosshair legend + layout.sync.crosshair
