@@ -212,6 +212,8 @@ export function ChartToolbar({ onOpenIngest }: { onOpenIngest: () => void }) {
     setEasyOverlayToggle,
     easyOverlayPreset,
     setEasyOverlayPreset,
+    entrySignalsEnabled,
+    setEntrySignalsEnabled,
   } = useWorkspace();
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -1026,6 +1028,19 @@ export function ChartToolbar({ onOpenIngest }: { onOpenIngest: () => void }) {
           DOM
         </Button>
       </div>
+
+      <label
+        className="flex items-center gap-0.5 rounded border border-[var(--workspace-border)]/60 px-1.5 py-0.5 text-[10px] text-[var(--workspace-muted)]"
+        data-feature="signal.entry.auto"
+        title="Stoch RSI 상향돌파 + MACD 양전환 + 채널 돌파 (투명 규칙)"
+      >
+        <input
+          type="checkbox"
+          checked={entrySignalsEnabled}
+          onChange={(e) => setEntrySignalsEnabled(e.target.checked)}
+        />
+        진입시그널
+      </label>
 
       <div
         className="flex flex-wrap items-center gap-1 rounded border border-[var(--workspace-border)]/60 px-1 py-0.5"

@@ -14,6 +14,7 @@ import {
   SWING_STRUCTURE_TF,
   type EasyZone,
 } from "@/lib/easychart";
+import { detectEntrySignals } from "@/lib/entry-signals";
 import { cn } from "@/lib/utils";
 import { retainChartQuote, useQuotesStore } from "@/lib/quotes-store";
 import { LiveQuoteBadge } from "@/components/market/LiveQuoteBadge";
@@ -86,6 +87,7 @@ export function SymbolChartPane({
     easyOverlayToggles,
     easyOverlayPreset,
     activeSymbolId,
+    entrySignalsEnabled,
   } = useWorkspace();
   const timeframe = paneTimeframe ?? storeTimeframe;
   const [candles, setCandles] = useState<Candle[]>([]);
@@ -353,6 +355,11 @@ export function SymbolChartPane({
     easyOverlayToggles,
   ]);
 
+  const entrySignals = useMemo(() => {
+    if (!entrySignalsEnabled || !interactive) return [];
+    return detectEntrySignals(processedCandles);
+  }, [entrySignalsEnabled, interactive, processedCandles]);
+
   const persist = async (nextLocal: Drawing[]) => {
     const merged = sync.drawings
       ? [
@@ -477,6 +484,8 @@ export function SymbolChartPane({
           indicatorOnIndicator={indicatorOnIndicator}
           customIndicatorSource={customIndicatorSource}
           easyZones={easyZones}
+          entrySignals={entrySignals}
+          entrySignalsEnabled={entrySignalsEnabled}
           easyToggles={
             easyOverlayEnabled
               ? easyOverlayToggles

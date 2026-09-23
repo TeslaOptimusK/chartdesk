@@ -758,8 +758,98 @@ function AlertsTab() {
     }
   };
 
+  const createEntrySignalAlert = async (
+    targetId: string,
+    label: string,
+    msg: string
+  ) => {
+    const res = await fetch("/api/technical-alerts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kind: "indicator",
+        symbolId: activeSymbolId,
+        targetId,
+        label,
+        message: msg,
+      }),
+    });
+    const data = await res.json();
+    if (data.technicalAlert) {
+      setTechnicalAlerts([data.technicalAlert, ...technicalAlerts]);
+    }
+  };
+
   return (
     <div className="space-y-2 p-2" data-feature="alert.price">
+      <div
+        className="rounded-md border border-[var(--workspace-border)] bg-[var(--workspace-elevated)] p-2"
+        data-feature="signal.entry.auto"
+      >
+        <div className="mb-1 text-xs font-semibold">진입시그널 알림</div>
+        <p className="mb-1 text-[10px] text-[var(--workspace-muted)]">
+          Stoch RSI 상향돌파 + MACD 양전환 · 채널 상단 돌파 (투명 규칙)
+        </p>
+        <div className="flex flex-wrap gap-1">
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-[10px]"
+            onClick={() =>
+              createEntrySignalAlert(
+                "entry.confluence",
+                "복합 진입",
+                "Stoch RSI 상향돌파 + MACD 히스토그램 양전환"
+              )
+            }
+          >
+            복합 진입
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-[10px]"
+            onClick={() =>
+              createEntrySignalAlert(
+                "entry.channel_break",
+                "돌파 진입",
+                "상승 채널 상단선 종가 돌파"
+              )
+            }
+          >
+            돌파 진입
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-[10px]"
+            onClick={() =>
+              createEntrySignalAlert(
+                "entry.stoch_rsi",
+                "Stoch RSI 상향돌파",
+                "Stoch RSI K가 D를 아래에서 위로 교차"
+              )
+            }
+          >
+            Stoch RSI
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-[10px]"
+            onClick={() =>
+              createEntrySignalAlert(
+                "entry.macd",
+                "MACD 양전환",
+                "MACD 히스토그램 음→양"
+              )
+            }
+          >
+            MACD
+          </Button>
+        </div>
+      </div>
+
       <div
         className="rounded-md border border-[var(--workspace-border)] bg-[var(--workspace-elevated)] p-2"
         data-feature="alert.watchlist"
