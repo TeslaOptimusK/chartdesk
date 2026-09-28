@@ -40,6 +40,7 @@ interface AccountView {
     estimatedAssets: number | null;
   };
   positions: PositionRow[];
+  accountNo?: string | null;
   error?: string;
   outboundIp?: string | null;
 }
@@ -153,6 +154,11 @@ export function KiwoomAccountDialog({
             >
               {account == null ? "확인 중" : live ? "실전" : account.mode === "rest" ? "모의" : "로컬 모의"}
             </span>
+            {account?.accountNo && (
+              <span className="font-mono text-[11px] font-normal text-[var(--workspace-muted)]">
+                {account.accountNo}
+              </span>
+            )}
             <button type="button" className="ml-auto text-[11px] font-normal text-[var(--workspace-muted)] underline" onClick={load}>
               새로고침
             </button>
@@ -244,7 +250,9 @@ export function KiwoomAccountDialog({
               ? "계좌를 불러오는 중"
               : account.error
                 ? "계좌를 읽지 못했습니다"
-                : "보유 종목 없음"}
+                : account.accountNo
+                  ? `계좌 ${account.accountNo} 국내 주식 잔고가 비어 있습니다. 영웅문 계좌번호와 다르면 키움 API 사용신청에서 그 계좌의 앱 키로 다시 받아야 합니다. 미국 주식은 이 화면에 나오지 않습니다.`
+                  : "국내 주식 잔고가 비어 있습니다. 미국 주식은 이 화면에 나오지 않습니다."}
           </div>
         )}
 
