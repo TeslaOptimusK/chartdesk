@@ -37,6 +37,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { KiwoomAccountDialog } from "@/components/workspace/KiwoomAccountDialog";
 import { useWorkspace, type IndicatorId } from "@/lib/store";
 import { DRAWING_TOOL_META } from "@/lib/drawings";
 import {
@@ -345,6 +346,7 @@ export function ChartToolbar({ onOpenIngest }: { onOpenIngest: () => void }) {
   const [dateInput, setDateInput] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [customMin, setCustomMin] = useState("");
+  const [accountOpen, setAccountOpen] = useState(false);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -569,6 +571,15 @@ export function ChartToolbar({ onOpenIngest }: { onOpenIngest: () => void }) {
         onClick={() => setBrokerOpen(true)}
       >
         매매
+      </Button>
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-8 shrink-0 rounded-lg px-2.5 text-xs text-[var(--workspace-fg)]"
+        data-feature="trade.kiwoom.account.panel"
+        onClick={() => setAccountOpen(true)}
+      >
+        계좌
       </Button>
       <Button
         size="sm"
@@ -1182,6 +1193,7 @@ export function ChartToolbar({ onOpenIngest }: { onOpenIngest: () => void }) {
           <Command className="h-4 w-4" />
         </Button>
       </div>
+      <KiwoomAccountDialog open={accountOpen} onOpenChange={setAccountOpen} symbols={symbols} />
     </header>
   );
 }

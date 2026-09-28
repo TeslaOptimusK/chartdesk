@@ -7,7 +7,7 @@ import {
   kiwoomQuotesConfigured,
   lookupOutboundIp,
 } from "@/lib/kiwoom/quote-rest";
-import { fetchKiwoomAccount } from "@/lib/kiwoom/rest-trade";
+import { fetchKiwoomAccount, fetchUsdKrw } from "@/lib/kiwoom/rest-trade";
 import { readPaperAccount } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
@@ -26,7 +26,8 @@ export async function GET() {
       live: false,
       deposit: paper.cash,
       orderable: paper.cash,
-      summary: { purchase: null, evaluation: null, pnl: null, returnPct: null },
+      summary: { purchase: null, evaluation: null, pnl: null, returnPct: null, estimatedAssets: null },
+      usdKrw: null,
       positions: paper.positions.map((p) => ({
         code: p.symbolId,
         name: p.symbolId,
@@ -42,11 +43,12 @@ export async function GET() {
   }
 
   try {
-    const account = await fetchKiwoomAccount();
+    const [account, usdKrw] = await Promise.all([fetchKiwoomAccount(), fetchUsdKrw()]);
     return NextResponse.json({
       mode: "rest",
       live,
       ...account,
+      usdKrw,
       brackets: brackets.filter((b) => b.armed),
     });
   } catch (err) {
@@ -58,7 +60,8 @@ export async function GET() {
         live,
         deposit: null,
         orderable: null,
-        summary: { purchase: null, evaluation: null, pnl: null, returnPct: null },
+        summary: { purchase: null, evaluation: null, pnl: null, returnPct: null, estimatedAssets: null },
+        usdKrw: null,
         positions: [],
         brackets,
         error: message,

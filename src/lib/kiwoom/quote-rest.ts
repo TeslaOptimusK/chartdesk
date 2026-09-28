@@ -149,6 +149,21 @@ export async function kiwoomAuthorizedPost(
   apiId: string,
   body: Record<string, unknown>
 ): Promise<Record<string, unknown>> {
+  const page = await kiwoomAuthorizedPage(path, apiId, body, "N", "");
+  return page.json;
+}
+
+function headerValue(res: Response, name: string): string | null {
+  return res.headers.get(name) ?? res.headers.get(name.toLowerCase());
+}
+
+async function kiwoomAuthorizedPage(
+  path: string,
+  apiId: string,
+  body: Record<string, unknown>,
+  contYn: string,
+  nextKey: string
+): Promise<{ json: Record<string, unknown>; contYn: string | null; nextKey: string | null }> {
   const token = await issueKiwoomToken();
   const { rest } = kiwoomEndpoints();
   const res = await enqueue(() =>
@@ -158,6 +173,8 @@ export async function kiwoomAuthorizedPost(
         "Content-Type": "application/json;charset=UTF-8",
         authorization: `Bearer ${token}`,
         "api-id": apiId,
+        "cont-yn": contYn,
+        "next-key": nextKey,
       },
       body: JSON.stringify(body),
       cache: "no-store",
@@ -165,7 +182,42 @@ export async function kiwoomAuthorizedPost(
   );
   const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   assertBodyOk(json, res.status);
-  return json;
+  const bodyNext = typeof json.next_key === "string" ? json.next_key : null;
+  const bodyCont =
+    json.cont_yn === "Y" || json.contin_yn === "Y" ? "Y" : null;
+  return {
+    json,
+    contYn: headerValue(res, "cont-yn") ?? bodyCont,
+    nextKey: headerValue(res, "next-key") ?? bodyNext,
+  };
+}
+
+function appendListPages(into: Record<string, unknown>, page: Record<string, unknown>): void {
+  for (const [key, value] of Object.entries(page)) {
+    if (!Array.isArray(value)) continue;
+    const prev = into[key];
+    into[key] = Array.isArray(prev) ? [...prev, ...value] : value;
+  }
+}
+
+/** Follows Kiwoom continuation keys so a long holdings list is not cut off. */
+export async function kiwoomAuthorizedPostAll(
+  path: string,
+  apiId: string,
+  body: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  let contYn = "N";
+  let nextKey = "";
+  let merged: Record<string, unknown> | null = null;
+  for (let page = 0; page < 8; page++) {
+    const result = await kiwoomAuthorizedPage(path, apiId, body, contYn, nextKey);
+    if (!merged) merged = result.json;
+    else appendListPages(merged, result.json);
+    if (result.contYn !== "Y" || !result.nextKey || result.nextKey === nextKey) break;
+    contYn = "Y";
+    nextKey = result.nextKey;
+  }
+  return merged ?? {};
 }
 
 async function postChart(
