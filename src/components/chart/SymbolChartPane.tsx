@@ -14,7 +14,10 @@ import {
   SWING_STRUCTURE_TF,
   type EasyZone,
 } from "@/lib/easychart";
-import { detectEntrySignals } from "@/lib/entry-signals";
+import {
+  collapseEntrySignalsForDisplay,
+  detectEntrySignals,
+} from "@/lib/entry-signals";
 import { cn } from "@/lib/utils";
 import { retainChartQuote, useQuotesStore } from "@/lib/quotes-store";
 import { LiveQuoteBadge } from "@/components/market/LiveQuoteBadge";
@@ -363,7 +366,10 @@ export function SymbolChartPane({
 
   const entrySignals = useMemo(() => {
     if (!entrySignalsEnabled || !interactive) return [];
-    return detectEntrySignals(processedCandles);
+    return collapseEntrySignalsForDisplay(
+      detectEntrySignals(processedCandles),
+      { lastBarIndex: processedCandles.length - 1 }
+    );
   }, [entrySignalsEnabled, interactive, processedCandles]);
 
   const persist = async (nextLocal: Drawing[]) => {
