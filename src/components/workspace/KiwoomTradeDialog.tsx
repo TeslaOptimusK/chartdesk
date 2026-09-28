@@ -25,6 +25,14 @@ interface PositionRow {
   avgPrice: number | null;
   lastPrice: number | null;
   pnl: number | null;
+  returnPct: number | null;
+}
+
+interface HoldingsSummary {
+  purchase: number | null;
+  evaluation: number | null;
+  pnl: number | null;
+  returnPct: number | null;
 }
 
 interface BracketRow {
@@ -41,6 +49,7 @@ interface AccountView {
   live: boolean;
   deposit: number | null;
   orderable: number | null;
+  summary?: HoldingsSummary;
   positions: PositionRow[];
   brackets: BracketRow[];
   error?: string;
@@ -49,6 +58,17 @@ interface AccountView {
 function won(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return "—";
   return Math.round(value).toLocaleString("ko-KR");
+}
+
+function pct(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${value.toFixed(2)}%`;
+}
+
+function tone(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value) || value === 0) return "text-[var(--workspace-fg)]";
+  return value > 0 ? "text-emerald-400" : "text-rose-400";
 }
 
 export function KiwoomTradeDialog({
@@ -90,6 +110,8 @@ export function KiwoomTradeDialog({
     if (!open) return;
     setConfirmLive(false);
     loadAccount();
+    const id = window.setInterval(loadAccount, 15000);
+    return () => window.clearInterval(id);
   }, [open]);
 
   useEffect(() => {
@@ -185,7 +207,7 @@ export function KiwoomTradeDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-h-[85vh] max-w-lg overflow-auto border-[var(--workspace-border)] bg-[var(--workspace-panel)]"
+        className="max-h-[85vh] max-w-2xl overflow-auto border-[var(--workspace-border)] bg-[var(--workspace-panel)]"
         data-feature="trade.kiwoom"
       >
         <DialogHeader>
@@ -212,21 +234,71 @@ export function KiwoomTradeDialog({
             <span>주문가능 {won(account?.orderable)}</span>
           </div>
           {account?.error && <div className="text-rose-300">{account.error}</div>}
+        </div>
+
+        <div
+          className="overflow-hidden rounded-md border border-[var(--workspace-border)]"
+          data-feature="trade.kiwoom.holdings"
+        >
+          <div className="flex items-center justify-between px-2 py-1.5">
+            <span className="text-[11px] font-medium text-[var(--workspace-fg)]">보유</span>
+            <button
+              type="button"
+              className="text-[10px] text-[var(--workspace-muted)] underline"
+              onClick={loadAccount}
+            >
+              새로고침
+            </button>
+          </div>
+          {account?.summary &&
+            (account.summary.purchase != null || account.summary.evaluation != null) && (
+              <div className="flex flex-wrap gap-x-3 gap-y-0.5 px-2 pb-1.5 font-mono text-[10px] text-[var(--workspace-muted)]">
+                <span>매입 {won(account.summary.purchase)}</span>
+                <span>평가 {won(account.summary.evaluation)}</span>
+                <span className={tone(account.summary.pnl)}>손익 {won(account.summary.pnl)}</span>
+                <span className={tone(account.summary.returnPct)}>
+                  수익률 {pct(account.summary.returnPct)}
+                </span>
+              </div>
+            )}
           {account?.positions?.length ? (
-            <div className="max-h-24 space-y-0.5 overflow-auto font-mono text-[10px] text-[var(--workspace-muted)]">
-              {account.positions.map((p) => (
-                <div key={p.code} className="flex justify-between gap-2">
-                  <span>
-                    {p.name} {p.qty}주
-                  </span>
-                  <span>
-                    평단 {won(p.avgPrice)} · {won(p.pnl)}
-                  </span>
-                </div>
-              ))}
+            <div className="max-h-40 overflow-auto">
+              <div className="grid grid-cols-[minmax(0,1.5fr)_3rem_4.5rem_4.5rem_4.2rem_4.8rem] gap-x-2 px-2 py-1 text-[10px] text-[var(--workspace-faint)]">
+                <span>종목</span>
+                <span className="text-right">수량</span>
+                <span className="text-right">매수가</span>
+                <span className="text-right">현재가</span>
+                <span className="text-right">수익률</span>
+                <span className="text-right">평가손익</span>
+              </div>
+              {account.positions.map((p) => {
+                const known = symbols.find((s) => s.id === p.code || s.ticker === p.code);
+                const title = known?.nameKo || p.name;
+                const ticker = known?.ticker || p.code;
+                return (
+                  <div
+                    key={p.code}
+                    className="grid grid-cols-[minmax(0,1.5fr)_3rem_4.5rem_4.5rem_4.2rem_4.8rem] gap-x-2 border-t border-[var(--workspace-border)] px-2 py-1 font-mono text-[11px]"
+                  >
+                    <span className="min-w-0 truncate text-[var(--workspace-fg)]" title={title}>
+                      {title}
+                      {ticker !== title && (
+                        <span className="ml-1 text-[10px] text-[var(--workspace-faint)]">{ticker}</span>
+                      )}
+                    </span>
+                    <span className="text-right text-[var(--workspace-fg)]">{p.qty}</span>
+                    <span className="text-right text-[var(--workspace-fg)]">{won(p.avgPrice)}</span>
+                    <span className="text-right text-[var(--workspace-fg)]">{won(p.lastPrice)}</span>
+                    <span className={cn("text-right", tone(p.returnPct))}>{pct(p.returnPct)}</span>
+                    <span className={cn("text-right", tone(p.pnl))}>{won(p.pnl)}</span>
+                  </div>
+                );
+              })}
             </div>
           ) : (
-            <div className="text-[10px] text-[var(--workspace-faint)]">보유 종목 없음</div>
+            <div className="px-2 pb-2 text-[10px] text-[var(--workspace-faint)]">
+              {account == null ? "보유 종목을 불러오는 중" : "보유 종목 없음"}
+            </div>
           )}
         </div>
 

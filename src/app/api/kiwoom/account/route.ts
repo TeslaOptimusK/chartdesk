@@ -20,6 +20,7 @@ export async function GET() {
       live: false,
       deposit: paper.cash,
       orderable: paper.cash,
+      summary: { purchase: null, evaluation: null, pnl: null, returnPct: null },
       positions: paper.positions.map((p) => ({
         code: p.symbolId,
         name: p.symbolId,
@@ -28,6 +29,7 @@ export async function GET() {
         avgPrice: p.avgCost,
         lastPrice: null,
         pnl: null,
+        returnPct: null,
       })),
       brackets: [],
     });
@@ -44,7 +46,16 @@ export async function GET() {
   } catch (err) {
     const message = err instanceof KiwoomQuoteError ? err.message : "계좌 조회에 실패했습니다";
     return NextResponse.json(
-      { mode: "rest", live, deposit: null, orderable: null, positions: [], brackets, error: message },
+      {
+        mode: "rest",
+        live,
+        deposit: null,
+        orderable: null,
+        summary: { purchase: null, evaluation: null, pnl: null, returnPct: null },
+        positions: [],
+        brackets,
+        error: message,
+      },
       { status: 502 }
     );
   }
