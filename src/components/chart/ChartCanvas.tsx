@@ -15,6 +15,7 @@ import {
   PriceScaleMode,
   type IChartApi,
   type ISeriesApi,
+  type ISeriesMarkersPluginApi,
   type SeriesMarker,
   type SeriesType,
   type Time,
@@ -124,6 +125,39 @@ interface ChartCanvasProps {
 }
 
 type AnySeries = ISeriesApi<SeriesType>;
+type MarkerPlugin = ISeriesMarkersPluginApi<Time>;
+
+function dropSeriesMarkers(
+  pluginRef: { current: MarkerPlugin | null },
+  ownerRef: { current: AnySeries | null }
+) {
+  const plugin = pluginRef.current;
+  pluginRef.current = null;
+  ownerRef.current = null;
+  if (!plugin) return;
+  try {
+    plugin.detach();
+  } catch {
+    /* series already removed */
+  }
+}
+
+/** Replace markers on the current series. A new series gets one new plugin. */
+function replaceSeriesMarkers(
+  pluginRef: { current: MarkerPlugin | null },
+  ownerRef: { current: AnySeries | null },
+  series: AnySeries,
+  markers: SeriesMarker<Time>[]
+) {
+  const plugin = pluginRef.current;
+  if (plugin && ownerRef.current === series) {
+    plugin.setMarkers(markers);
+    return;
+  }
+  dropSeriesMarkers(pluginRef, ownerRef);
+  pluginRef.current = createSeriesMarkers(series, markers);
+  ownerRef.current = series;
+}
 
 /** Ensure lightweight-charts setData never sees descending / duplicate times. */
 function sanitizeCandleOrder(candles: Candle[]): Candle[] {
@@ -191,6 +225,8 @@ export function ChartCanvas({
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const mainSeriesRef = useRef<AnySeries | null>(null);
+  const seriesMarkersRef = useRef<MarkerPlugin | null>(null);
+  const seriesMarkersOwnerRef = useRef<AnySeries | null>(null);
   const volumeRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const overlayRefs = useRef<AnySeries[]>([]);
   /** Only re-fit on symbol / timeframe / range-preset changes — never on live ticks. */
@@ -389,6 +425,7 @@ export function ChartCanvas({
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(onVisibleRange);
       ro.disconnect();
       setChartApi(null);
+      dropSeriesMarkers(seriesMarkersRef, seriesMarkersOwnerRef);
       chart.remove();
       chartRef.current = null;
       mainSeriesRef.current = null;
@@ -445,6 +482,7 @@ export function ChartCanvas({
     const chart = chartRef.current;
     if (!chart) return;
     if (mainSeriesRef.current) {
+      dropSeriesMarkers(seriesMarkersRef, seriesMarkersOwnerRef);
       chart.removeSeries(mainSeriesRef.current);
       mainSeriesRef.current = null;
     }
@@ -524,7 +562,16 @@ export function ChartCanvas({
   useEffect(() => {
     const chart = chartRef.current;
     const main = mainSeriesRef.current;
-    if (!chart || !main || displayCandles.length === 0) return;
+    if (!chart || !main) return;
+    if (displayCandles.length === 0) {
+      if (
+        seriesMarkersRef.current &&
+        seriesMarkersOwnerRef.current === main
+      ) {
+        seriesMarkersRef.current.setMarkers([]);
+      }
+      return;
+    }
 
     const bars = sanitizeCandleOrder(displayCandles);
     main.applyOptions({
@@ -915,7 +962,11 @@ export function ChartCanvas({
         text: h.label,
       }));
       if (entrySignalsEnabled) {
+        const candleTimes = new Set(bars.map((c) => c.time));
         for (const s of entrySignals) {
+          // Exact bar only. A previous timeframe's timestamp would otherwise
+          // nearest-snap onto this series and pile arrows on 4h candles.
+          if (!candleTimes.has(s.time)) continue;
           const isSetup = s.kind === "setup";
           const isEntry =
             s.kind === "confluence_entry" || s.kind === "channel_break_up";
@@ -965,7 +1016,14 @@ export function ChartCanvas({
           }
         }
       }
-      createSeriesMarkers(main as ISeriesApi<"Candlestick">, markers);
+      replaceSeriesMarkers(
+        seriesMarkersRef,
+        seriesMarkersOwnerRef,
+        main,
+        markers
+      );
+    } else {
+      dropSeriesMarkers(seriesMarkersRef, seriesMarkersOwnerRef);
     }
 
     const barCount = barsForRangePreset(rangePreset, timeframe);

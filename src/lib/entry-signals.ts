@@ -257,6 +257,62 @@ export function detectEntrySignals(
   return deduped.slice(-maxSignals);
 }
 
+const ENTRY_DISPLAY_RANK: Record<EntrySignalKind, number> = {
+  confluence_entry: 5,
+  channel_break_up: 4,
+  macd_hist_flip_up: 3,
+  stoch_rsi_cross_up: 2,
+  setup: 1,
+};
+
+/** How many recent bars may carry a chart arrow. Older history stays unmarked. */
+export const ENTRY_SIGNAL_DISPLAY_BARS = 20;
+/** Bars of separation so neighboring signals do not form a picket fence. */
+export const ENTRY_SIGNAL_DISPLAY_GAP = 2;
+
+/**
+ * One arrow per bar for the chart. Alerts still use {@link detectEntrySignals}.
+ * Strongest kind wins. Only the recent window is drawn, so a fitted 4h chart
+ * does not carpet months of crosses.
+ */
+export function collapseEntrySignalsForDisplay(
+  signals: EntrySignal[],
+  opts: { maxBars?: number; minGap?: number; lastBarIndex?: number } = {}
+): EntrySignal[] {
+  const maxBars = opts.maxBars ?? ENTRY_SIGNAL_DISPLAY_BARS;
+  const minGap = opts.minGap ?? ENTRY_SIGNAL_DISPLAY_GAP;
+  const minBar =
+    opts.lastBarIndex == null
+      ? Number.NEGATIVE_INFINITY
+      : opts.lastBarIndex - maxBars + 1;
+
+  const bestByBar = new Map<number, EntrySignal>();
+  for (const s of signals) {
+    if (s.barIndex < minBar) continue;
+    const prev = bestByBar.get(s.barIndex);
+    if (
+      !prev ||
+      ENTRY_DISPLAY_RANK[s.kind] > ENTRY_DISPLAY_RANK[prev.kind]
+    ) {
+      bestByBar.set(s.barIndex, s);
+    }
+  }
+
+  const ranked = [...bestByBar.values()].sort((a, b) => {
+    const byRank = ENTRY_DISPLAY_RANK[b.kind] - ENTRY_DISPLAY_RANK[a.kind];
+    if (byRank !== 0) return byRank;
+    return b.barIndex - a.barIndex;
+  });
+
+  const kept: EntrySignal[] = [];
+  for (const s of ranked) {
+    if (kept.some((k) => Math.abs(k.barIndex - s.barIndex) < minGap)) continue;
+    kept.push(s);
+  }
+  kept.sort((a, b) => a.barIndex - b.barIndex);
+  return kept;
+}
+
 /** True if the latest closed bar (or last N bars) carries this kind. */
 export function lastBarHasEntrySignal(
   candles: Candle[],
