@@ -53,6 +53,8 @@ Do not run git yourself. Double-click the Desktop **ChartDesk** icon. The launch
 
 See `.env.example`. Default `MARKET_DATA_MODE=delayed` pulls **Yahoo Finance** chart OHLCV (no API key) for KR `.KS`, US tickers, `BTC-USD`/`ETH-USD`, `^GSPC`/`^SOX`. Synthetic symbols (`MAG7`, `VNPA`) and fetch failures fall back to mock. Set `MARKET_DATA_MODE=mock` for offline deterministic candles. `MARKET_DATA_MODE=realtime` uses Yahoo poll (or optional `MARKET_DATA_WS_URL`); `LLM_API_KEY` for draft enrichment.
 
+If `KIWOOM_APP_KEY` and `KIWOOM_APP_SECRET` are both set in `.env.local`, domestic 6-digit symbols use **Kiwoom REST history + websocket trades** (`0B` on port 10000). Other symbols stay on Yahoo or mock. `KIWOOM_QUOTE_HOST=mock` points at the paper host; real and paper keys are not interchangeable. The desktop launcher can keep `MARKET_DATA_MODE=delayed` — Korean quotes still switch to Kiwoom when the keys are present. Restart the ChartDesk Server window after changing keys.
+
 Mock SSE keeps an in-memory **forming bar** and ticks about every `MARKET_DATA_TICK_MS` (default 1000ms) so 1분봉 wicks/body visibly move. Delayed/realtime Yahoo shares one poll subscriber so chart + watchlist show the same last print.
 
 ### Kiwoom 매매 (mock first)
