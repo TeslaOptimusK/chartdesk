@@ -8,22 +8,60 @@ export interface KiwoomPosition {
   sellableQty: number;
   avgPrice: number | null;
   lastPrice: number | null;
+  /** (현재가-매수가)×수량 when both prices exist, otherwise the broker figure. */
   pnl: number | null;
+  /** Percent vs average cost. Matches 매수가/현재가 when both exist. */
+  returnPct: number | null;
+}
+
+export interface KiwoomHoldingsSummary {
+  purchase: number | null;
+  evaluation: number | null;
+  pnl: number | null;
+  returnPct: number | null;
 }
 
 export interface KiwoomAccountSnapshot {
   deposit: number | null;
   orderable: number | null;
+  summary: KiwoomHoldingsSummary;
   positions: KiwoomPosition[];
 }
 
 function signed(raw: unknown): number | null {
   if (typeof raw === "number") return Number.isFinite(raw) ? raw : null;
   if (typeof raw !== "string") return null;
-  const s = raw.trim().replace(/,/g, "");
+  const s = raw.trim().replace(/,/g, "").replace(/%$/, "");
   if (!s || s === "+" || s === "-") return null;
   const n = Number(s);
   return Number.isFinite(n) ? n : null;
+}
+
+/** Yield that matches the two prices on screen. Reported rate is only a fallback. */
+export function positionReturnPct(
+  avgPrice: number | null,
+  lastPrice: number | null,
+  reported: number | null = null
+): number | null {
+  if (avgPrice != null && avgPrice > 0 && lastPrice != null && lastPrice > 0) {
+    return ((lastPrice - avgPrice) / avgPrice) * 100;
+  }
+  return reported;
+}
+
+function holdingsSummary(body: Record<string, unknown>): KiwoomHoldingsSummary {
+  const purchase = firstAbs(body, ["tot_pur_amt", "pchs_amt"]);
+  const evaluation = firstAbs(body, ["tot_evlt_amt", "evlt_amt_tot"]);
+  const pnl = signed(body.tot_evlt_pl ?? body.tot_evltv_prft);
+  const reported = signed(body.tot_prft_rt ?? body.tot_prft_rt_rt);
+  return {
+    purchase,
+    evaluation,
+    pnl:
+      pnl ??
+      (purchase != null && evaluation != null ? evaluation - purchase : null),
+    returnPct: positionReturnPct(purchase, evaluation, reported),
+  };
 }
 
 function firstAbs(row: Record<string, unknown>, keys: string[]): number | null {
@@ -72,14 +110,22 @@ export function parseKiwoomAccount(
       const qty = firstAbs(row, ["rmnd_qty", "hold_qty"]) ?? 0;
       if (qty <= 0) return null;
       const sellable = firstAbs(row, ["trde_able_qty", "ord_alow_qty"]) ?? qty;
+      const avgPrice = firstAbs(row, ["pur_pric", "avg_prc", "pchs_avg_pric"]);
+      const lastPrice = firstAbs(row, ["cur_prc", "now_prc", "prpr"]);
+      const reportedPnl = signed(row.evltv_prft ?? row.evlt_pl ?? row.prft_amt);
+      const reportedRate = signed(row.prft_rt ?? row.evlt_rt ?? row.prft_rt_rt);
       return {
         code,
         name: typeof row.stk_nm === "string" ? row.stk_nm.trim() : code,
         qty,
         sellableQty: sellable,
-        avgPrice: firstAbs(row, ["pur_pric", "avg_prc"]),
-        lastPrice: firstAbs(row, ["cur_prc", "now_prc"]),
-        pnl: signed(row.evltv_prft ?? row.evlt_pl ?? row.prft_amt),
+        avgPrice,
+        lastPrice,
+        pnl:
+          avgPrice != null && lastPrice != null
+            ? (lastPrice - avgPrice) * qty
+            : reportedPnl,
+        returnPct: positionReturnPct(avgPrice, lastPrice, reportedRate),
       } satisfies KiwoomPosition;
     })
     .filter((row): row is KiwoomPosition => row != null);
@@ -93,6 +139,7 @@ export function parseKiwoomAccount(
       "d2_pymn_alow_amt",
       "ord_alowa",
     ]),
+    summary: holdingsSummary(balance),
     positions,
   };
 }

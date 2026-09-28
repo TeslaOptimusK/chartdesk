@@ -66,19 +66,38 @@ describe("account parse", () => {
             pur_pric: "+70000",
             cur_prc: "-71000",
             evltv_prft: "-5000",
+            prft_rt: "+99.00",
           },
           { stk_cd: "000660", stk_nm: "SK하이닉스", rmnd_qty: "0" },
+          {
+            stk_cd: "035420",
+            stk_nm: "NAVER",
+            rmnd_qty: "2",
+            pur_pric: "200000",
+            prft_rt: "-3.50",
+            evltv_prft: "-4000",
+          },
         ],
+        tot_pur_amt: "900000",
+        tot_evlt_amt: "910000",
+        tot_prft_rt: "+1.11",
       }
     );
     assert.equal(snap.deposit, 1000000);
     assert.equal(snap.orderable, 800000);
-    assert.equal(snap.positions.length, 1);
+    assert.equal(snap.positions.length, 2);
     assert.equal(snap.positions[0]!.code, "005930");
     assert.equal(snap.positions[0]!.qty, 10);
     assert.equal(snap.positions[0]!.sellableQty, 8);
     assert.equal(snap.positions[0]!.avgPrice, 70000);
     assert.equal(snap.positions[0]!.lastPrice, 71000);
-    assert.equal(snap.positions[0]!.pnl, -5000);
+    assert.equal(snap.positions[0]!.pnl, 10000);
+    assert.ok(Math.abs(snap.positions[0]!.returnPct! - (1000 / 70000) * 100) < 1e-9);
+    assert.equal(snap.positions[1]!.returnPct, -3.5);
+    assert.equal(snap.positions[1]!.lastPrice, null);
+    assert.equal(snap.positions[1]!.pnl, -4000);
+    assert.equal(snap.summary.purchase, 900000);
+    assert.equal(snap.summary.evaluation, 910000);
+    assert.ok(Math.abs(snap.summary.returnPct! - (10000 / 900000) * 100) < 1e-9);
   });
 });
