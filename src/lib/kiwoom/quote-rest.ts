@@ -117,6 +117,31 @@ export async function issueKiwoomToken(force = false): Promise<string> {
   return token;
 }
 
+/** Authorized REST POST. Shares the token cache and the request gap with chart calls. */
+export async function kiwoomAuthorizedPost(
+  path: string,
+  apiId: string,
+  body: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  const token = await issueKiwoomToken();
+  const { rest } = kiwoomEndpoints();
+  const res = await enqueue(() =>
+    fetch(`${rest}${path}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json;charset=UTF-8",
+        authorization: `Bearer ${token}`,
+        "api-id": apiId,
+      },
+      body: JSON.stringify(body),
+      cache: "no-store",
+    })
+  );
+  const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  assertBodyOk(json, res.status);
+  return json;
+}
+
 async function postChart(
   apiId: string,
   body: Record<string, string>,

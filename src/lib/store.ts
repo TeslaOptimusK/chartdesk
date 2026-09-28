@@ -356,6 +356,11 @@ interface WorkspaceState {
   /** Feature ID: signal.entry.auto — Stoch RSI / MACD / channel markers */
   entrySignalsEnabled: boolean;
   setEntrySignalsEnabled: (v: boolean) => void;
+  /** Chart drag that fills the scale-in band in the trade ticket. */
+  scaleBuyPicking: boolean;
+  scaleBuyBand: { symbolId: string; low: number; high: number } | null;
+  setScaleBuyPicking: (v: boolean) => void;
+  setScaleBuyBand: (band: { symbolId: string; low: number; high: number } | null) => void;
   setReady: (v: boolean) => void;
   hydrate: (data: {
     symbols: SymbolMeta[];
@@ -628,10 +633,14 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   easyOverlayToggles: { ...DEFAULT_EASY_TOGGLES },
   easyOverlayPreset: "scalp" as EasyOverlayPreset,
   entrySignalsEnabled: true,
+  scaleBuyPicking: false,
+  scaleBuyBand: null,
   setEntrySignalsEnabled: (v) => {
     writeEntrySignalsEnabled(v);
     set({ entrySignalsEnabled: v });
   },
+  setScaleBuyPicking: (scaleBuyPicking) => set({ scaleBuyPicking }),
+  setScaleBuyBand: (scaleBuyBand) => set({ scaleBuyBand }),
   setIndicatorOnIndicator: (cfg) => {
     writePhase3({ indicatorOnIndicator: cfg });
     set({ indicatorOnIndicator: cfg });

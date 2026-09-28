@@ -57,9 +57,9 @@ If `KIWOOM_APP_KEY` and `KIWOOM_APP_SECRET` are both set in `.env.local`, domest
 
 Mock SSE keeps an in-memory **forming bar** and ticks about every `MARKET_DATA_TICK_MS` (default 1000ms) so 1분봉 wicks/body visibly move. Delayed/realtime Yahoo shares one poll subscriber so chart + watchlist show the same last print.
 
-### Kiwoom 매매 (mock first)
+### Kiwoom 매매
 
-Toolbar **매매** → `POST /api/kiwoom/order` (default `KIWOOM_MODE=mock` paper fills). Windows OpenAPI+/OCX is a non-ordering stub only — never commit app keys. See project store `docs/kiwoom-trading.md`.
+Toolbar **매매**. With `KIWOOM_APP_KEY` and `KIWOOM_APP_SECRET`, the ticket reads the account (`kt00001`, `kt00018`) and sends cash orders on the same host as quotes. `KIWOOM_QUOTE_HOST=real` is a live account and asks for a confirm checkbox; `mock` uses the paper host. A buy can set a take-profit and a stop: while ChartDesk is running, a realtime print sells only shares already held. **분할** places equal limit buys across a chart price band (2–20 slices). Without keys, orders stay on the local paper ledger and brackets are not watched. Never commit app keys.
 
 ### Alerts & webhooks
 
