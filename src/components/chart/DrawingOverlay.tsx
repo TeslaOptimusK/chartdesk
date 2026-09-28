@@ -18,6 +18,7 @@ import {
   isBrushTool,
 } from "@/lib/drawings";
 import { snapToCandle } from "@/lib/indicators";
+import { fillChartLabel, chartLabelFont } from "@/components/chart/chart-label";
 import { formatQuotePrice } from "@/lib/quotes-store";
 import { anchoredVwap, volumeProfile } from "@/lib/indicators-extra";
 
@@ -471,12 +472,12 @@ function paintDrawing(
       const pct = (dp / d.points[0].price) * 100;
       const label = `${dp >= 0 ? "+" : ""}${dp.toFixed(2)} (${pct.toFixed(2)}%) · ~${bars}d`;
       ctx.setLineDash([]);
-      ctx.font = "11px ui-monospace, monospace";
+      ctx.font = chartLabelFont(13, 500);
       const tw = ctx.measureText(label).width;
       const mx = (a.x + b.x) / 2;
       const my = (a.y + b.y) / 2;
       ctx.fillStyle = "rgba(10,14,20,0.85)";
-      roundRect(ctx, mx - tw / 2 - 6, my - 16, tw + 12, 20, 4);
+      roundRect(ctx, mx - tw / 2 - 6, my - 18, tw + 12, 22, 4);
       ctx.fill();
       ctx.fillStyle = color;
       ctx.fillText(label, mx - tw / 2, my - 2);
@@ -707,13 +708,15 @@ function paintDrawing(
       ctx.lineTo(left + span, y);
       ctx.stroke();
       ctx.globalAlpha = 0.9;
-      ctx.font = "11px ui-monospace, monospace";
-      ctx.fillText(
+      fillChartLabel(
+        ctx,
         `${(lvl * 100).toFixed(1)}%  ${formatQuotePrice(
           Math.abs(price) >= 1000 ? Math.round(price) : price
         )}`,
         left + 4,
-        y - 3
+        y - 5,
+        color,
+        13
       );
     });
     const a = pointToXY(api, p0);
@@ -855,12 +858,12 @@ function paintDrawing(
     const xy = pointToXY(api, d.points[0]);
     if (xy) {
       const label = d.text || "메모";
-      ctx.font = "12px IBM Plex Sans, sans-serif";
+      ctx.font = chartLabelFont(14, 500);
       const padX = 8;
       const padY = 5;
       const tw = ctx.measureText(label).width;
       const boxW = tw + padX * 2;
-      const boxH = 22;
+      const boxH = 26;
       ctx.globalAlpha = 0.92;
       ctx.fillStyle = "rgba(14, 20, 28, 0.92)";
       roundRect(ctx, xy.x, xy.y - boxH, boxW, boxH, 4);

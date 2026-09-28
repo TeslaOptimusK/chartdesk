@@ -24,6 +24,8 @@ import {
   type ChartApiBundle,
 } from "@/components/chart/DrawingOverlay";
 import { ScaleBuyOverlay } from "@/components/chart/ScaleBuyOverlay";
+import { SignalLabelOverlay } from "@/components/chart/SignalLabelOverlay";
+import { CHART_LABEL_FAMILY } from "@/components/chart/chart-label";
 import type {
   Candle,
   ChartEventKind,
@@ -292,8 +294,9 @@ export function ChartCanvas({
           type: ColorType.Solid,
           color: chartSettings.background,
         },
-        textColor: "#9aa7b5",
-        fontFamily: "var(--font-chart-mono), ui-monospace, monospace",
+        textColor: "#c5d0db",
+        fontSize: 13,
+        fontFamily: CHART_LABEL_FAMILY,
         // Hide lightweight-charts TradingView attribution logo (ChartDesk branding elsewhere).
         attributionLogo: false,
       },
@@ -927,7 +930,7 @@ export function ChartCanvas({
                   ? "#22d3ee"
                   : "#a78bfa",
             shape: isSetup ? "circle" : "arrowUp",
-            text: s.label,
+            size: 1.4,
           });
         }
       }
@@ -1281,6 +1284,12 @@ export function ChartCanvas({
         drawingCanvasRef={drawingCanvasRef as RefObject<HTMLCanvasElement | null>}
       />
       <ScaleBuyOverlay chartApi={chartApi} symbolId={symbolId} />
+      <SignalLabelOverlay
+        chartApi={chartApi}
+        signals={entrySignals}
+        candles={displayCandles}
+        enabled={entrySignalsEnabled}
+      />
       <PatternOverlay
         chartApi={chartApi}
         zones={easyZones}
