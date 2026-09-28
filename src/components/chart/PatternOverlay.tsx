@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import type { Time } from "lightweight-charts";
 import type { ChartApiBundle } from "@/components/chart/DrawingOverlay";
 import type { EasyOverlayToggles, EasyZone } from "@/lib/easychart";
+import { fillChartLabel } from "@/components/chart/chart-label";
 import { cn } from "@/lib/utils";
 
 interface PatternOverlayProps {
@@ -215,16 +216,15 @@ function drawBox(
   ctx.rect(x0, top, x1 - x0, height);
   ctx.fill();
   ctx.stroke();
-  ctx.fillStyle = stroke;
-  ctx.font = "9px ui-monospace, monospace";
-  ctx.fillText(
+  fillChartLabel(
+    ctx,
     `${z.kind.toUpperCase()} ${bull ? "↑" : z.bias === "bearish" ? "↓" : "·"} ${z.score}${z.htfOverlap ? " HTF" : ""}`,
     x0 + 3,
-    top + 10
+    top + 14,
+    stroke
   );
   if (halfTp && z.touched) {
-    ctx.fillStyle = "rgba(250,204,21,0.9)";
-    ctx.fillText("½TP · 반익반본", x0 + 3, top + 22);
+    fillChartLabel(ctx, "½TP · 반익반본", x0 + 3, top + 30, "rgba(250,204,21,0.95)");
   }
   if (showStop && z.stopPrice != null) {
     const ys = api.series.priceToCoordinate(z.stopPrice);
@@ -268,9 +268,7 @@ function drawTrend(
   ctx.lineTo(p1.x, p1.y);
   ctx.lineTo(Math.max(pExt.x, xEnd), pExt.y);
   ctx.stroke();
-  ctx.fillStyle = color;
-  ctx.font = "9px ui-monospace, monospace";
-  ctx.fillText("TL wick", p0.x + 2, p0.y - 4);
+  fillChartLabel(ctx, "TL wick", p0.x + 2, p0.y - 6, color);
 }
 
 function drawChannel(
@@ -325,9 +323,7 @@ function drawChannel(
     ctx.stroke();
     ctx.setLineDash([]);
   }
-  ctx.fillStyle = color;
-  ctx.font = "9px ui-monospace, monospace";
-  ctx.fillText("CH mid", p0.x + 2, p0.y - 4);
+  fillChartLabel(ctx, "CH mid", p0.x + 2, p0.y - 6, color);
 }
 
 function drawRay(
@@ -350,12 +346,12 @@ function drawRay(
   ctx.moveTo(x0, y);
   ctx.lineTo(canvasW - 8, y);
   ctx.stroke();
-  ctx.fillStyle = color;
-  ctx.font = "9px ui-monospace, monospace";
-  ctx.fillText(
+  fillChartLabel(
+    ctx,
     `S/R ${z.meta?.role === "support" ? "지지" : "저항"}`,
     x0 + 2,
-    y - 4
+    y - 6,
+    color
   );
 }
 
@@ -386,12 +382,12 @@ function drawFib(
     ctx.lineTo(canvasW - 8, y);
     ctx.stroke();
     ctx.setLineDash([]);
-    ctx.fillStyle = ctx.strokeStyle;
-    ctx.font = "9px ui-monospace, monospace";
-    ctx.fillText(
+    fillChartLabel(
+      ctx,
       `${z.kind === "fib_ext" ? "Ext" : "Fib"} ${lv.ratio}`,
       x0 + 2,
-      y - 3
+      y - 6,
+      emphasis ? "rgba(250,204,21,0.95)" : "rgba(226,232,240,0.9)"
     );
   }
 }
@@ -410,9 +406,7 @@ function drawMarker(
   ctx.beginPath();
   ctx.arc(p.x, p.y, strong ? 5 : 4, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = "#fff";
-  ctx.font = "8px ui-monospace, monospace";
-  ctx.fillText(trap ? "TRAP" : "FAKE", p.x + 6, p.y + 3);
+  fillChartLabel(ctx, trap ? "TRAP" : "FAKE", p.x + 8, p.y + 4, "#fff");
 }
 
 function drawSma(
@@ -452,8 +446,6 @@ function drawSma(
   const label = String(z.meta?.label ?? "365 SMA");
   const y = api.series.priceToCoordinate(z.priceTop);
   if (y != null) {
-    ctx.fillStyle = "rgba(251,191,36,0.95)";
-    ctx.font = "9px ui-monospace, monospace";
-    ctx.fillText(label, 8, y - 4);
+    fillChartLabel(ctx, label, 8, y - 6, "rgba(251,191,36,0.95)");
   }
 }
