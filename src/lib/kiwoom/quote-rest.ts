@@ -47,6 +47,32 @@ export function resetKiwoomRestForTests(): void {
   chartCache.clear();
   gapMs = 220;
   chain = Promise.resolve();
+  outboundIpCache = null;
+}
+
+/** Kiwoom 8050: the app key is fine, but this PC's public address is not on the allowlist. */
+export function kiwoomNeedsIpRegistration(message: string): boolean {
+  return message.includes("8050") || message.includes("IP가 등록되지 않았습니다");
+}
+
+let outboundIpCache: { ip: string; at: number } | null = null;
+
+/** Public address Kiwoom sees when this process calls the API. */
+export async function lookupOutboundIp(): Promise<string | null> {
+  const now = Date.now();
+  if (outboundIpCache && now - outboundIpCache.at < 5 * 60_000) return outboundIpCache.ip;
+  try {
+    const res = await fetch("https://api.ipify.org", {
+      signal: AbortSignal.timeout(4000),
+      cache: "no-store",
+    });
+    const ip = (await res.text()).trim();
+    if (!/^(?:\d{1,3}\.){3}\d{1,3}$|^[0-9a-f:]+$/i.test(ip)) return outboundIpCache?.ip ?? null;
+    outboundIpCache = { ip, at: now };
+    return ip;
+  } catch {
+    return outboundIpCache?.ip ?? null;
+  }
 }
 
 export function setKiwoomRequestGapForTests(ms: number): void {

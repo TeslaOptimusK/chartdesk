@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { kiwoomNeedsIpRegistration } from "@/lib/kiwoom/quote-rest";
 import { parseKiwoomAccount } from "@/lib/kiwoom/rest-trade";
 import { bracketAction } from "@/lib/kiwoom/brackets";
 import { buildScaleInOrders, krxTickSize, roundToTick } from "@/lib/kiwoom/scale-plan";
@@ -49,6 +50,18 @@ describe("bracket trigger", () => {
     assert.equal(bracketAction(81000, bracket), "take");
     assert.equal(bracketAction(75000, bracket), null);
     assert.equal(bracketAction(69000, { ...bracket, firing: true }), null);
+  });
+});
+
+describe("kiwoom IP allowlist", () => {
+  it("recognizes the 8050 registration failure", () => {
+    assert.equal(
+      kiwoomNeedsIpRegistration(
+        "인증에 실패했습니다[8050:IP가 등록되지 않았습니다. 키움 REST API 홈페이지 > API 사용신청 화면에서 IP를 등록해주세요.]"
+      ),
+      true
+    );
+    assert.equal(kiwoomNeedsIpRegistration("종목코드를 확인하세요"), false);
   });
 });
 
