@@ -23,6 +23,7 @@ import {
   DrawingOverlay,
   type ChartApiBundle,
 } from "@/components/chart/DrawingOverlay";
+import { ScaleBuyOverlay } from "@/components/chart/ScaleBuyOverlay";
 import type {
   Candle,
   ChartEventKind,
@@ -1279,6 +1280,7 @@ export function ChartCanvas({
         candlesFull={candles}
         drawingCanvasRef={drawingCanvasRef as RefObject<HTMLCanvasElement | null>}
       />
+      <ScaleBuyOverlay chartApi={chartApi} symbolId={symbolId} />
       <PatternOverlay
         chartApi={chartApi}
         zones={easyZones}

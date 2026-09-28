@@ -1,3 +1,4 @@
+import { resumeBracketWatcher } from "@/lib/kiwoom/brackets";
 import { createMarketDataAdapter } from "@/lib/market-data";
 import { readStore } from "@/lib/storage";
 import type { Timeframe } from "@/lib/types";
@@ -19,6 +20,7 @@ export async function GET(req: Request) {
     return new Response("symbol not found", { status: 404 });
   }
 
+  void resumeBracketWatcher();
   const adapter = createMarketDataAdapter();
   const query = {
     symbolId: symbol.id,

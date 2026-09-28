@@ -19,7 +19,7 @@ export interface KiwoomOrderRequest {
 
 export interface KiwoomOrderResult {
   ok: boolean;
-  mode: "mock" | "ocx";
+  mode: "mock" | "ocx" | "rest";
   orderNo?: string;
   fillPrice?: number;
   message: string;
@@ -28,7 +28,7 @@ export interface KiwoomOrderResult {
 }
 
 export interface KiwoomAdapterStatus {
-  mode: "mock" | "ocx";
+  mode: "mock" | "ocx" | "rest";
   label: string;
   ready: boolean;
   platform: string;
@@ -37,7 +37,7 @@ export interface KiwoomAdapterStatus {
 
 export interface KiwoomTradingAdapter {
   readonly id: string;
-  readonly mode: "mock" | "ocx";
+  readonly mode: "mock" | "ocx" | "rest";
   status(): KiwoomAdapterStatus;
   placeOrder(req: KiwoomOrderRequest): Promise<KiwoomOrderResult>;
 }
