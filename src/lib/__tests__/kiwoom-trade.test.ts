@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { kiwoomNeedsIpRegistration } from "@/lib/kiwoom/quote-rest";
-import { parseKiwoomAccount } from "@/lib/kiwoom/rest-trade";
+import { accountEstimatedAssets, krwToUsd, parseKiwoomAccount } from "@/lib/kiwoom/rest-trade";
 import { bracketAction } from "@/lib/kiwoom/brackets";
 import { buildScaleInOrders, krxTickSize, roundToTick } from "@/lib/kiwoom/scale-plan";
 
@@ -50,6 +50,15 @@ describe("bracket trigger", () => {
     assert.equal(bracketAction(81000, bracket), "take");
     assert.equal(bracketAction(75000, bracket), null);
     assert.equal(bracketAction(69000, { ...bracket, firing: true }), null);
+  });
+});
+
+describe("won and dollar totals", () => {
+  it("converts won with the dollar rate and prefers the broker asset total", () => {
+    assert.equal(krwToUsd(1_400_000, 1400), 1000);
+    assert.equal(krwToUsd(null, 1400), null);
+    assert.equal(accountEstimatedAssets(1000, 2000, 9000), 9000);
+    assert.equal(accountEstimatedAssets(1000, 2000, null), 3000);
   });
 });
 
@@ -105,12 +114,18 @@ describe("account parse", () => {
     assert.equal(snap.positions[0]!.avgPrice, 70000);
     assert.equal(snap.positions[0]!.lastPrice, 71000);
     assert.equal(snap.positions[0]!.pnl, 10000);
+    assert.equal(snap.positions[0]!.purchaseAmount, 700000);
+    assert.equal(snap.positions[0]!.evalAmount, 710000);
+    assert.ok(Math.abs(snap.positions[0]!.weightPct! - (710000 / 910000) * 100) < 1e-9);
     assert.ok(Math.abs(snap.positions[0]!.returnPct! - (1000 / 70000) * 100) < 1e-9);
     assert.equal(snap.positions[1]!.returnPct, -3.5);
     assert.equal(snap.positions[1]!.lastPrice, null);
     assert.equal(snap.positions[1]!.pnl, -4000);
+    assert.equal(snap.positions[1]!.purchaseAmount, 400000);
+    assert.equal(snap.positions[1]!.evalAmount, null);
     assert.equal(snap.summary.purchase, 900000);
     assert.equal(snap.summary.evaluation, 910000);
+    assert.equal(snap.summary.estimatedAssets, 1910000);
     assert.ok(Math.abs(snap.summary.returnPct! - (10000 / 900000) * 100) < 1e-9);
   });
 });
