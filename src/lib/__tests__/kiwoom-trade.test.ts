@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { kiwoomNeedsIpRegistration } from "@/lib/kiwoom/quote-rest";
-import { accountEstimatedAssets, krwToUsd, parseKiwoomAccount } from "@/lib/kiwoom/rest-trade";
+import {
+  accountEstimatedAssets,
+  krwToUsd,
+  mergeAccountSnapshots,
+  parseKiwoomAccount,
+} from "@/lib/kiwoom/rest-trade";
 import { bracketAction } from "@/lib/kiwoom/brackets";
 import { buildScaleInOrders, krxTickSize, roundToTick } from "@/lib/kiwoom/scale-plan";
 
@@ -50,6 +55,38 @@ describe("bracket trigger", () => {
     assert.equal(bracketAction(81000, bracket), "take");
     assert.equal(bracketAction(75000, bracket), null);
     assert.equal(bracketAction(69000, { ...bracket, firing: true }), null);
+  });
+});
+
+describe("merged balances", () => {
+  it("keeps an NXT holding when the KRX book is empty and ignores a zero deposit", () => {
+    const empty = parseKiwoomAccount(
+      { entr: "0", d2_entra: "50000" },
+      { tot_evlt_amt: "0", tot_prft_rt: "0.00", acnt_evlt_remn_indv_tot: [] }
+    );
+    const nxt = parseKiwoomAccount(
+      { entr: "0" },
+      {
+        dmst_stex_tp: "NXT",
+        tot_pur_amt: "100000",
+        tot_evlt_amt: "110000",
+        acnt_evlt_remn_indv_tot: [
+          {
+            stk_cd: "A005930",
+            stk_nm: "삼성전자",
+            rmnd_qty: "2",
+            pur_pric: "50000",
+            cur_prc: "55000",
+          },
+        ],
+      }
+    );
+    assert.equal(empty.deposit, 50000);
+    const merged = mergeAccountSnapshots([empty, nxt]);
+    assert.equal(merged.positions.length, 1);
+    assert.equal(merged.positions[0]!.qty, 2);
+    assert.equal(merged.deposit, 50000);
+    assert.equal(merged.summary.evaluation, 110000);
   });
 });
 

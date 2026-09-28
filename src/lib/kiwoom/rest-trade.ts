@@ -34,6 +34,8 @@ export interface KiwoomHoldingsSummary {
 }
 
 export interface KiwoomAccountSnapshot {
+  /** Account bound to the app key. Null when ka00001 did not answer. */
+  accountNo: string | null;
   deposit: number | null;
   orderable: number | null;
   summary: KiwoomHoldingsSummary;
@@ -87,18 +89,42 @@ function holdingsSummary(body: Record<string, unknown>): Omit<KiwoomHoldingsSumm
 }
 
 function firstAbs(row: Record<string, unknown>, keys: string[]): number | null {
+  let zero: number | null = null;
   for (const key of keys) {
     if (!(key in row)) continue;
     const n = parseKiwoomAbs(row[key]);
-    if (n != null) return n;
+    if (n == null) continue;
+    if (n !== 0) return n;
+    zero = 0;
   }
-  return null;
+  return zero;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
+}
+
+export function readAccountNumber(body: unknown): string | null {
+  const row = asRecord(body);
+  if (!row) return null;
+  const keys = ["acctNo", "acct_no", "acnt_no", "accno", "cano"];
+  const piles: unknown[] = [row];
+  for (const value of Object.values(row)) {
+    if (Array.isArray(value)) piles.push(...value);
+    else if (asRecord(value)) piles.push(value);
+  }
+  for (const pile of piles) {
+    const item = asRecord(pile);
+    if (!item) continue;
+    for (const key of keys) {
+      const value = item[key];
+      if (typeof value === "string" && /\d{8,}/.test(value)) return value.trim();
+      if (typeof value === "number" && String(Math.trunc(value)).length >= 8) return String(Math.trunc(value));
+    }
+  }
+  return null;
 }
 
 function positionRows(body: Record<string, unknown>): Record<string, unknown>[] {
@@ -124,7 +150,12 @@ export function parseKiwoomAccount(
   balanceBody: unknown
 ): KiwoomAccountSnapshot {
   const deposit = asRecord(depositBody) ?? {};
-  const balance = asRecord(balanceBody) ?? {};
+  const balanceRaw = asRecord(balanceBody) ?? {};
+  const nested = asRecord(balanceRaw.output) ?? asRecord(balanceRaw.output1);
+  const balance =
+    nested && positionRows(balanceRaw).length === 0 && positionRows(nested).length > 0
+      ? { ...balanceRaw, ...nested }
+      : balanceRaw;
   const positions = positionRows(balance)
     .map((row) => {
       const code = normalizeItemCode(String(row.stk_cd ?? ""));
@@ -134,8 +165,8 @@ export function parseKiwoomAccount(
       const sellable = firstAbs(row, ["trde_able_qty", "ord_alow_qty"]) ?? qty;
       const avgPrice = firstAbs(row, ["pur_pric", "avg_prc", "pchs_avg_pric"]);
       const lastPrice = firstAbs(row, ["cur_prc", "now_prc", "prpr"]);
-      const reportedPnl = signed(row.evltv_prft ?? row.evlt_pl ?? row.prft_amt);
-      const reportedRate = signed(row.prft_rt ?? row.evlt_rt ?? row.prft_rt_rt);
+      const reportedPnl = signed(row.evltv_prft ?? row.evlt_pl ?? row.pl_amt ?? row.prft_amt);
+      const reportedRate = signed(row.prft_rt ?? row.pl_rt ?? row.evlt_rt ?? row.prft_rt_rt);
       const purchaseAmount =
         firstAbs(row, ["pur_amt", "pchs_amt", "buy_amt"]) ??
         (avgPrice != null ? avgPrice * qty : null);
@@ -175,6 +206,7 @@ export function parseKiwoomAccount(
   );
 
   return {
+    accountNo: readAccountNumber(deposit) ?? readAccountNumber(balance),
     deposit: depositAmount,
     orderable: firstAbs(deposit, [
       "ord_alow_amt",
@@ -231,13 +263,90 @@ export function krwToUsd(krw: number | null, usdKrw: number | null): number | nu
   return krw / usdKrw;
 }
 
+function preferAmount(values: Array<number | null>): number | null {
+  const present = values.filter((value): value is number => value != null);
+  if (!present.length) return null;
+  return present.find((value) => value !== 0) ?? 0;
+}
+
+/** One row per code. KRX and NXT copies of the same stock are not added together. */
+export function mergeAccountSnapshots(parts: KiwoomAccountSnapshot[]): KiwoomAccountSnapshot {
+  const byCode = new Map<string, KiwoomPosition>();
+  for (const part of parts) {
+    for (const row of part.positions) {
+      const prev = byCode.get(row.code);
+      const better =
+        !prev ||
+        row.qty > prev.qty ||
+        (row.qty === prev.qty && (row.evalAmount ?? 0) > (prev.evalAmount ?? 0));
+      if (better) byCode.set(row.code, { ...row });
+    }
+  }
+  const positions = [...byCode.values()].sort(
+    (a, b) => (b.evalAmount ?? 0) - (a.evalAmount ?? 0) || a.code.localeCompare(b.code)
+  );
+  const summedPurchase = positions.reduce((sum, row) => sum + (row.purchaseAmount ?? 0), 0);
+  const summedEval = positions.reduce((sum, row) => sum + (row.evalAmount ?? 0), 0);
+  const purchase = Math.max(preferAmount(parts.map((part) => part.summary.purchase)) ?? 0, summedPurchase);
+  const evaluation = Math.max(preferAmount(parts.map((part) => part.summary.evaluation)) ?? 0, summedEval);
+  const deposit = preferAmount(parts.map((part) => part.deposit));
+  const reportedPnl = preferAmount(parts.map((part) => part.summary.pnl));
+  const reportedAssets = preferAmount(parts.map((part) => part.summary.estimatedAssets));
+  const pnl =
+    purchase > 0 || evaluation > 0 ? evaluation - purchase : reportedPnl;
+  const weightBase = evaluation > 0 ? evaluation : summedEval;
+  for (const row of positions) {
+    row.weightPct =
+      row.evalAmount != null && weightBase > 0 ? (row.evalAmount / weightBase) * 100 : row.weightPct;
+  }
+  return {
+    accountNo: parts.map((part) => part.accountNo).find((value) => value) ?? null,
+    deposit,
+    orderable: preferAmount(parts.map((part) => part.orderable)),
+    summary: {
+      purchase: purchase || preferAmount(parts.map((part) => part.summary.purchase)),
+      evaluation: evaluation || preferAmount(parts.map((part) => part.summary.evaluation)),
+      pnl,
+      returnPct: positionReturnPct(
+        purchase || null,
+        evaluation || null,
+        preferAmount(parts.map((part) => part.summary.returnPct))
+      ),
+      estimatedAssets: accountEstimatedAssets(
+        deposit,
+        evaluation > 0 ? evaluation : null,
+        reportedAssets && reportedAssets > 0 ? reportedAssets : null
+      ),
+    },
+    positions,
+  };
+}
+
+async function readBalance(apiId: string, body: Record<string, unknown>): Promise<Record<string, unknown> | null> {
+  try {
+    return await kiwoomAuthorizedPostAll("/api/dostk/acnt", apiId, body);
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchKiwoomAccount(): Promise<KiwoomAccountSnapshot> {
-  const deposit = await kiwoomAuthorizedPost("/api/dostk/acnt", "kt00001", { qry_tp: "3" });
-  const balance = await kiwoomAuthorizedPostAll("/api/dostk/acnt", "kt00018", {
-    qry_tp: "1",
-    dmst_stex_tp: "KRX",
-  });
-  return parseKiwoomAccount(deposit, balance);
+  const [depositEstimated, depositPlain, accountBody, krx18, nxt18, krx04, nxt04] = await Promise.all([
+    kiwoomAuthorizedPost("/api/dostk/acnt", "kt00001", { qry_tp: "3" }),
+    readBalance("kt00001", { qry_tp: "2" }),
+    readBalance("ka00001", {}),
+    readBalance("kt00018", { qry_tp: "1", dmst_stex_tp: "KRX" }),
+    readBalance("kt00018", { qry_tp: "1", dmst_stex_tp: "NXT" }),
+    readBalance("kt00004", { qry_tp: "0", dmst_stex_tp: "KRX" }),
+    readBalance("kt00004", { qry_tp: "0", dmst_stex_tp: "NXT" }),
+  ]);
+  const accountNo = readAccountNumber(accountBody);
+  const snaps = [krx18, nxt18, krx04, nxt04]
+    .filter((body): body is Record<string, unknown> => body != null)
+    .map((body) => parseKiwoomAccount(depositPlain ?? depositEstimated, body));
+  snaps.push(parseKiwoomAccount(depositEstimated, {}));
+  const merged = mergeAccountSnapshots(snaps);
+  return { ...merged, accountNo: accountNo ?? merged.accountNo };
 }
 
 export async function placeKiwoomCashOrder(input: {
