@@ -530,6 +530,11 @@ export function ChartCanvas({
     const prevFirst = firstBarTimeRef.current;
     const prevCount = candleCountRef.current;
     const wasFollowing = followRealtimeRef.current;
+    // Axis drag turns autoScale off but does not mark a custom range, so the
+    // next setData recalculates Y and snaps the scale back. Keep the range.
+    const rightScale = chart.priceScale("right");
+    const keepManualPrice = rightScale.options().autoScale === false;
+    const savedPriceRange = keepManualPrice ? rightScale.getVisibleRange() : null;
 
     // Suppress range events while replacing series data so the library's
     // intermediate range cannot flip followRealtime and skip our restore.
@@ -975,6 +980,7 @@ export function ChartCanvas({
       }
     };
 
+    let recenteredPrice = false;
     if (viewKeyRef.current !== viewKey) {
       // Symbol / timeframe / rangePreset changed — never restore prior logical range
       // (those indices belong to a different series and blank the canvas).
@@ -982,6 +988,7 @@ export function ChartCanvas({
       followRealtimeRef.current = true;
       pendingViewFitRef.current = true;
       staleDataFpRef.current = dataFp;
+      recenteredPrice = true;
       recenterToLatest();
       // If bars were cleared before this paint, dataFp is already the new series —
       // one fit is enough. Otherwise keep pending until fingerprint changes.
@@ -990,6 +997,7 @@ export function ChartCanvas({
       }
     } else if (pendingViewFitRef.current) {
       // TF/symbol updated before fresh candles arrived — re-fit, skip prevLogical.
+      recenteredPrice = true;
       recenterToLatest();
       if (dataFp !== staleDataFpRef.current) {
         pendingViewFitRef.current = false;
@@ -1003,15 +1011,22 @@ export function ChartCanvas({
       }
       applyLogical(prevLogical.from - leftShift, prevLogical.to - leftShift);
       followRealtimeRef.current = false;
-    } else if (wasFollowing) {
-      // Live ticks: keep Y autoScale so forming-bar wicks/body stay visible.
+    }
+    // While following, leave the time scale and the user's Y range alone.
+    // Forcing autoScale here snapped a dragged price axis back on the next tick.
+    if (
+      !recenteredPrice &&
+      savedPriceRange &&
+      Number.isFinite(savedPriceRange.from) &&
+      Number.isFinite(savedPriceRange.to) &&
+      savedPriceRange.to > savedPriceRange.from
+    ) {
       try {
-        chart.priceScale("right").applyOptions({ autoScale: true });
+        rightScale.setVisibleRange(savedPriceRange);
       } catch {
-        /* ignore */
+        /* ignore invalid range while the series is swapping */
       }
     }
-    // When wasFollowing and not pending a view fit, leave the time-scale range alone.
 
     firstBarTimeRef.current = newFirst;
     suppressRangeEventRef.current = false;
