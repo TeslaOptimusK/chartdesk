@@ -22,6 +22,7 @@ interface PositionRow {
   code: string;
   name: string;
   qty: number;
+  currency?: string;
   avgPrice: number | null;
   lastPrice: number | null;
   pnl: number | null;
@@ -59,6 +60,16 @@ interface AccountView {
 function won(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return "—";
   return Math.round(value).toLocaleString("ko-KR");
+}
+
+function money(value: number | null | undefined, currency?: string): string {
+  if ((currency ?? "KRW") === "KRW") return won(value);
+  if (value == null || !Number.isFinite(value)) return "—";
+  const sign = value < 0 ? "-" : "";
+  return `${sign}$${Math.abs(value).toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
 }
 
 function pct(value: number | null | undefined): string {
@@ -295,10 +306,10 @@ export function KiwoomTradeDialog({
                       )}
                     </span>
                     <span className="text-right text-[var(--workspace-fg)]">{p.qty}</span>
-                    <span className="text-right text-[var(--workspace-fg)]">{won(p.avgPrice)}</span>
-                    <span className="text-right text-[var(--workspace-fg)]">{won(p.lastPrice)}</span>
+                    <span className="text-right text-[var(--workspace-fg)]">{money(p.avgPrice, p.currency)}</span>
+                    <span className="text-right text-[var(--workspace-fg)]">{money(p.lastPrice, p.currency)}</span>
                     <span className={cn("text-right", tone(p.returnPct))}>{pct(p.returnPct)}</span>
-                    <span className={cn("text-right", tone(p.pnl))}>{won(p.pnl)}</span>
+                    <span className={cn("text-right", tone(p.pnl))}>{money(p.pnl, p.currency)}</span>
                   </div>
                 );
               })}
