@@ -1,13 +1,23 @@
 @echo off
 setlocal EnableExtensions
-REM ChartDesk launcher. Fast-forward cursor/chartdesk-desktop, then keep Next.js
-REM alive, wait for /api/bootstrap, and open Chrome/Edge in --app= mode.
+REM ChartDesk launcher. Fast-forward cursor/chartdesk-desktop, then start Next.js
+REM with no console, wait for /api/bootstrap, and open Chrome/Edge in --app= mode.
+REM A double-click from an old shortcut closes its console and continues hidden.
 REM Does not reset or discard local edits.
 
 cd /d "%~dp0.."
 if errorlevel 1 goto fail_cd
 
 if /I "%~1"=="--updated" goto launch
+if /I "%~1"=="--hidden" goto hidden_start
+
+REM Old Desktop shortcut targets this bat and opens a console. Hand off and exit.
+wscript //nologo "%~dp0chartdesk-launch.vbs"
+exit /b 0
+
+:hidden_start
+call :hide_console
+wscript //nologo "%~dp0chartdesk-launch.vbs" shortcut
 
 where git >nul 2>&1
 if errorlevel 1 goto fail_git
@@ -23,12 +33,9 @@ if exist "C:\Program Files\GitHub CLI\gh.exe" (
 REM This block is parsed before it runs, so a pull that replaces this file
 REM cannot desync the rest of the update. The new file is started afterwards.
 (
-  echo Fetching latest ChartDesk...
   git fetch origin
   if errorlevel 1 (
-    echo git fetch failed. Check the network, then double-click ChartDesk again.
-    echo Local files were not reset.
-    pause
+    wscript //nologo "%~dp0chartdesk-launch.vbs" alert "ChartDesk could not download the update. Check the network, then open ChartDesk again. Local files were not reset."
     exit /b 1
   )
   git rev-parse --verify --quiet refs/heads/cursor/chartdesk-desktop >nul 2>&1
@@ -38,23 +45,21 @@ REM cannot desync the rest of the update. The new file is started afterwards.
     git checkout cursor/chartdesk-desktop
   )
   if errorlevel 1 (
-    echo Could not checkout cursor/chartdesk-desktop.
-    echo Local edits may be in the way. They were not discarded.
-    pause
+    wscript //nologo "%~dp0chartdesk-launch.vbs" alert "ChartDesk could not switch to the desktop branch. Local edits were not discarded."
     exit /b 1
   )
   git pull --ff-only origin cursor/chartdesk-desktop
   if errorlevel 1 (
-    echo Fast-forward pull failed. The local branch may have diverged from origin.
-    echo Nothing was reset.
-    pause
+    wscript //nologo "%~dp0chartdesk-launch.vbs" alert "ChartDesk could not fast-forward. The local branch may have diverged. Nothing was reset."
     exit /b 1
   )
-  start "ChartDesk" cmd /c call "%~f0" --updated
+  wscript //nologo "%~dp0chartdesk-launch.vbs" updated
   exit /b 0
 )
 
 :launch
+call :hide_console
+wscript //nologo "%~dp0chartdesk-launch.vbs" shortcut
 where node >nul 2>&1
 if errorlevel 1 goto fail_node
 
@@ -71,9 +76,9 @@ if exist "package.json" if exist "node_modules\.chartdesk-package.json" (
   fc /b "package.json" "node_modules\.chartdesk-package.json" >nul 2>&1
   if errorlevel 1 set "NEED_NPM=1"
 )
+if not exist "data\" mkdir data
 if "%NEED_NPM%"=="1" (
-  echo Installing dependencies...
-  call npm install
+  call npm install >> "data\chartdesk-server.log" 2>&1
   if errorlevel 1 goto fail_npm
 )
 if exist "node_modules\" (
@@ -96,19 +101,14 @@ if exist "%ProgramFiles%\Microsoft\Edge\Application\msedge.exe" set "EDGE=%Progr
 if not defined EDGE if exist "%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe" set "EDGE=%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe"
 if not defined EDGE if exist "%LocalAppData%\Microsoft\Edge\Application\msedge.exe" set "EDGE=%LocalAppData%\Microsoft\Edge\Application\msedge.exe"
 
-echo Stopping a previous ChartDesk server on %APP_URL% if one is listening...
+REM Stop a previous server on this port. Hidden servers have no window title.
 for /f "tokens=5" %%P in ('netstat -ano ^| findstr /C:":%APP_PORT%" ^| findstr /C:"LISTENING"') do (
-  echo Stopping PID %%P
   taskkill /F /PID %%P >nul 2>&1
 )
 taskkill /F /T /FI "WINDOWTITLE eq ChartDesk Server" >nul 2>&1
 
-echo Starting ChartDesk on %APP_URL%
-echo Server window title: ChartDesk Server. Leave it open. Ctrl+C there to stop.
-
-REM /k keeps the console open if npm exits so errors stay visible.
-REM Bind 127.0.0.1 explicitly so localhost/::1 does not miss the health check.
-start "ChartDesk Server" cmd /k "npm run dev -- -H %APP_HOST% -p %APP_PORT%"
+if not exist "data\" mkdir data
+wscript //nologo "%~dp0chartdesk-launch.vbs" server
 
 set /a "TRIES=0"
 :wait_ready
@@ -120,55 +120,46 @@ if errorlevel 1 (
   goto wait_ready
 )
 
-echo Bootstrap OK: %BOOT_URL%
-
 set "OPENED="
 if defined CHROME (
-  start "ChartDesk" "%CHROME%" "--app=%APP_URL%"
+  start "" "%CHROME%" "--app=%APP_URL%"
   set "OPENED=1"
-  echo Opened ChartDesk via Chrome --app=%APP_URL%
 ) else if defined EDGE (
-  start "ChartDesk" "%EDGE%" "--app=%APP_URL%"
+  start "" "%EDGE%" "--app=%APP_URL%"
   set "OPENED=1"
-  echo Opened ChartDesk via Edge --app=%APP_URL%
 )
 
-if not defined OPENED (
-  echo Chrome/Edge not found. Install Chrome or Edge for --app= window mode.
-  echo Falling back to default browser ^(tab^) as last resort.
-  start "" "%APP_URL%"
-)
+if not defined OPENED start "" "%APP_URL%"
 
-echo.
-echo ChartDesk is running. Close the ChartDesk Server window or Ctrl+C there to stop.
-echo This launcher window can stay open or be closed; the server window is separate.
-pause
 endlocal
 exit /b 0
 
+:hide_console
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0hide-console.ps1" >nul 2>&1
+exit /b 0
+
 :fail_cd
-echo Failed to cd to repo root from "%~dp0.."
-pause
-exit /b 1
+set "ALERT=ChartDesk could not find its folder."
+goto fail_alert
 
 :fail_git
-echo git not found on PATH. Install Git for Windows, then re-run.
-pause
-exit /b 1
+set "ALERT=Git was not found. Install Git for Windows, then open ChartDesk again."
+goto fail_alert
 
 :fail_node
-echo Node.js not found on PATH. Install Node.js LTS, then re-run.
-pause
-exit /b 1
+set "ALERT=Node.js was not found. Install Node.js LTS, then open ChartDesk again."
+goto fail_alert
 
 :fail_npm
-echo npm install failed.
-pause
-exit /b 1
+set "ALERT=ChartDesk could not install dependencies. See data\chartdesk-server.log after the next try, or run npm install in the ChartDesk folder."
+goto fail_alert
 
 :fail_boot
-echo.
-echo Server did not become ready: %BOOT_URL%
-echo Check the ChartDesk Server window for npm/Next errors.
-pause
+set "ALERT=ChartDesk did not finish starting. See data\chartdesk-server.log in the ChartDesk folder."
+goto fail_alert
+
+:fail_alert
+echo %ALERT%
+wscript //nologo "%~dp0chartdesk-launch.vbs" alert "%ALERT%"
+endlocal
 exit /b 1
