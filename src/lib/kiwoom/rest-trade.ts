@@ -10,18 +10,35 @@ export interface KiwoomPosition {
   name: string;
   qty: number;
   sellableQty: number;
+  /** Quote currency. Domestic rows are KRW. US ledger rows keep the broker currency. */
+  currency: string;
   avgPrice: number | null;
   lastPrice: number | null;
   /** (현재가-매수가)×수량 when both prices exist, otherwise the broker figure. */
   pnl: number | null;
   /** Percent vs average cost. Matches 매수가/현재가 when both exist. */
   returnPct: number | null;
-  /** 매입금액. Broker figure, else 매수가×수량. */
+  /** 매입금액 in `currency`. Broker figure, else 매수가×수량. */
   purchaseAmount: number | null;
-  /** 평가금액. Broker figure, else 현재가×수량. */
+  /** 평가금액 in `currency`. Broker figure, else 현재가×수량. */
   evalAmount: number | null;
-  /** Share of the account's evaluated stocks. */
+  /** Won translation from the US ledger. Domestic rows repeat the won figures. */
+  krwAvgPrice: number | null;
+  krwLastPrice: number | null;
+  krwPurchaseAmount: number | null;
+  krwEvalAmount: number | null;
+  krwPnl: number | null;
+  /** Broker exchange rate on a US row. */
+  fxRate: number | null;
+  /** Share of the account's evaluated stocks, in won. */
   weightPct: number | null;
+}
+
+export interface KiwoomFxCash {
+  currency: string;
+  deposit: number | null;
+  evalAmount: number | null;
+  rate: number | null;
 }
 
 export interface KiwoomHoldingsSummary {
@@ -40,6 +57,8 @@ export interface KiwoomAccountSnapshot {
   orderable: number | null;
   summary: KiwoomHoldingsSummary;
   positions: KiwoomPosition[];
+  /** Foreign cash from ust21120. Empty for a domestic-only read. */
+  fxCash: KiwoomFxCash[];
 }
 
 function signed(raw: unknown): number | null {
@@ -104,6 +123,26 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
+}
+
+/**
+ * ka00001 `acctNo` is 8 account digits plus a 2-digit product code.
+ * The app-key screen shows `5842-0740 [위탁종합]`; the API returns `5842074010`.
+ * Product 10 is that 위탁종합 book.
+ */
+const KIWOOM_PRODUCT_LABEL: Record<string, string> = {
+  "10": "위탁종합",
+};
+
+export function formatKiwoomAccountNo(raw: string | null | undefined): string | null {
+  if (raw == null) return null;
+  const trimmed = raw.trim();
+  const digits = trimmed.replace(/\D/g, "");
+  if (digits.length !== 10) return trimmed || null;
+  const head = `${digits.slice(0, 4)}-${digits.slice(4, 8)}`;
+  const product = digits.slice(8);
+  const label = KIWOOM_PRODUCT_LABEL[product];
+  return label ? `${head} ${label}` : `${head}-${product}`;
 }
 
 export function readAccountNumber(body: unknown): string | null {
@@ -173,20 +212,28 @@ export function parseKiwoomAccount(
       const evalAmount =
         firstAbs(row, ["evlt_amt", "evlu_amt"]) ??
         (lastPrice != null ? lastPrice * qty : null);
+      const pnl =
+        avgPrice != null && lastPrice != null
+          ? (lastPrice - avgPrice) * qty
+          : reportedPnl;
       return {
         code,
         name: typeof row.stk_nm === "string" ? row.stk_nm.trim() : code,
         qty,
         sellableQty: sellable,
+        currency: "KRW",
         avgPrice,
         lastPrice,
-        pnl:
-          avgPrice != null && lastPrice != null
-            ? (lastPrice - avgPrice) * qty
-            : reportedPnl,
+        pnl,
         returnPct: positionReturnPct(avgPrice, lastPrice, reportedRate),
         purchaseAmount,
         evalAmount,
+        krwAvgPrice: avgPrice,
+        krwLastPrice: lastPrice,
+        krwPurchaseAmount: purchaseAmount,
+        krwEvalAmount: evalAmount,
+        krwPnl: pnl,
+        fxRate: null as number | null,
         weightPct: null as number | null,
       } satisfies KiwoomPosition;
     })
@@ -224,6 +271,123 @@ export function parseKiwoomAccount(
       ),
     },
     positions,
+    fxCash: [],
+  };
+}
+
+function wonBook(currency: string, native: number | null, krw: number | null): number {
+  if (krw != null) return krw;
+  if (currency === "KRW") return native ?? 0;
+  return 0;
+}
+
+function usTicker(raw: unknown): string {
+  return String(raw ?? "")
+    .trim()
+    .replace(/\s+/g, "")
+    .toUpperCase();
+}
+
+/** ust21070 미국주식 원장잔고확인. Row prices stay in the quote currency. */
+export function parseUsLedger(body: unknown): KiwoomAccountSnapshot {
+  const root = asRecord(body) ?? {};
+  const list = Array.isArray(root.result_list) ? root.result_list : [];
+  const positions = list
+    .map((item) => {
+      const row = asRecord(item);
+      if (!row) return null;
+      const code = usTicker(row.stk_cd);
+      if (!code || code === "000000") return null;
+      const qty = firstAbs(row, ["poss_qty", "qty"]) ?? 0;
+      if (qty <= 0) return null;
+      const currency = usTicker(row.crnc_code) || "USD";
+      const avgPrice = firstAbs(row, ["frgn_stk_book_uv"]);
+      const lastPrice = firstAbs(row, ["now_pric"]);
+      const purchaseAmount =
+        firstAbs(row, ["frgn_stk_book_amt"]) ??
+        (avgPrice != null ? avgPrice * qty : null);
+      const evalAmount =
+        firstAbs(row, ["evlt_amt"]) ?? (lastPrice != null ? lastPrice * qty : null);
+      const reportedPnl = signed(row.pl_amt);
+      const pnl =
+        avgPrice != null && lastPrice != null ? (lastPrice - avgPrice) * qty : reportedPnl;
+      const name =
+        typeof row.frgn_stk_nm === "string" && row.frgn_stk_nm.trim()
+          ? row.frgn_stk_nm.trim()
+          : code;
+      return {
+        code,
+        name,
+        qty,
+        sellableQty: firstAbs(row, ["sell_alowq"]) ?? qty,
+        currency,
+        avgPrice,
+        lastPrice,
+        pnl,
+        returnPct: positionReturnPct(avgPrice, lastPrice, signed(row.pl_rt)),
+        purchaseAmount,
+        evalAmount,
+        krwAvgPrice: firstAbs(row, ["frgn_stk_book_uv_krw"]),
+        krwLastPrice: firstAbs(row, ["now_pric_krw"]),
+        krwPurchaseAmount: firstAbs(row, ["frgn_stk_book_amt_krw"]),
+        krwEvalAmount: firstAbs(row, ["evlt_amt_krw"]),
+        krwPnl: signed(row.pl_amt_krw),
+        fxRate: firstAbs(row, ["exch_rate"]),
+        weightPct: null as number | null,
+      } satisfies KiwoomPosition;
+    })
+    .filter((row): row is KiwoomPosition => row != null);
+
+  const purchase = firstAbs(root, ["tot_prch_amt_krw"]);
+  const evaluation = firstAbs(root, ["tot_evlt_amt_krw"]);
+  const pnl = signed(root.tot_pl_amt_krw);
+  return {
+    accountNo: null,
+    deposit: null,
+    orderable: null,
+    summary: {
+      purchase,
+      evaluation,
+      pnl: pnl ?? (purchase != null && evaluation != null ? evaluation - purchase : null),
+      returnPct: positionReturnPct(purchase, evaluation, signed(root.tot_pl_rt)),
+      estimatedAssets: null,
+    },
+    positions,
+    fxCash: [],
+  };
+}
+
+/** ust21120 통화별 예수금 및 증권 평가금. `aset_evlt_amt` is the won estimate. */
+export function parseUsValuation(body: unknown): KiwoomAccountSnapshot {
+  const root = asRecord(body) ?? {};
+  const list = Array.isArray(root.result_list) ? root.result_list : [];
+  const fxCash = list
+    .map((item) => {
+      const row = asRecord(item);
+      if (!row) return null;
+      const currency = usTicker(row.crnc_code);
+      if (!currency || currency === "KRW") return null;
+      return {
+        currency,
+        deposit: firstAbs(row, ["fx_entr"]),
+        evalAmount: firstAbs(row, ["evlt_amt"]),
+        rate: firstAbs(row, ["crnc_rt"]),
+      } satisfies KiwoomFxCash;
+    })
+    .filter((row): row is KiwoomFxCash => row != null);
+  return {
+    accountNo: null,
+    deposit: firstAbs(root, ["won_entr"]),
+    orderable: null,
+    summary: {
+      purchase: null,
+      evaluation: null,
+      pnl: null,
+      returnPct: null,
+      estimatedAssets: firstAbs(root, ["aset_evlt_amt"]),
+    },
+    positions: [],
+    fxCash,
   };
 }
 
@@ -274,19 +438,30 @@ export function mergeAccountSnapshots(parts: KiwoomAccountSnapshot[]): KiwoomAcc
   const byCode = new Map<string, KiwoomPosition>();
   for (const part of parts) {
     for (const row of part.positions) {
-      const prev = byCode.get(row.code);
+      const key = `${row.currency}:${row.code}`;
+      const prev = byCode.get(key);
       const better =
         !prev ||
         row.qty > prev.qty ||
-        (row.qty === prev.qty && (row.evalAmount ?? 0) > (prev.evalAmount ?? 0));
-      if (better) byCode.set(row.code, { ...row });
+        (row.qty === prev.qty &&
+          wonBook(row.currency, row.evalAmount, row.krwEvalAmount) >
+            wonBook(prev.currency, prev.evalAmount, prev.krwEvalAmount));
+      if (better) byCode.set(key, { ...row });
     }
   }
   const positions = [...byCode.values()].sort(
-    (a, b) => (b.evalAmount ?? 0) - (a.evalAmount ?? 0) || a.code.localeCompare(b.code)
+    (a, b) =>
+      wonBook(b.currency, b.evalAmount, b.krwEvalAmount) -
+        wonBook(a.currency, a.evalAmount, a.krwEvalAmount) || a.code.localeCompare(b.code)
   );
-  const summedPurchase = positions.reduce((sum, row) => sum + (row.purchaseAmount ?? 0), 0);
-  const summedEval = positions.reduce((sum, row) => sum + (row.evalAmount ?? 0), 0);
+  const summedPurchase = positions.reduce(
+    (sum, row) => sum + wonBook(row.currency, row.purchaseAmount, row.krwPurchaseAmount),
+    0
+  );
+  const summedEval = positions.reduce(
+    (sum, row) => sum + wonBook(row.currency, row.evalAmount, row.krwEvalAmount),
+    0
+  );
   const purchase = Math.max(preferAmount(parts.map((part) => part.summary.purchase)) ?? 0, summedPurchase);
   const evaluation = Math.max(preferAmount(parts.map((part) => part.summary.evaluation)) ?? 0, summedEval);
   const deposit = preferAmount(parts.map((part) => part.deposit));
@@ -296,8 +471,17 @@ export function mergeAccountSnapshots(parts: KiwoomAccountSnapshot[]): KiwoomAcc
     purchase > 0 || evaluation > 0 ? evaluation - purchase : reportedPnl;
   const weightBase = evaluation > 0 ? evaluation : summedEval;
   for (const row of positions) {
-    row.weightPct =
-      row.evalAmount != null && weightBase > 0 ? (row.evalAmount / weightBase) * 100 : row.weightPct;
+    const wonEval = wonBook(row.currency, row.evalAmount, row.krwEvalAmount);
+    row.weightPct = wonEval > 0 && weightBase > 0 ? (wonEval / weightBase) * 100 : row.weightPct;
+  }
+  const fxByCurrency = new Map<string, KiwoomFxCash>();
+  for (const part of parts) {
+    for (const cash of part.fxCash ?? []) {
+      const prev = fxByCurrency.get(cash.currency);
+      const rank = (cash.deposit ?? 0) + (cash.evalAmount ?? 0);
+      const prevRank = prev ? (prev.deposit ?? 0) + (prev.evalAmount ?? 0) : -1;
+      if (!prev || rank > prevRank) fxByCurrency.set(cash.currency, cash);
+    }
   }
   return {
     accountNo: parts.map((part) => part.accountNo).find((value) => value) ?? null,
@@ -319,34 +503,51 @@ export function mergeAccountSnapshots(parts: KiwoomAccountSnapshot[]): KiwoomAcc
       ),
     },
     positions,
+    fxCash: [...fxByCurrency.values()],
   };
 }
 
-async function readBalance(apiId: string, body: Record<string, unknown>): Promise<Record<string, unknown> | null> {
+async function readBook(
+  path: string,
+  apiId: string,
+  body: Record<string, unknown>
+): Promise<Record<string, unknown> | null> {
   try {
-    return await kiwoomAuthorizedPostAll("/api/dostk/acnt", apiId, body);
+    return await kiwoomAuthorizedPostAll(path, apiId, body);
   } catch {
     return null;
   }
 }
 
+async function readBalance(apiId: string, body: Record<string, unknown>): Promise<Record<string, unknown> | null> {
+  return readBook("/api/dostk/acnt", apiId, body);
+}
+
 export async function fetchKiwoomAccount(): Promise<KiwoomAccountSnapshot> {
-  const [depositEstimated, depositPlain, accountBody, krx18, nxt18, krx04, nxt04] = await Promise.all([
-    kiwoomAuthorizedPost("/api/dostk/acnt", "kt00001", { qry_tp: "3" }),
-    readBalance("kt00001", { qry_tp: "2" }),
-    readBalance("ka00001", {}),
-    readBalance("kt00018", { qry_tp: "1", dmst_stex_tp: "KRX" }),
-    readBalance("kt00018", { qry_tp: "1", dmst_stex_tp: "NXT" }),
-    readBalance("kt00004", { qry_tp: "0", dmst_stex_tp: "KRX" }),
-    readBalance("kt00004", { qry_tp: "0", dmst_stex_tp: "NXT" }),
-  ]);
+  const [depositEstimated, depositPlain, accountBody, krx18, nxt18, krx04, nxt04, usLedger, usValue] =
+    await Promise.all([
+      kiwoomAuthorizedPost("/api/dostk/acnt", "kt00001", { qry_tp: "3" }),
+      readBalance("kt00001", { qry_tp: "2" }),
+      readBalance("ka00001", {}),
+      readBalance("kt00018", { qry_tp: "1", dmst_stex_tp: "KRX" }),
+      readBalance("kt00018", { qry_tp: "1", dmst_stex_tp: "NXT" }),
+      readBalance("kt00004", { qry_tp: "0", dmst_stex_tp: "KRX" }),
+      readBalance("kt00004", { qry_tp: "0", dmst_stex_tp: "NXT" }),
+      readBook("/api/us/acnt", "ust21070", { stex_tp: "", stk_cd: "" }),
+      readBook("/api/us/acnt", "ust21120", { cmsn_incl_tp: "", exrt_tp: "" }),
+    ]);
   const accountNo = readAccountNumber(accountBody);
   const snaps = [krx18, nxt18, krx04, nxt04]
     .filter((body): body is Record<string, unknown> => body != null)
     .map((body) => parseKiwoomAccount(depositPlain ?? depositEstimated, body));
   snaps.push(parseKiwoomAccount(depositEstimated, {}));
+  if (usLedger) snaps.push(parseUsLedger(usLedger));
+  if (usValue) snaps.push(parseUsValuation(usValue));
   const merged = mergeAccountSnapshots(snaps);
-  return { ...merged, accountNo: accountNo ?? merged.accountNo };
+  return {
+    ...merged,
+    accountNo: formatKiwoomAccountNo(accountNo ?? merged.accountNo),
+  };
 }
 
 export async function placeKiwoomCashOrder(input: {

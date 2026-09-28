@@ -3,9 +3,12 @@ import { describe, it } from "node:test";
 import { kiwoomNeedsIpRegistration } from "@/lib/kiwoom/quote-rest";
 import {
   accountEstimatedAssets,
+  formatKiwoomAccountNo,
   krwToUsd,
   mergeAccountSnapshots,
   parseKiwoomAccount,
+  parseUsLedger,
+  parseUsValuation,
 } from "@/lib/kiwoom/rest-trade";
 import { bracketAction } from "@/lib/kiwoom/brackets";
 import { buildScaleInOrders, krxTickSize, roundToTick } from "@/lib/kiwoom/scale-plan";
@@ -87,6 +90,63 @@ describe("merged balances", () => {
     assert.equal(merged.positions[0]!.qty, 2);
     assert.equal(merged.deposit, 50000);
     assert.equal(merged.summary.evaluation, 110000);
+  });
+});
+
+describe("account number", () => {
+  it("splits the product code off the 10-digit ka00001 value", () => {
+    assert.equal(formatKiwoomAccountNo("5842074010"), "5842-0740 위탁종합");
+    assert.equal(formatKiwoomAccountNo("5842-0740"), "5842-0740");
+    assert.equal(formatKiwoomAccountNo("5842074011"), "5842-0740-11");
+  });
+});
+
+describe("us ledger", () => {
+  it("keeps dollar prices and rolls the won total into the account", () => {
+    const domestic = parseKiwoomAccount({ entr: "0" }, { acnt_evlt_remn_indv_tot: [] });
+    const us = parseUsLedger({
+      tot_prch_amt_krw: "13590000",
+      tot_evlt_amt_krw: "14000000",
+      tot_pl_amt_krw: "410000",
+      tot_pl_rt: "3.02",
+      result_list: [
+        {
+          crnc_code: "USD",
+          stk_cd: "TSLA",
+          frgn_stk_nm: "테슬라",
+          poss_qty: "10",
+          sell_alowq: "10",
+          frgn_stk_book_uv: "300.00",
+          now_pric: "372.11",
+          frgn_stk_book_amt: "3000.00",
+          evlt_amt: "3721.10",
+          pl_amt: "721.10",
+          pl_rt: "24.03",
+          frgn_stk_book_amt_krw: "4080000",
+          evlt_amt_krw: "5060000",
+          pl_amt_krw: "980000",
+          exch_rate: "1360.00",
+        },
+        { stk_cd: "AAPL", poss_qty: "0" },
+      ],
+    });
+    const cash = parseUsValuation({
+      won_entr: "0",
+      aset_evlt_amt: "19000000",
+      result_list: [{ crnc_code: "USD", fx_entr: "1500.25", evlt_amt: "3721.10", crnc_rt: "1360" }],
+    });
+    assert.equal(us.positions.length, 1);
+    assert.equal(us.positions[0]!.code, "TSLA");
+    assert.equal(us.positions[0]!.currency, "USD");
+    assert.equal(us.positions[0]!.avgPrice, 300);
+    assert.equal(us.positions[0]!.lastPrice, 372.11);
+    const merged = mergeAccountSnapshots([domestic, us, cash]);
+    assert.equal(merged.positions.length, 1);
+    assert.equal(merged.summary.evaluation, 14000000);
+    assert.equal(merged.summary.purchase, 13590000);
+    assert.equal(merged.summary.estimatedAssets, 19000000);
+    assert.equal(merged.fxCash[0]!.deposit, 1500.25);
+    assert.ok(Math.abs(merged.positions[0]!.weightPct! - (5_060_000 / 14_000_000) * 100) < 1e-6);
   });
 });
 

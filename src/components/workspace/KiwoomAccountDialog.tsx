@@ -17,13 +17,26 @@ interface PositionRow {
   name: string;
   qty: number;
   sellableQty: number;
+  currency?: string;
   avgPrice: number | null;
   lastPrice: number | null;
   pnl: number | null;
   returnPct: number | null;
   purchaseAmount: number | null;
   evalAmount: number | null;
+  krwAvgPrice?: number | null;
+  krwLastPrice?: number | null;
+  krwPurchaseAmount?: number | null;
+  krwEvalAmount?: number | null;
+  krwPnl?: number | null;
   weightPct: number | null;
+}
+
+interface FxCashRow {
+  currency: string;
+  deposit: number | null;
+  evalAmount: number | null;
+  rate: number | null;
 }
 
 interface AccountView {
@@ -40,6 +53,7 @@ interface AccountView {
     estimatedAssets: number | null;
   };
   positions: PositionRow[];
+  fxCash?: FxCashRow[];
   accountNo?: string | null;
   error?: string;
   outboundIp?: string | null;
@@ -64,6 +78,28 @@ function pct(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return "—";
   const sign = value > 0 ? "+" : "";
   return `${sign}${value.toFixed(2)}%`;
+}
+
+function dualMoney(
+  currency: string | undefined,
+  native: number | null | undefined,
+  wonAmount: number | null | undefined,
+  rate: number | null
+) {
+  if ((currency ?? "KRW") !== "KRW") {
+    return (
+      <>
+        <div>{usd(native)}</div>
+        <div className="text-[10px] text-[var(--workspace-faint)]">{krw(wonAmount)}</div>
+      </>
+    );
+  }
+  return (
+    <>
+      <div>{krw(native)}</div>
+      <div className="text-[10px] text-[var(--workspace-faint)]">{usd(krwToUsd(native ?? null, rate))}</div>
+    </>
+  );
 }
 
 function share(value: number | null | undefined): string {
@@ -187,6 +223,11 @@ export function KiwoomAccountDialog({
           </span>
           <span>주문가능 {krw(account?.orderable)}</span>
           <span>보유 {rows.length}종목</span>
+          {(account?.fxCash ?? []).map((cash) => (
+            <span key={cash.currency}>
+              {cash.currency} 예수금 {cash.currency === "USD" ? usd(cash.deposit) : (cash.deposit ?? "—")}
+            </span>
+          ))}
           <span>
             {rate != null ? `1달러 ${Math.round(rate).toLocaleString("ko-KR")}원` : "달러 환율 없음"}
           </span>
@@ -226,16 +267,21 @@ export function KiwoomAccountDialog({
                       <td className="px-2 py-1.5 text-right text-[var(--workspace-muted)]">
                         {row.sellableQty.toLocaleString("ko-KR")}
                       </td>
-                      <td className="px-2 py-1.5 text-right">{krw(row.avgPrice)}</td>
-                      <td className="px-2 py-1.5 text-right">{krw(row.lastPrice)}</td>
-                      <td className="px-2 py-1.5 text-right">{krw(row.purchaseAmount)}</td>
                       <td className="px-2 py-1.5 text-right">
-                        <div>{krw(row.evalAmount)}</div>
-                        <div className="text-[10px] text-[var(--workspace-faint)]">
-                          {usd(krwToUsd(row.evalAmount, rate))}
-                        </div>
+                        {dualMoney(row.currency, row.avgPrice, row.krwAvgPrice, rate)}
                       </td>
-                      <td className={cn("px-2 py-1.5 text-right", tone(row.pnl))}>{krw(row.pnl)}</td>
+                      <td className="px-2 py-1.5 text-right">
+                        {dualMoney(row.currency, row.lastPrice, row.krwLastPrice, rate)}
+                      </td>
+                      <td className="px-2 py-1.5 text-right">
+                        {dualMoney(row.currency, row.purchaseAmount, row.krwPurchaseAmount, rate)}
+                      </td>
+                      <td className="px-2 py-1.5 text-right">
+                        {dualMoney(row.currency, row.evalAmount, row.krwEvalAmount, rate)}
+                      </td>
+                      <td className={cn("px-2 py-1.5 text-right", tone(row.pnl))}>
+                        {dualMoney(row.currency, row.pnl, row.krwPnl, rate)}
+                      </td>
                       <td className={cn("px-2 py-1.5 text-right", tone(row.returnPct))}>{pct(row.returnPct)}</td>
                       <td className="px-2 py-1.5 text-right text-[var(--workspace-muted)]">{share(row.weightPct)}</td>
                     </tr>
@@ -251,14 +297,15 @@ export function KiwoomAccountDialog({
               : account.error
                 ? "계좌를 읽지 못했습니다"
                 : account.accountNo
-                  ? `계좌 ${account.accountNo} 국내 주식 잔고가 비어 있습니다. 영웅문 계좌번호와 다르면 키움 API 사용신청에서 그 계좌의 앱 키로 다시 받아야 합니다. 미국 주식은 이 화면에 나오지 않습니다.`
-                  : "국내 주식 잔고가 비어 있습니다. 미국 주식은 이 화면에 나오지 않습니다."}
+                  ? `계좌 ${account.accountNo}의 국내 잔고와 미국 원장잔고가 모두 비어 있습니다.`
+                  : "국내 잔고와 미국 원장잔고가 모두 비어 있습니다."}
           </div>
         )}
 
         <p className="text-[10px] text-[var(--workspace-faint)]">
-          국내 주식 잔고입니다. 평가금액의 달러는 현재 원/달러 환율로 나눈 값이고, 수익률은 매수가 대비 현재가입니다.
-          차트에 있는 종목을 누르면 그 차트로 이동합니다.
+          계좌번호 10자리는 8자리 계좌에 상품코드 2자리가 붙은 값입니다. 10은 위탁종합입니다.
+          국내 잔고는 kt00018, 미국 잔고는 원장잔고확인 ust21070, 원화 추정자산은 통화별 평가 ust21120입니다.
+          미국 종목은 달러가 위, 키움이 환산한 원이 아래입니다. 차트에 있는 종목을 누르면 그 차트로 이동합니다.
         </p>
       </DialogContent>
     </Dialog>
