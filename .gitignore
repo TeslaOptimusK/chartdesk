@@ -37,6 +37,7 @@ yarn-error.log*
 # local JSON app store
 /data/store.json
 /data/kiwoom-brackets.json
+/data/*.log
 
 # vercel
 .vercel

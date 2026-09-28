@@ -33,7 +33,7 @@ After clone, create a Desktop `ChartDesk` shortcut once:
 powershell -ExecutionPolicy Bypass -File scripts\create-desktop-shortcut.ps1
 ```
 
-Double-click the shortcut (or run `scripts\start-chartdesk.bat`). It fetches `origin`, checks out `cursor/chartdesk-desktop`, and fast-forwards (`git pull --ff-only`). It does not reset or discard local edits. Then it runs `npm install` only when `node_modules` is missing or `package.json` / `package-lock.json` changed, starts **ChartDesk Server** (`npm run dev -- -H 127.0.0.1 -p 43127`), waits until **`/api/bootstrap` returns 200**, and opens **Chrome or Edge with `--app=http://127.0.0.1:43127`**. Falls back to the default browser only if Chrome/Edge are missing. Leave the **ChartDesk Server** window open while using the app (closing it stops the app and leaves the UI stuck on loading).
+Double-click the shortcut (or run `scripts\start-chartdesk.bat`). It fetches `origin`, checks out `cursor/chartdesk-desktop`, and fast-forwards (`git pull --ff-only`). It does not reset or discard local edits. Then it runs `npm install` only when `node_modules` is missing or `package.json` / `package-lock.json` changed, starts the dev server in the background (`npm run dev -- -H 127.0.0.1 -p 43127`, log `data/chartdesk-server.log`), waits until **`/api/bootstrap` returns 200**, and opens **Chrome or Edge with `--app=http://127.0.0.1:43127`**. No command prompt stays open. Falls back to the default browser only if Chrome/Edge are missing. Closing the app window leaves the server running; the next double-click replaces it.
 
 ### Update on your PC
 
@@ -53,7 +53,7 @@ Do not run git yourself. Double-click the Desktop **ChartDesk** icon. The launch
 
 See `.env.example`. Default `MARKET_DATA_MODE=delayed` pulls **Yahoo Finance** chart OHLCV (no API key) for KR `.KS`, US tickers, `BTC-USD`/`ETH-USD`, `^GSPC`/`^SOX`. Synthetic symbols (`MAG7`, `VNPA`) and fetch failures fall back to mock. Set `MARKET_DATA_MODE=mock` for offline deterministic candles. `MARKET_DATA_MODE=realtime` uses Yahoo poll (or optional `MARKET_DATA_WS_URL`); `LLM_API_KEY` for draft enrichment.
 
-If `KIWOOM_APP_KEY` and `KIWOOM_APP_SECRET` are both set in `.env.local`, domestic 6-digit symbols use **Kiwoom REST history + websocket trades** (`0B` on port 10000). Other symbols stay on Yahoo or mock. `KIWOOM_QUOTE_HOST=mock` points at the paper host; real and paper keys are not interchangeable. The desktop launcher can keep `MARKET_DATA_MODE=delayed` — Korean quotes still switch to Kiwoom when the keys are present. Restart the ChartDesk Server window after changing keys.
+If `KIWOOM_APP_KEY` and `KIWOOM_APP_SECRET` are both set in `.env.local`, domestic 6-digit symbols use **Kiwoom REST history + websocket trades** (`0B` on port 10000). Other symbols stay on Yahoo or mock. `KIWOOM_QUOTE_HOST=mock` points at the paper host; real and paper keys are not interchangeable. The desktop launcher can keep `MARKET_DATA_MODE=delayed` — Korean quotes still switch to Kiwoom when the keys are present. Close ChartDesk and double-click the desktop icon again after changing keys.
 
 Mock SSE keeps an in-memory **forming bar** and ticks about every `MARKET_DATA_TICK_MS` (default 1000ms) so 1분봉 wicks/body visibly move. Delayed/realtime Yahoo shares one poll subscriber so chart + watchlist show the same last print.
 
