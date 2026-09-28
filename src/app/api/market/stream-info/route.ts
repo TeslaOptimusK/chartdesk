@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createMarketDataAdapter, marketDataMode } from "@/lib/market-data";
+import { kiwoomQuotesConfigured } from "@/lib/kiwoom/quote-rest";
 
 export async function GET() {
   const adapter = createMarketDataAdapter();
@@ -10,6 +11,7 @@ export async function GET() {
     adapter: { id: adapter.id, label: adapter.label, mode: adapter.mode },
     pollMs,
     ssePath: "/api/market/sse",
-    wsConfigured: Boolean(process.env.MARKET_DATA_WS_URL?.trim()),
+    wsConfigured: Boolean(process.env.MARKET_DATA_WS_URL?.trim()) || kiwoomQuotesConfigured(),
+    kiwoom: kiwoomQuotesConfigured(),
   });
 }

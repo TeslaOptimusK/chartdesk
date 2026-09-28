@@ -95,6 +95,7 @@ export function SymbolChartPane({
   const [marketMode, setMarketMode] = useState<"mock" | "delayed" | "realtime">(
     "mock"
   );
+  const liveMaxJumpRef = useRef<number | undefined>(undefined);
   const setFromCandles = useQuotesStore((s) => s.setFromCandles);
   const symbol = symbols.find((s) => s.id === symbolId);
   const compareSymbol = symbols.find((s) => s.id === compareSymbolId);
@@ -147,8 +148,10 @@ export function SymbolChartPane({
     let cancelled = false;
     fetch("/api/market/stream-info")
       .then((r) => r.json())
-      .then((d: { mode?: "mock" | "delayed" | "realtime" }) => {
-        if (!cancelled && d.mode) setMarketMode(d.mode);
+      .then((d: { mode?: "mock" | "delayed" | "realtime"; kiwoom?: boolean }) => {
+        if (cancelled) return;
+        if (d.mode) setMarketMode(d.mode);
+        liveMaxJumpRef.current = d.kiwoom ? 0.35 : undefined;
       })
       .catch(() => undefined);
     return () => {
@@ -182,7 +185,10 @@ export function SymbolChartPane({
           }
           const last = prev[prev.length - 1];
           if (!last) return prev;
-          const merged = applyLiveCandle(prev, next, { streamTf });
+          const merged = applyLiveCandle(prev, next, {
+            streamTf,
+            maxJump: liveMaxJumpRef.current,
+          });
           if (merged === prev) return prev;
           return merged.length > candleLimit
             ? merged.slice(-candleLimit)

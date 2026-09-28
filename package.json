@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test:easychart": "npx --yes tsx --test src/lib/easychart/__tests__/overlay-rules.test.ts src/lib/easychart/__tests__/overlay-phase2.test.ts",
     "test:indicators": "npx --yes tsx --test src/lib/__tests__/stoch-rsi.test.ts",
-    "test:live-candles": "npx --yes tsx --test src/lib/__tests__/live-forming-bar.test.ts"
+    "test:live-candles": "npx --yes tsx --test src/lib/__tests__/live-forming-bar.test.ts",
+    "test:kiwoom": "npx --yes tsx --test src/lib/__tests__/kiwoom-quotes.test.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
