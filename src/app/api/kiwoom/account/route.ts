@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { listBrackets, resumeBracketWatcher } from "@/lib/kiwoom/brackets";
-import { KiwoomQuoteError, kiwoomEndpoints, kiwoomQuotesConfigured } from "@/lib/kiwoom/quote-rest";
+import {
+  KiwoomQuoteError,
+  kiwoomEndpoints,
+  kiwoomNeedsIpRegistration,
+  kiwoomQuotesConfigured,
+  lookupOutboundIp,
+} from "@/lib/kiwoom/quote-rest";
 import { fetchKiwoomAccount } from "@/lib/kiwoom/rest-trade";
 import { readPaperAccount } from "@/lib/storage";
 
@@ -45,6 +51,7 @@ export async function GET() {
     });
   } catch (err) {
     const message = err instanceof KiwoomQuoteError ? err.message : "계좌 조회에 실패했습니다";
+    const outboundIp = kiwoomNeedsIpRegistration(message) ? await lookupOutboundIp() : null;
     return NextResponse.json(
       {
         mode: "rest",
@@ -55,6 +62,7 @@ export async function GET() {
         positions: [],
         brackets,
         error: message,
+        outboundIp,
       },
       { status: 502 }
     );

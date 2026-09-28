@@ -53,6 +53,7 @@ interface AccountView {
   positions: PositionRow[];
   brackets: BracketRow[];
   error?: string;
+  outboundIp?: string | null;
 }
 
 function won(value: number | null | undefined): string {
@@ -234,6 +235,13 @@ export function KiwoomTradeDialog({
             <span>주문가능 {won(account?.orderable)}</span>
           </div>
           {account?.error && <div className="text-rose-300">{account.error}</div>}
+          {account?.outboundIp && (
+            <div className="text-[var(--workspace-fg)]">
+              이 PC의 주소{" "}
+              <span className="font-mono text-rose-200">{account.outboundIp}</span>
+              를 키움 API 사용신청에 추가하세요.
+            </div>
+          )}
         </div>
 
         <div
@@ -297,7 +305,11 @@ export function KiwoomTradeDialog({
             </div>
           ) : (
             <div className="px-2 pb-2 text-[10px] text-[var(--workspace-faint)]">
-              {account == null ? "보유 종목을 불러오는 중" : "보유 종목 없음"}
+              {account == null
+                ? "보유 종목을 불러오는 중"
+                : account.error
+                  ? "계좌를 읽지 못해 보유를 표시하지 못했습니다"
+                  : "보유 종목 없음"}
             </div>
           )}
         </div>
