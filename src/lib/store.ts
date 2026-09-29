@@ -361,6 +361,21 @@ interface WorkspaceState {
   scaleBuyBand: { symbolId: string; low: number; high: number } | null;
   setScaleBuyPicking: (v: boolean) => void;
   setScaleBuyBand: (band: { symbolId: string; low: number; high: number } | null) => void;
+  /** Fill, target, and stop shown on the chart. Dragging the lines writes this. */
+  chartOrderLines: {
+    symbolId: string;
+    entry: number | null;
+    takeProfit: number | null;
+    stopLoss: number | null;
+  } | null;
+  setChartOrderLines: (
+    lines: {
+      symbolId: string;
+      entry: number | null;
+      takeProfit: number | null;
+      stopLoss: number | null;
+    } | null
+  ) => void;
   setReady: (v: boolean) => void;
   hydrate: (data: {
     symbols: SymbolMeta[];
@@ -635,12 +650,14 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   entrySignalsEnabled: true,
   scaleBuyPicking: false,
   scaleBuyBand: null,
+  chartOrderLines: null,
   setEntrySignalsEnabled: (v) => {
     writeEntrySignalsEnabled(v);
     set({ entrySignalsEnabled: v });
   },
   setScaleBuyPicking: (scaleBuyPicking) => set({ scaleBuyPicking }),
   setScaleBuyBand: (scaleBuyBand) => set({ scaleBuyBand }),
+  setChartOrderLines: (chartOrderLines) => set({ chartOrderLines }),
   setIndicatorOnIndicator: (cfg) => {
     writePhase3({ indicatorOnIndicator: cfg });
     set({ indicatorOnIndicator: cfg });
