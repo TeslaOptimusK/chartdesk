@@ -9,7 +9,10 @@ import {
   kstYmdHmsToEpoch,
   mergeSeedBar,
   parseRealTicks,
+  parseUsRealTicks,
   toKiwoomCode,
+  toKiwoomUs,
+  buildUsRegMessage,
 } from "@/lib/kiwoom/quote-protocol";
 import { createQuoteHub, type KiwoomSocket } from "@/lib/kiwoom/quote-hub";
 import {
@@ -54,6 +57,37 @@ describe("kiwoom quote protocol", () => {
     assert.equal(toKiwoomCode("TSLA", "NASDAQ", "us_stock"), null);
     assert.equal(toKiwoomCode("BTCUSDT", undefined, "crypto"), null);
     assert.equal(toKiwoomCode("005930", "NASDAQ", "us_stock"), null);
+  });
+
+  it("maps US names onto the FE feed and reads the last trade", () => {
+    assert.deepEqual(toKiwoomUs("tsla", "NASDAQ", "us_stock"), {
+      jmcode: "TSLA",
+      stex: "ND",
+    });
+    assert.equal(toKiwoomUs("TSLA", "NYSE", "us_stock")?.stex, "NY");
+    assert.equal(toKiwoomUs("005930", "KRX", "kr_stock"), null);
+    const nowSec = Math.floor(NOW_MS / 1000);
+    const ticks = parseUsRealTicks(
+      {
+        trnm: "REAL",
+        data: [
+          {
+            type: "FE",
+            item: { jmcode: "TSLA", stex_tp: "ND" },
+            values: { "10": "372.11", "15": "4", "20": "213015" },
+          },
+        ],
+      },
+      nowSec
+    );
+    assert.equal(ticks.length, 1);
+    assert.equal(ticks[0]!.code, "TSLA");
+    assert.equal(ticks[0]!.price, 372.11);
+    const reg = JSON.parse(
+      buildUsRegMessage(["TSLA"], "1", new Map([["TSLA", "ND"]]))
+    ) as { data: Array<{ type: string[]; item: Array<{ jmcode: string; stex_tp: string }> }> };
+    assert.deepEqual(reg.data[0]!.type, ["FE"]);
+    assert.deepEqual(reg.data[0]!.item[0], { jmcode: "TSLA", stex_tp: "ND" });
   });
 
   it("parses a 0B trade and folds it into the 1-minute bar", () => {

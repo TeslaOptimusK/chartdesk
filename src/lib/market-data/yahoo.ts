@@ -269,7 +269,7 @@ export function createYahooPollSubscriber(
 ): () => void {
   const key = pollKey(query);
   const ms = Math.max(
-    5_000,
+    1_000,
     pollMs ?? Number(process.env.MARKET_DATA_POLL_MS ?? 30_000)
   );
 

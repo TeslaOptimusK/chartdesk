@@ -101,7 +101,10 @@ export function SymbolChartPane({
     "mock"
   );
   const liveMaxJumpRef = useRef<number | undefined>(undefined);
+  const pendingTickRef = useRef<Candle | null>(null);
+  const tickTimerRef = useRef<number | null>(null);
   const setFromCandles = useQuotesStore((s) => s.setFromCandles);
+  const setFromTick = useQuotesStore((s) => s.setFromTick);
   const symbol = symbols.find((s) => s.id === symbolId);
   const compareSymbol = symbols.find((s) => s.id === compareSymbolId);
 
@@ -177,12 +180,20 @@ export function SymbolChartPane({
       try {
         const msg = JSON.parse(ev.data) as { type?: string; candle?: Candle };
         if (msg.type !== "candle" || !msg.candle) return;
-        const expectedKey = `${symbolId}|${streamTf}|${candleLimit}`;
-        setCandles((prev) => {
+        const next = msg.candle;
+        setFromTick(symbolId, next);
+        pendingTickRef.current = next;
+        if (tickTimerRef.current != null) return;
+        tickTimerRef.current = window.setTimeout(() => {
+          tickTimerRef.current = null;
+          const candle = pendingTickRef.current;
+          pendingTickRef.current = null;
+          if (!candle) return;
+          const expectedKey = `${symbolId}|${streamTf}|${candleLimit}`;
+          setCandles((prev) => {
           // Drop updates from a prior TF/symbol EventSource whose setState
           // landed after the series was replaced (causes asc-order crashes).
           if (candleSourceKeyRef.current !== expectedKey) return prev;
-          const next = msg.candle!;
           if (!prev.length) {
             // Wait for the HTTP series for this TF — avoid seeding with a lone
             // 1m SSE bar while Tick synthetic bars are still loading.
@@ -190,7 +201,7 @@ export function SymbolChartPane({
           }
           const last = prev[prev.length - 1];
           if (!last) return prev;
-          const merged = applyLiveCandle(prev, next, {
+          const merged = applyLiveCandle(prev, candle, {
             streamTf,
             maxJump: liveMaxJumpRef.current,
           });
@@ -198,16 +209,21 @@ export function SymbolChartPane({
           return merged.length > candleLimit
             ? merged.slice(-candleLimit)
             : merged;
-        });
+          });
+        }, 120);
       } catch {
         /* ignore */
       }
     };
     return () => {
       cancelled = true;
+      if (tickTimerRef.current != null) {
+        window.clearTimeout(tickTimerRef.current);
+        tickTimerRef.current = null;
+      }
       es.close();
     };
-  }, [interactive, marketMode, symbolId, fetchTf, candleLimit]);
+  }, [interactive, marketMode, symbolId, fetchTf, candleLimit, setFromTick]);
 
   useEffect(() => {
     if (!compareSymbolId || !interactive) {
@@ -429,7 +445,7 @@ export function SymbolChartPane({
           </span>
           <span>{symbol?.nameKo}</span>
           <span className="text-[var(--workspace-faint)]">{symbol?.exchange}</span>
-          <LiveQuoteBadge symbolId={symbolId} />
+          <LiveQuoteBadge symbolId={symbolId} assetClass={symbol?.assetClass} />
         </div>
         <span>
           {customIntervalMinutes

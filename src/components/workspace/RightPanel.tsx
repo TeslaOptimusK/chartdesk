@@ -117,7 +117,7 @@ function WatchlistTab() {
                 {s.nameKo} · {s.exchange}
               </div>
             </button>
-            <LiveQuoteBadge symbolId={s.id} compact />
+            <LiveQuoteBadge symbolId={s.id} assetClass={s.assetClass} compact />
             <button
               type="button"
               className={cn(
