@@ -95,6 +95,8 @@ export function KiwoomTradeDialog({
   symbols: SymbolMeta[];
 }) {
   const scaleBand = useWorkspace((s) => s.scaleBuyBand);
+  const chartOrderLines = useWorkspace((s) => s.chartOrderLines);
+  const setChartOrderLines = useWorkspace((s) => s.setChartOrderLines);
   const setScaleBuyPicking = useWorkspace((s) => s.setScaleBuyPicking);
   const sym = symbols.find((s) => s.id === activeSymbolId);
   const [account, setAccount] = useState<AccountView | null>(null);
@@ -125,6 +127,28 @@ export function KiwoomTradeDialog({
     const id = window.setInterval(loadAccount, 15000);
     return () => window.clearInterval(id);
   }, [open]);
+
+  useEffect(() => {
+    if (!chartOrderLines || chartOrderLines.symbolId !== activeSymbolId) return;
+    const us = sym?.assetClass === "us_stock";
+    const text = (n: number | null) =>
+      n == null ? "" : us ? n.toFixed(2) : String(Math.round(n));
+    if (chartOrderLines.entry != null) setLimit(text(chartOrderLines.entry));
+    setTakeProfit(text(chartOrderLines.takeProfit));
+    setStopLoss(text(chartOrderLines.stopLoss));
+  }, [chartOrderLines, activeSymbolId, sym?.assetClass]);
+
+  const pushLines = (patch: {
+    entry?: number | null;
+    takeProfit?: number | null;
+    stopLoss?: number | null;
+  }) => {
+    const cur =
+      chartOrderLines?.symbolId === activeSymbolId
+        ? chartOrderLines
+        : { symbolId: activeSymbolId, entry: null, takeProfit: null, stopLoss: null };
+    setChartOrderLines({ ...cur, ...patch, symbolId: activeSymbolId });
+  };
 
   useEffect(() => {
     if (!open || !scaleBand || scaleBand.symbolId !== activeSymbolId) return;
@@ -386,7 +410,11 @@ export function KiwoomTradeDialog({
               가격
               <Input
                 value={limit}
-                onChange={(e) => setLimit(e.target.value)}
+                onChange={(e) => {
+                  setLimit(e.target.value);
+                  const n = Number(e.target.value);
+                  if (Number.isFinite(n) && n > 0) pushLines({ entry: n });
+                }}
                 className="mt-1 h-8 text-xs"
                 inputMode="decimal"
               />
@@ -400,7 +428,11 @@ export function KiwoomTradeDialog({
               매도 목표가
               <Input
                 value={takeProfit}
-                onChange={(e) => setTakeProfit(e.target.value)}
+                onChange={(e) => {
+                  setTakeProfit(e.target.value);
+                  const n = Number(e.target.value);
+                  pushLines({ takeProfit: Number.isFinite(n) && n > 0 ? n : null });
+                }}
                 placeholder="비우면 없음"
                 className="mt-1 h-8 text-xs"
                 inputMode="decimal"
@@ -410,7 +442,11 @@ export function KiwoomTradeDialog({
               손절가
               <Input
                 value={stopLoss}
-                onChange={(e) => setStopLoss(e.target.value)}
+                onChange={(e) => {
+                  setStopLoss(e.target.value);
+                  const n = Number(e.target.value);
+                  pushLines({ stopLoss: Number.isFinite(n) && n > 0 ? n : null });
+                }}
                 placeholder="비우면 없음"
                 className="mt-1 h-8 text-xs"
                 inputMode="decimal"

@@ -24,6 +24,8 @@ export interface KiwoomBracket {
   qty: number;
   takeProfit: number | null;
   stopLoss: number | null;
+  /** Chart line for the fill. Null until the line is dragged off the broker average. */
+  entryPrice?: number | null;
   /** Resting scale-in buys. Cancelled when the stop hits. */
   orderNos: BracketOrderRef[];
   armed: boolean;
@@ -71,6 +73,69 @@ function persist(): void {
 
 export async function listBrackets(): Promise<KiwoomBracket[]> {
   return (await load()).map((row) => ({ ...row, orderNos: [...row.orderNos] }));
+}
+
+/** Keep a long bracket on the correct side of the fill. */
+export function separateLongLevels(
+  entry: number,
+  takeProfit: number | null,
+  stopLoss: number | null
+): { entry: number; takeProfit: number | null; stopLoss: number | null } {
+  return {
+    entry,
+    takeProfit: takeProfit != null && takeProfit > entry ? takeProfit : null,
+    stopLoss: stopLoss != null && stopLoss < entry ? stopLoss : null,
+  };
+}
+
+export async function updateBracketLevels(input: {
+  symbolId: string;
+  code: string;
+  qty: number;
+  entryPrice: number | null;
+  takeProfit: number | null;
+  stopLoss: number | null;
+}): Promise<KiwoomBracket> {
+  const rows = await load();
+  const levels =
+    input.entryPrice != null
+      ? separateLongLevels(input.entryPrice, input.takeProfit, input.stopLoss)
+      : {
+          entry: input.entryPrice,
+          takeProfit: input.takeProfit,
+          stopLoss: input.stopLoss,
+        };
+  let row = rows.find(
+    (b) => b.armed && (b.symbolId === input.symbolId || b.code === input.code)
+  );
+  if (!row) {
+    row = {
+      id: randomUUID(),
+      symbolId: input.symbolId,
+      code: input.code,
+      qty: Math.max(1, Math.trunc(input.qty) || 1),
+      takeProfit: levels.takeProfit,
+      stopLoss: levels.stopLoss,
+      entryPrice: levels.entry,
+      orderNos: [],
+      armed: true,
+      firing: false,
+      waitInside: true,
+      createdAt: Date.now(),
+    };
+    rows.push(row);
+  } else {
+    row.entryPrice = levels.entry;
+    row.takeProfit = levels.takeProfit;
+    row.stopLoss = levels.stopLoss;
+    if (input.qty > 0) row.qty = Math.trunc(input.qty);
+    row.waitInside = true;
+    row.firing = false;
+  }
+  persist();
+  await writing;
+  syncSubs();
+  return { ...row, orderNos: row.orderNos.map((o) => ({ ...o })) };
 }
 
 export async function armBracket(input: {
@@ -221,7 +286,7 @@ function syncSubs(): void {
   if (!kiwoomQuotesConfigured()) return;
   const hub = getKiwoomQuoteHub();
   for (const code of wanted) {
-    if (unsubs.has(code)) continue;
+    if (!/^\d{6}$/.test(code) || unsubs.has(code)) continue;
     unsubs.set(
       code,
       hub.subscribe(code, (tick) => {

@@ -10,7 +10,7 @@ import {
   parseUsLedger,
   parseUsValuation,
 } from "@/lib/kiwoom/rest-trade";
-import { bracketAction } from "@/lib/kiwoom/brackets";
+import { bracketAction, separateLongLevels } from "@/lib/kiwoom/brackets";
 import { buildScaleInOrders, krxTickSize, roundToTick } from "@/lib/kiwoom/scale-plan";
 
 describe("krx ticks", () => {
@@ -58,6 +58,19 @@ describe("bracket trigger", () => {
     assert.equal(bracketAction(81000, bracket), "take");
     assert.equal(bracketAction(75000, bracket), null);
     assert.equal(bracketAction(69000, { ...bracket, firing: true }), null);
+  });
+
+  it("drops a target or stop that crosses the fill", () => {
+    assert.deepEqual(separateLongLevels(100, 90, 110), {
+      entry: 100,
+      takeProfit: null,
+      stopLoss: null,
+    });
+    assert.deepEqual(separateLongLevels(100, 120, 80), {
+      entry: 100,
+      takeProfit: 120,
+      stopLoss: 80,
+    });
   });
 });
 
