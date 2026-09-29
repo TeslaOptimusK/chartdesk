@@ -147,6 +147,114 @@ export function buildRemoveMessage(codes: string[]): string {
   });
 }
 
+export type KiwoomUsExchange = "ND" | "NY" | "NA";
+
+/** US cash equity for the FE realtime feed. ND=NASDAQ, NY=NYSE, NA=AMEX. */
+export function toKiwoomUs(
+  ticker: string,
+  exchange?: string,
+  assetClass?: string
+): { jmcode: string; stex: KiwoomUsExchange } | null {
+  if (assetClass === "kr_stock" || assetClass === "crypto") return null;
+  const jmcode = ticker.trim().toUpperCase();
+  if (!/^[A-Z][A-Z.\-]{0,9}$/.test(jmcode) || /^\d{6}$/.test(jmcode)) return null;
+  const ex = (exchange ?? "").toUpperCase();
+  const us =
+    assetClass === "us_stock" ||
+    ex.includes("NAS") ||
+    ex.includes("NYS") ||
+    ex.includes("AMEX") ||
+    ex === "ND" ||
+    ex === "NY" ||
+    ex === "NA";
+  if (!us) return null;
+  const stex: KiwoomUsExchange =
+    ex.includes("NYS") || ex === "NY" || ex === "NYSE"
+      ? "NY"
+      : ex.includes("AMEX") || ex === "NA"
+        ? "NA"
+        : "ND";
+  return { jmcode, stex };
+}
+
+export function buildUsRegMessage(
+  codes: string[],
+  refresh: "0" | "1",
+  stexByCode: ReadonlyMap<string, KiwoomUsExchange>
+): string {
+  return JSON.stringify({
+    trnm: "REG",
+    grp_no: "1",
+    refresh,
+    data: [
+      {
+        item: codes.map((code) => ({
+          jmcode: code,
+          stex_tp: stexByCode.get(code) ?? "ND",
+        })),
+        type: ["FE"],
+      },
+    ],
+  });
+}
+
+export function buildUsRemoveMessage(
+  codes: string[],
+  stexByCode: ReadonlyMap<string, KiwoomUsExchange>
+): string {
+  return JSON.stringify({
+    trnm: "REMOVE",
+    grp_no: "1",
+    data: [
+      {
+        item: codes.map((code) => ({
+          jmcode: code,
+          stex_tp: stexByCode.get(code) ?? "ND",
+        })),
+        type: ["FE"],
+      },
+    ],
+  });
+}
+
+function usItemCode(item: unknown): string {
+  if (typeof item === "string") return item.trim().toUpperCase();
+  const row = asRecord(item);
+  if (!row) return "";
+  return String(row.jmcode ?? row.item ?? "")
+    .trim()
+    .toUpperCase();
+}
+
+/** FE 미국주식 실시간 체결가. Field 10 is the last trade, same as domestic 0B. */
+export function parseUsRealTicks(message: unknown, nowSec: number): KiwoomTick[] {
+  const root = asRecord(message);
+  if (!root || root.trnm !== "REAL") return [];
+  const data = Array.isArray(root.data) ? root.data : [];
+  const out: KiwoomTick[] = [];
+  for (const entry of data) {
+    const row = asRecord(entry);
+    if (!row || String(row.type) !== "FE") continue;
+    const values = asRecord(row.values) ?? row;
+    const price = parseKiwoomAbs(values["10"] ?? values.cur_prc);
+    if (price == null || price <= 0) continue;
+    const code = usItemCode(row.item) || usItemCode(values.jmcode);
+    if (!/^[A-Z][A-Z.\-]{0,9}$/.test(code)) continue;
+    const epochSec = parseKiwoomTime(values["20"] ?? values["51020"], nowSec) ?? nowSec;
+    out.push({
+      code,
+      epochSec,
+      price,
+      tickVolume: parseKiwoomAbs(values["15"]) ?? 0,
+      accVolume: parseKiwoomAbs(values["13"]),
+      dayOpen: parseKiwoomAbs(values["16"]),
+      dayHigh: parseKiwoomAbs(values["17"]),
+      dayLow: parseKiwoomAbs(values["18"]),
+    });
+  }
+  return out;
+}
+
 export function isPingMessage(parsed: unknown): boolean {
   const row = asRecord(parsed);
   return row?.trnm === "PING";

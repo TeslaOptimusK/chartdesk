@@ -225,6 +225,8 @@ export function ChartCanvas({
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const mainSeriesRef = useRef<AnySeries | null>(null);
+  /** Skip a full indicator rebuild when only the forming bar's price moved. */
+  const livePaintRef = useRef("");
   const seriesMarkersRef = useRef<MarkerPlugin | null>(null);
   const seriesMarkersOwnerRef = useRef<AnySeries | null>(null);
   const volumeRef = useRef<ISeriesApi<"Histogram"> | null>(null);
@@ -574,6 +576,44 @@ export function ChartCanvas({
     }
 
     const bars = sanitizeCandleOrder(displayCandles);
+    const lastBar = bars[bars.length - 1];
+    const paintKey = `${symbolId}|${timeframe}|${chartStyle}|${bars.length}|${bars[0]?.time ?? ""}|${lastBar?.time ?? ""}|${indicators.join(",")}|${rangePreset}`;
+    if (
+      lastBar &&
+      livePaintRef.current === paintKey &&
+      (chartStyle === "candle" || chartStyle === "bar")
+    ) {
+      try {
+        const bar = {
+          time: lastBar.time as Time,
+          open: lastBar.open,
+          high: lastBar.high,
+          low: lastBar.low,
+          close: lastBar.close,
+        };
+        if (chartStyle === "bar") (main as ISeriesApi<"Bar">).update(bar);
+        else (main as ISeriesApi<"Candlestick">).update(bar);
+        volumeRef.current?.update({
+          time: lastBar.time as Time,
+          value: lastBar.volume,
+          color:
+            lastBar.close >= lastBar.open
+              ? "rgba(45,212,168,0.45)"
+              : "rgba(240,113,120,0.45)",
+        });
+        setLegend({
+          time: lastBar.time,
+          open: lastBar.open,
+          high: lastBar.high,
+          low: lastBar.low,
+          close: lastBar.close,
+          volume: lastBar.volume,
+        });
+        return;
+      } catch {
+        livePaintRef.current = "";
+      }
+    }
     main.applyOptions({
       priceFormat: {
         type: "price",
@@ -1129,6 +1169,7 @@ export function ChartCanvas({
         volume: last.volume,
       });
     }
+    livePaintRef.current = paintKey;
   }, [
     symbolId,
     displayCandles,

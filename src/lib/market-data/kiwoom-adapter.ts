@@ -5,9 +5,16 @@ import {
   foldTickIntoBar,
   mergeSeedBar,
   toKiwoomCode,
+  toKiwoomUs,
   type KiwoomTick,
 } from "@/lib/kiwoom/quote-protocol";
-import { getKiwoomQuoteHub, type KiwoomQuoteHub } from "@/lib/kiwoom/quote-hub";
+import {
+  getKiwoomQuoteHub,
+  getKiwoomUsQuoteHub,
+  noteKiwoomUsExchange,
+  type KiwoomQuoteHub,
+} from "@/lib/kiwoom/quote-hub";
+import { createYahooPollSubscriber } from "@/lib/market-data/yahoo";
 
 interface BarSession {
   forming: Candle | null;
@@ -24,9 +31,71 @@ function emit(session: BarSession, candle: Candle) {
 }
 
 /**
- * Korean 6-digit names use Kiwoom REST history + 0B websocket ticks.
- * Everything else stays on the wrapped adapter (Yahoo or mock).
+ * Korean names use Kiwoom 0B ticks. US names use the FE trade feed.
+ * History for US stays on the wrapped adapter. A failed socket falls back
+ * to a 2s poll instead of the 30s delayed quote.
  */
+function bindLiveSession(
+  key: string,
+  code: string,
+  query: CandleQuery,
+  onCandle: (candle: Candle) => void,
+  hub: KiwoomQuoteHub,
+  seed: () => Promise<Candle[]>
+): () => void {
+  let session = sessions.get(key);
+  if (!session) {
+    session = {
+      forming: null,
+      listeners: new Set(),
+      unsubHub: null,
+      fallbackUnsub: null,
+    };
+    sessions.set(key, session);
+    const current = session;
+    current.unsubHub = hub.subscribe(code, (tick: KiwoomTick) => {
+      if (sessions.get(key) !== current) return;
+      current.forming = foldTickIntoBar(current.forming, tick, query.timeframe);
+      emit(current, current.forming);
+    });
+    void seed()
+      .then((bars) => {
+        if (sessions.get(key) !== current) return;
+        current.forming = mergeSeedBar(bars.at(-1) ?? null, current.forming);
+        if (current.forming) emit(current, current.forming);
+      })
+      .catch(() => undefined);
+    void hub.whenLoggedIn(12_000).then((ok) => {
+      if (sessions.get(key) !== current || ok || current.fallbackUnsub) return;
+      if (current.unsubHub) {
+        current.unsubHub();
+        current.unsubHub = null;
+      }
+      current.fallbackUnsub = createYahooPollSubscriber(
+        query,
+        (candle) => {
+          if (sessions.get(key) !== current) return;
+          current.forming = candle;
+          emit(current, candle);
+        },
+        2_000
+      );
+    });
+  }
+
+  session.listeners.add(onCandle);
+  if (session.forming) onCandle({ ...session.forming });
+
+  return () => {
+    const current = sessions.get(key);
+    if (!current) return;
+    current.listeners.delete(onCandle);
+    if (current.listeners.size > 0) return;
+    current.unsubHub?.();
+    current.fallbackUnsub?.();
+    sessions.delete(key);
+  };
+}
 export class KiwoomRoutedMarketDataAdapter implements MarketDataAdapter {
   readonly id = "kiwoom";
   readonly label = "키움 실시간";
@@ -52,60 +121,29 @@ export class KiwoomRoutedMarketDataAdapter implements MarketDataAdapter {
 
   subscribe(query: CandleQuery, onCandle: (candle: Candle) => void): () => void {
     const code = toKiwoomCode(query.ticker, query.exchange, query.assetClass);
-    if (!code) {
-      return this.fallback.subscribe?.(query, onCandle) ?? (() => undefined);
+    if (code) {
+      return bindLiveSession(
+        `${code}|${query.timeframe}`,
+        code,
+        query,
+        onCandle,
+        this.hub,
+        () => fetchKiwoomCandles(code, { ...query, limit: 2 })
+      );
     }
-
-    const key = `${code}|${query.timeframe}`;
-    let session = sessions.get(key);
-    if (!session) {
-      session = {
-        forming: null,
-        listeners: new Set(),
-        unsubHub: null,
-        fallbackUnsub: null,
-      };
-      sessions.set(key, session);
-      const current = session;
-      current.unsubHub = this.hub.subscribe(code, (tick: KiwoomTick) => {
-        if (sessions.get(key) !== current) return;
-        current.forming = foldTickIntoBar(current.forming, tick, query.timeframe);
-        emit(current, current.forming);
-      });
-      void fetchKiwoomCandles(code, { ...query, limit: 2 })
-        .then((bars) => {
-          if (sessions.get(key) !== current) return;
-          current.forming = mergeSeedBar(bars.at(-1) ?? null, current.forming);
-          if (current.forming) emit(current, current.forming);
-        })
-        .catch(() => undefined);
-      void this.hub.whenLoggedIn(12_000).then((ok) => {
-        if (sessions.get(key) !== current || ok || current.fallbackUnsub) return;
-        if (current.unsubHub) {
-          current.unsubHub();
-          current.unsubHub = null;
-        }
-        current.fallbackUnsub =
-          this.fallback.subscribe?.(query, (candle) => {
-            if (sessions.get(key) !== current) return;
-            current.forming = candle;
-            emit(current, candle);
-          }) ?? null;
-      });
+    const us = toKiwoomUs(query.ticker, query.exchange, query.assetClass);
+    if (us) {
+      noteKiwoomUsExchange(us.jmcode, us.stex);
+      return bindLiveSession(
+        `US|${us.jmcode}|${query.timeframe}`,
+        us.jmcode,
+        query,
+        onCandle,
+        getKiwoomUsQuoteHub(),
+        () => this.fallback.getCandles({ ...query, limit: 2 })
+      );
     }
-
-    session.listeners.add(onCandle);
-    if (session.forming) onCandle({ ...session.forming });
-
-    return () => {
-      const current = sessions.get(key);
-      if (!current) return;
-      current.listeners.delete(onCandle);
-      if (current.listeners.size > 0) return;
-      current.unsubHub?.();
-      current.fallbackUnsub?.();
-      sessions.delete(key);
-    };
+    return this.fallback.subscribe?.(query, onCandle) ?? (() => undefined);
   }
 }
 

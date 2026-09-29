@@ -2,9 +2,13 @@ import {
   buildLoginMessage,
   buildRegMessage,
   buildRemoveMessage,
+  buildUsRegMessage,
+  buildUsRemoveMessage,
   isPingMessage,
   parseRealTicks,
+  parseUsRealTicks,
   type KiwoomTick,
+  type KiwoomUsExchange,
 } from "@/lib/kiwoom/quote-protocol";
 import { issueKiwoomToken, kiwoomEndpoints } from "@/lib/kiwoom/quote-rest";
 
@@ -22,6 +26,9 @@ export interface QuoteHubOptions {
   fetchToken?: () => Promise<string>;
   nowMs?: () => number;
   wsUrl?: string;
+  buildReg?: (codes: string[], refresh: "0" | "1") => string;
+  buildRemove?: (codes: string[]) => string;
+  parseTicks?: (message: unknown, nowSec: number) => KiwoomTick[];
 }
 
 export interface KiwoomQuoteHub {
@@ -56,6 +63,9 @@ export function createQuoteHub(opts: QuoteHubOptions = {}): KiwoomQuoteHub {
   const fetchToken = opts.fetchToken ?? (() => issueKiwoomToken());
   const nowMs = opts.nowMs ?? Date.now;
   const wsUrl = opts.wsUrl ?? kiwoomEndpoints().ws;
+  const buildReg = opts.buildReg ?? buildRegMessage;
+  const buildRemove = opts.buildRemove ?? buildRemoveMessage;
+  const parseTicks = opts.parseTicks ?? parseRealTicks;
 
   const codes = new Map<string, Set<TickListener>>();
   const loginWaiters: LoginWaiter[] = [];
@@ -111,7 +121,7 @@ export function createQuoteHub(opts: QuoteHubOptions = {}): KiwoomQuoteHub {
   function sendFullReg() {
     if (!loggedIn || !socket || codes.size === 0) return;
     const items = [...codes.keys()].slice(0, 100);
-    socket.send(buildRegMessage(items, "1"));
+    socket.send(buildReg(items, "1"));
   }
 
   function failConnect(auth: boolean) {
@@ -231,7 +241,7 @@ export function createQuoteHub(opts: QuoteHubOptions = {}): KiwoomQuoteHub {
     }
     if (row.trnm === "REAL") {
       const nowSec = Math.floor(nowMs() / 1000);
-      for (const tick of parseRealTicks(parsed, nowSec)) {
+      for (const tick of parseTicks(parsed, nowSec)) {
         const listeners = codes.get(tick.code);
         if (!listeners) continue;
         for (const fn of listeners) fn(tick);
@@ -256,7 +266,7 @@ export function createQuoteHub(opts: QuoteHubOptions = {}): KiwoomQuoteHub {
       }
       set.add(onTick);
       if (loggedIn && socket && first) {
-        socket.send(buildRegMessage([code], "0"));
+        socket.send(buildReg([code], "0"));
       } else {
         ensure();
       }
@@ -268,7 +278,7 @@ export function createQuoteHub(opts: QuoteHubOptions = {}): KiwoomQuoteHub {
         codes.delete(code);
         if (loggedIn && socket) {
           try {
-            socket.send(buildRemoveMessage([code]));
+            socket.send(buildRemove([code]));
           } catch {
             /* closing */
           }
@@ -303,6 +313,8 @@ export function createQuoteHub(opts: QuoteHubOptions = {}): KiwoomQuoteHub {
 
 const globalHub = globalThis as typeof globalThis & {
   __chartdeskKiwoomHub?: KiwoomQuoteHub;
+  __chartdeskKiwoomUsHub?: KiwoomQuoteHub;
+  __chartdeskKiwoomUsStex?: Map<string, KiwoomUsExchange>;
 };
 
 export function getKiwoomQuoteHub(): KiwoomQuoteHub {
@@ -315,4 +327,36 @@ export function getKiwoomQuoteHub(): KiwoomQuoteHub {
 export function resetKiwoomQuoteHubForTests(): void {
   globalHub.__chartdeskKiwoomHub?.close();
   delete globalHub.__chartdeskKiwoomHub;
+  globalHub.__chartdeskKiwoomUsHub?.close();
+  delete globalHub.__chartdeskKiwoomUsHub;
+  delete globalHub.__chartdeskKiwoomUsStex;
+}
+
+function usWsUrl(): string {
+  const domestic = kiwoomEndpoints().ws;
+  if (domestic.includes("/api/dostk/websocket")) {
+    return domestic.replace("/api/dostk/websocket", "/api/us/websocket");
+  }
+  return domestic.replace(/\/[^/]*$/, "/api/us/websocket");
+}
+
+/** Remember NASDAQ/NYSE/AMEX before subscribe so the FE register packet is complete. */
+export function noteKiwoomUsExchange(jmcode: string, stex: KiwoomUsExchange): void {
+  const map = globalHub.__chartdeskKiwoomUsStex ?? new Map<string, KiwoomUsExchange>();
+  globalHub.__chartdeskKiwoomUsStex = map;
+  map.set(jmcode, stex);
+}
+
+export function getKiwoomUsQuoteHub(): KiwoomQuoteHub {
+  if (!globalHub.__chartdeskKiwoomUsHub) {
+    const stexByCode = globalHub.__chartdeskKiwoomUsStex ?? new Map<string, KiwoomUsExchange>();
+    globalHub.__chartdeskKiwoomUsStex = stexByCode;
+    globalHub.__chartdeskKiwoomUsHub = createQuoteHub({
+      wsUrl: usWsUrl(),
+      buildReg: (codes, refresh) => buildUsRegMessage(codes, refresh, stexByCode),
+      buildRemove: (codes) => buildUsRemoveMessage(codes, stexByCode),
+      parseTicks: parseUsRealTicks,
+    });
+  }
+  return globalHub.__chartdeskKiwoomUsHub;
 }
