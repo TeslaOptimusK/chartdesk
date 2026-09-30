@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { SessionQuoteView } from "@/lib/session-quote";
 import type { Candle } from "@/lib/types";
 
 export interface LiveQuote {
@@ -10,6 +11,8 @@ export interface LiveQuote {
   /** Forming / last bar unix time */
   barTime: number;
   updatedAt: number;
+  /** Official close line and pre-market line. Null until the session quote arrives. */
+  session: SessionQuoteView | null;
 }
 
 interface QuotesState {
@@ -18,6 +21,8 @@ interface QuotesState {
   setFromCandles: (symbolId: string, candles: Candle[]) => void;
   /** Apply a live forming-bar tick. */
   setFromTick: (symbolId: string, candle: Candle) => void;
+  /** Replace the percent base with the previous session close. */
+  setSessionQuote: (symbolId: string, session: SessionQuoteView) => void;
   clearQuote: (symbolId: string) => void;
 }
 
@@ -31,7 +36,34 @@ export const useQuotesStore = create<QuotesState>((set, get) => ({
 
   setFromCandles: (symbolId, candles) => {
     if (!candles.length) return;
+    const prevQuote = get().quotes[symbolId];
     const lastBar = candles[candles.length - 1]!;
+    if (prevQuote?.session?.priceKind === "close") {
+      set({
+        quotes: {
+          ...get().quotes,
+          [symbolId]: { ...prevQuote, barTime: lastBar.time },
+        },
+      });
+      return;
+    }
+    if (prevQuote?.session?.priceKind === "live") {
+      const base = prevQuote.session.changeBase;
+      set({
+        quotes: {
+          ...get().quotes,
+          [symbolId]: {
+            ...prevQuote,
+            last: lastBar.close,
+            prevClose: base,
+            changePct: pct(lastBar.close, base),
+            barTime: lastBar.time,
+            updatedAt: Date.now(),
+          },
+        },
+      });
+      return;
+    }
     const prevBar = candles.length > 1 ? candles[candles.length - 2]! : null;
     const prevClose = prevBar?.close ?? lastBar.open;
     const last = lastBar.close;
@@ -45,6 +77,7 @@ export const useQuotesStore = create<QuotesState>((set, get) => ({
           changePct: pct(last, prevClose),
           barTime: lastBar.time,
           updatedAt: Date.now(),
+          session: null,
         },
       },
     });
@@ -52,6 +85,24 @@ export const useQuotesStore = create<QuotesState>((set, get) => ({
 
   setFromTick: (symbolId, candle) => {
     const prev = get().quotes[symbolId];
+    if (prev?.session?.priceKind === "close") return;
+    if (prev?.session?.priceKind === "live") {
+      const base = prev.session.changeBase;
+      set({
+        quotes: {
+          ...get().quotes,
+          [symbolId]: {
+            ...prev,
+            last: candle.close,
+            prevClose: base,
+            changePct: pct(candle.close, base),
+            barTime: candle.time,
+            updatedAt: Date.now(),
+          },
+        },
+      });
+      return;
+    }
     let prevClose = candle.open;
     if (prev) {
       if (prev.barTime === candle.time) {
@@ -72,6 +123,27 @@ export const useQuotesStore = create<QuotesState>((set, get) => ({
           changePct: pct(last, prevClose),
           barTime: candle.time,
           updatedAt: Date.now(),
+          session: prev?.session ?? null,
+        },
+      },
+    });
+  },
+
+  setSessionQuote: (symbolId, session) => {
+    const prev = get().quotes[symbolId];
+    const keepLive = session.priceKind === "live" && prev?.session?.priceKind === "live";
+    const last = keepLive ? prev.last : session.displayPrice;
+    set({
+      quotes: {
+        ...get().quotes,
+        [symbolId]: {
+          symbolId,
+          last,
+          prevClose: session.changeBase,
+          changePct: pct(last, session.changeBase),
+          barTime: prev?.barTime ?? 0,
+          updatedAt: prev?.updatedAt ?? Date.now(),
+          session,
         },
       },
     });

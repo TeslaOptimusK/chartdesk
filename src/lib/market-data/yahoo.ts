@@ -167,6 +167,77 @@ function parseYahooChart(json: unknown): Candle[] {
   return bars;
 }
 
+export interface YahooSessionSnapshot {
+  closes: { time: number; close: number }[];
+  livePrice: number | null;
+  prePrice: number | null;
+  marketState: string | null;
+}
+
+function numOrNull(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+/** Daily closes plus the live and pre-market prices Yahoo prints in chart meta. */
+export async function fetchYahooSessionSnapshot(
+  ticker: string,
+  exchange?: string,
+  assetClass?: string
+): Promise<YahooSessionSnapshot | null> {
+  const yahooSym = toYahooSymbol(ticker, exchange, assetClass);
+  if (!yahooSym) return null;
+  const url = new URL(
+    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSym)}`
+  );
+  url.searchParams.set("interval", "1d");
+  url.searchParams.set("range", "10d");
+  url.searchParams.set("includePrePost", "true");
+  try {
+    const res = await fetch(url.toString(), {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (compatible; ChartDesk/1.0; +https://github.com/TeslaOptimusK/chartdesk)",
+        Accept: "application/json",
+      },
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    const json = (await res.json()) as {
+      chart?: {
+        result?: Array<{
+          timestamp?: number[];
+          indicators?: { quote?: Array<{ close?: Array<number | null> }> };
+          meta?: {
+            regularMarketPrice?: number;
+            preMarketPrice?: number;
+            marketState?: string;
+          };
+        }>;
+      };
+    };
+    const result = json.chart?.result?.[0];
+    if (!result) return null;
+    const times = result.timestamp ?? [];
+    const closes = result.indicators?.quote?.[0]?.close ?? [];
+    const bars: { time: number; close: number }[] = [];
+    for (let i = 0; i < times.length; i++) {
+      const time = times[i];
+      const close = closes[i];
+      if (time == null || close == null || !Number.isFinite(close) || close <= 0) continue;
+      bars.push({ time, close });
+    }
+    const meta = result.meta;
+    return {
+      closes: bars,
+      livePrice: numOrNull(meta?.regularMarketPrice),
+      prePrice: numOrNull(meta?.preMarketPrice),
+      marketState: typeof meta?.marketState === "string" ? meta.marketState : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Fetch OHLCV from Yahoo Finance chart API (no API key).
  * Returns null when unmapped or the request fails.

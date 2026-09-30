@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import {
   formatChangePct,
@@ -8,53 +7,24 @@ import {
   useQuotesStore,
   type LiveQuote,
 } from "@/lib/quotes-store";
+import type { SessionQuoteView } from "@/lib/session-quote";
 import type { AssetClass } from "@/lib/types";
 
-function clockParts(now: Date, timeZone: string): { weekday: string; minutes: number } {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    weekday: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(now);
-  const weekday = parts.find((p) => p.type === "weekday")?.value ?? "";
-  const hour = Number(parts.find((p) => p.type === "hour")?.value ?? "0");
-  const minute = Number(parts.find((p) => p.type === "minute")?.value ?? "0");
-  return { weekday, minutes: hour * 60 + minute };
+function kindLabel(session: SessionQuoteView | null | undefined): string {
+  if (!session || session.phase === "always") return "";
+  if (session.priceKind === "live") return "현재가";
+  return "종가";
 }
 
-function sessionOpen(assetClass: AssetClass | undefined, now: Date): boolean {
-  if (assetClass === "us_stock") {
-    const { weekday, minutes } = clockParts(now, "America/New_York");
-    if (weekday === "Sat" || weekday === "Sun") return false;
-    return minutes >= 9 * 60 + 30 && minutes < 16 * 60;
-  }
-  if (assetClass === "kr_stock") {
-    const { weekday, minutes } = clockParts(now, "Asia/Seoul");
-    if (weekday === "Sat" || weekday === "Sun") return false;
-    return minutes >= 9 * 60 && minutes < 15 * 60 + 30;
-  }
-  return false;
-}
-
-function sessionLabel(
-  assetClass: AssetClass | undefined,
-  updatedAt: number | undefined,
-  now: Date
-): string {
-  const open = sessionOpen(assetClass, now);
-  const age = updatedAt == null ? Number.POSITIVE_INFINITY : now.getTime() - updatedAt;
-  if (open && age < 4_000) return "실시간";
-  if (open) return "시세 대기";
-  return "장마감";
+function preChange(session: SessionQuoteView): number | null {
+  if (session.preLine == null || session.closeLine == null || session.closeLine === 0) return null;
+  return ((session.preLine - session.closeLine) / session.closeLine) * 100;
 }
 
 export function LiveQuoteBadge({
   symbolId,
   className,
   compact = false,
-  assetClass,
 }: {
   symbolId: string;
   className?: string;
@@ -63,12 +33,6 @@ export function LiveQuoteBadge({
   assetClass?: AssetClass;
 }) {
   const quote = useQuotesStore((s) => s.quotes[symbolId] as LiveQuote | undefined);
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const id = window.setInterval(() => setNow(new Date()), 1000);
-    return () => window.clearInterval(id);
-  }, []);
-  const session = sessionLabel(assetClass, quote?.updatedAt, now);
   if (!quote) {
     return (
       <span
@@ -85,6 +49,8 @@ export function LiveQuoteBadge({
 
   const up = quote.changePct >= 0;
   const color = up ? "text-emerald-300" : "text-rose-300";
+  const label = kindLabel(quote.session);
+  const prePct = quote.session ? preChange(quote.session) : null;
 
   if (compact) {
     return (
@@ -98,8 +64,13 @@ export function LiveQuoteBadge({
         </div>
         <div className={cn("text-[10px]", color)}>
           {formatChangePct(quote.changePct)}
-          <span className="ml-1 text-[var(--workspace-faint)]">{session}</span>
+          {label && <span className="ml-1 text-[var(--workspace-faint)]">{label}</span>}
         </div>
+        {quote.session?.preLine != null && prePct != null && (
+          <div className={cn("text-[10px]", prePct >= 0 ? "text-emerald-300" : "text-rose-300")}>
+            프리 {formatQuotePrice(quote.session.preLine)} {formatChangePct(prePct)}
+          </div>
+        )}
       </div>
     );
   }
@@ -116,7 +87,12 @@ export function LiveQuoteBadge({
       <span className={cn("text-xs", color)}>
         {formatChangePct(quote.changePct)}
       </span>
-      <span className="text-[10px] text-[var(--workspace-faint)]">{session}</span>
+      {label && <span className="text-[10px] text-[var(--workspace-faint)]">{label}</span>}
+      {quote.session?.preLine != null && prePct != null && (
+        <span className={cn("text-[10px]", prePct >= 0 ? "text-emerald-300" : "text-rose-300")}>
+          프리 {formatQuotePrice(quote.session.preLine)} {formatChangePct(prePct)}
+        </span>
+      )}
     </span>
   );
 }
