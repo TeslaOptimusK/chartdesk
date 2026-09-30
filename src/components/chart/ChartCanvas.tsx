@@ -25,6 +25,7 @@ import {
   type ChartApiBundle,
 } from "@/components/chart/DrawingOverlay";
 import { PositionLinesOverlay } from "@/components/chart/PositionLinesOverlay";
+import { SessionPriceLines } from "@/components/chart/SessionPriceLines";
 import { ScaleBuyOverlay } from "@/components/chart/ScaleBuyOverlay";
 import { SignalLabelOverlay } from "@/components/chart/SignalLabelOverlay";
 import { CHART_LABEL_FAMILY } from "@/components/chart/chart-label";
@@ -1385,6 +1386,7 @@ export function ChartCanvas({
       />
       <ScaleBuyOverlay chartApi={chartApi} symbolId={symbolId} />
       <PositionLinesOverlay chartApi={chartApi} symbolId={symbolId} />
+      <SessionPriceLines chartApi={chartApi} symbolId={symbolId} />
       <SignalLabelOverlay
         chartApi={chartApi}
         signals={entrySignals}
