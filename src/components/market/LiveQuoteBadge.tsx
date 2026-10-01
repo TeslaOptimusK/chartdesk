@@ -16,6 +16,16 @@ function kindLabel(session: SessionQuoteView | null | undefined): string {
   return "종가";
 }
 
+function formatVenuePrice(n: number, ccy?: string): string {
+  if (ccy === "KRW") return Math.round(n).toLocaleString("ko-KR");
+  if (ccy === "USDT") {
+    if (n >= 1000) return n.toLocaleString("en-US", { maximumFractionDigits: 2 });
+    if (n >= 1) return n.toFixed(2);
+    return n.toPrecision(4);
+  }
+  return formatQuotePrice(n);
+}
+
 function preChange(session: SessionQuoteView): number | null {
   if (session.preLine == null || session.closeLine == null || session.closeLine === 0) return null;
   return ((session.preLine - session.closeLine) / session.closeLine) * 100;
@@ -60,7 +70,7 @@ export function LiveQuoteBadge({
         data-symbol={symbolId}
       >
         <div className={cn("text-sm font-medium", color)}>
-          {formatQuotePrice(quote.last)}
+          {formatVenuePrice(quote.last, quote.quoteCcy)}
         </div>
         <div className={cn("text-[10px]", color)}>
           {formatChangePct(quote.changePct)}
@@ -82,7 +92,7 @@ export function LiveQuoteBadge({
       data-symbol={symbolId}
     >
       <span className={cn("text-sm font-semibold", color)}>
-        {formatQuotePrice(quote.last)}
+        {formatVenuePrice(quote.last, quote.quoteCcy)}
       </span>
       <span className={cn("text-xs", color)}>
         {formatChangePct(quote.changePct)}

@@ -10,7 +10,15 @@ export function SessionQuoteBridge() {
   const symbols = useWorkspace((s) => s.symbols);
   const ready = useWorkspace((s) => s.ready);
   const setSessionQuote = useQuotesStore((s) => s.setSessionQuote);
-  const idsKey = useMemo(() => symbols.map((s) => s.id).sort().join(","), [symbols]);
+  const idsKey = useMemo(
+    () =>
+      symbols
+        .filter((symbol) => symbol.assetClass !== "crypto")
+        .map((symbol) => symbol.id)
+        .sort()
+        .join(","),
+    [symbols]
+  );
 
   useEffect(() => {
     if (!ready || !idsKey) return;

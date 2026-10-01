@@ -20,6 +20,7 @@ import {
 } from "@/lib/entry-signals";
 import { cn } from "@/lib/utils";
 import { retainChartQuote, useQuotesStore } from "@/lib/quotes-store";
+import { ExchangeMark } from "@/components/market/ExchangeMark";
 import { LiveQuoteBadge } from "@/components/market/LiveQuoteBadge";
 import { alignSeedDrawings } from "@/lib/seed";
 import { applyLiveCandle } from "@/lib/market-data/mock-adapter";
@@ -440,6 +441,7 @@ export function SymbolChartPane({
         data-feature="symbol.header"
       >
         <div className="flex min-w-0 flex-wrap items-baseline gap-2">
+          {symbol?.exchange && <ExchangeMark exchange={symbol.exchange} />}
           <span className="font-semibold tracking-wide text-[var(--workspace-fg)]">
             {symbol?.ticker ?? symbolId}
           </span>

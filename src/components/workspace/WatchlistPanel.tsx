@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { ExchangeMark } from "@/components/market/ExchangeMark";
 import { LiveQuoteBadge } from "@/components/market/LiveQuoteBadge";
 import { useWorkspace } from "@/lib/store";
 import type { AssetClass, SymbolMeta, WatchlistSection } from "@/lib/types";
@@ -205,10 +206,13 @@ export function WatchlistPanel() {
                           className="flex w-full items-center justify-between px-2 py-1.5 text-left text-[11px] hover:bg-white/5 disabled:opacity-50"
                           onClick={() => void addToSection(section.id, symbol)}
                         >
-                          <span>
-                            <span className="font-medium text-[var(--workspace-fg)]">{symbol.ticker}</span>
-                            <span className="ml-1 text-[var(--workspace-muted)]">
-                              {symbol.nameKo} · {symbol.exchange}
+                          <span className="flex min-w-0 items-center gap-1.5">
+                            <ExchangeMark exchange={symbol.exchange} />
+                            <span className="min-w-0">
+                              <span className="font-medium text-[var(--workspace-fg)]">{symbol.ticker}</span>
+                              <span className="ml-1 text-[var(--workspace-muted)]">
+                                {symbol.nameKo} · {symbol.exchange}
+                              </span>
                             </span>
                           </span>
                           <span className="text-[10px] text-[var(--workspace-faint)]">
@@ -224,10 +228,13 @@ export function WatchlistPanel() {
                         className="flex w-full items-center justify-between px-2 py-1.5 text-left text-[11px] hover:bg-white/5"
                         onClick={() => void addSuggestion(section.id, hit)}
                       >
-                        <span>
-                          <span className="font-medium text-[var(--workspace-fg)]">{hit.ticker}</span>
-                          <span className="ml-1 text-[var(--workspace-muted)]">
-                            {hit.name} · {hit.exchange}
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          <ExchangeMark exchange={hit.exchange} />
+                          <span className="min-w-0">
+                            <span className="font-medium text-[var(--workspace-fg)]">{hit.ticker}</span>
+                            <span className="ml-1 text-[var(--workspace-muted)]">
+                              {hit.name} · {hit.exchange}
+                            </span>
                           </span>
                         </span>
                         <span className="text-[10px] text-emerald-300">추가</span>
@@ -254,15 +261,18 @@ export function WatchlistPanel() {
                   >
                     <button
                       type="button"
-                      className="min-w-0 flex-1 text-left"
+                      className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
                       onClick={() => setActiveSymbol(id)}
                     >
+                      <ExchangeMark exchange={symbol.exchange} />
+                      <span className="min-w-0">
                       <div className="truncate text-sm font-medium text-[var(--workspace-fg)]">
                         {symbol.ticker}
                       </div>
                       <div className="truncate text-[10px] text-[var(--workspace-muted)]">
                         {symbol.nameKo} · {symbol.exchange}
                       </div>
+                      </span>
                     </button>
                     <LiveQuoteBadge symbolId={id} assetClass={symbol.assetClass} compact />
                     <button
