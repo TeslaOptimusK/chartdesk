@@ -13,6 +13,8 @@ export interface LiveQuote {
   updatedAt: number;
   /** Official close line and pre-market line. Null until the session quote arrives. */
   session: SessionQuoteView | null;
+  /** Set when the print came from Upbit, Bithumb, Binance, or Bybit. */
+  quoteCcy?: "KRW" | "USDT";
 }
 
 interface QuotesState {
@@ -23,6 +25,10 @@ interface QuotesState {
   setFromTick: (symbolId: string, candle: Candle) => void;
   /** Replace the percent base with the previous session close. */
   setSessionQuote: (symbolId: string, session: SessionQuoteView) => void;
+  setVenueQuote: (
+    symbolId: string,
+    quote: { price: number; changePct: number; ccy: "KRW" | "USDT" }
+  ) => void;
   clearQuote: (symbolId: string) => void;
 }
 
@@ -124,6 +130,35 @@ export const useQuotesStore = create<QuotesState>((set, get) => ({
           barTime: candle.time,
           updatedAt: Date.now(),
           session: prev?.session ?? null,
+        },
+      },
+    });
+  },
+
+  setVenueQuote: (symbolId, quote) => {
+    const prev = get().quotes[symbolId];
+    const base =
+      quote.changePct === 0 ? quote.price : quote.price / (1 + quote.changePct / 100);
+    set({
+      quotes: {
+        ...get().quotes,
+        [symbolId]: {
+          symbolId,
+          last: quote.price,
+          prevClose: base,
+          changePct: quote.changePct,
+          barTime: prev?.barTime ?? 0,
+          updatedAt: Date.now(),
+          quoteCcy: quote.ccy,
+          session: {
+            phase: "always",
+            displayPrice: quote.price,
+            changeBase: base,
+            changePct: quote.changePct,
+            closeLine: null,
+            preLine: null,
+            priceKind: "live",
+          },
         },
       },
     });

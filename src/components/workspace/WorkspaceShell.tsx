@@ -8,6 +8,7 @@ import { Phase4Panels } from "@/components/workspace/Phase4Panels";
 import { IngestDialog } from "@/components/workspace/IngestDialog";
 import { RightPanel } from "@/components/workspace/RightPanel";
 import { LiveQuotesBridge } from "@/components/market/LiveQuotesBridge";
+import { CryptoQuoteBridge } from "@/components/market/CryptoQuoteBridge";
 import { SessionQuoteBridge } from "@/components/market/SessionQuoteBridge";
 import { SymbolChartPane } from "@/components/chart/SymbolChartPane";
 import { MultiChartGrid } from "@/components/workspace/MultiChartGrid";
@@ -452,6 +453,7 @@ export function WorkspaceShell() {
 
       <LiveQuotesBridge />
       <SessionQuoteBridge />
+      <CryptoQuoteBridge />
       <IngestDialog open={ingestOpen} onOpenChange={setIngestOpen} />
       <CommandPalette />
       <Phase3Panels />

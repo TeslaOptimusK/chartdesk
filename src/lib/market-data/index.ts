@@ -3,6 +3,7 @@ import { MockMarketDataAdapter } from "@/lib/market-data/mock-adapter";
 import { DelayedMarketDataAdapter } from "@/lib/market-data/delayed-adapter";
 import { RealtimeMarketDataAdapter } from "@/lib/market-data/realtime-adapter";
 import { KiwoomRoutedMarketDataAdapter } from "@/lib/market-data/kiwoom-adapter";
+import { CryptoVenueMarketDataAdapter } from "@/lib/market-data/crypto-adapter";
 import { kiwoomQuotesConfigured } from "@/lib/kiwoom/quote-rest";
 
 function createBaseAdapter(): MarketDataAdapter {
@@ -18,7 +19,7 @@ function createBaseAdapter(): MarketDataAdapter {
  * use Kiwoom realtime and other symbols stay on the base adapter.
  */
 export function createMarketDataAdapter(): MarketDataAdapter {
-  const base = createBaseAdapter();
+  const base = new CryptoVenueMarketDataAdapter(createBaseAdapter());
   if (kiwoomQuotesConfigured()) return new KiwoomRoutedMarketDataAdapter(base);
   return base;
 }
