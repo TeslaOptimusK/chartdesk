@@ -31,15 +31,13 @@ export function toYahooSymbol(
   if (t === "SPX500" || t === "^GSPC" || t === "GSPC") return "^GSPC";
   if (t === "SOX" || t === "^SOX") return "^SOX";
 
-  if (
-    assetClass === "crypto" ||
-    t.endsWith("USDT") ||
-    t.endsWith("-USD") ||
-    t === "BTC" ||
-    t === "ETH"
-  ) {
-    if (t.startsWith("BTC")) return "BTC-USD";
-    if (t.startsWith("ETH")) return "ETH-USD";
+  if (assetClass === "crypto" || t.endsWith("USDT") || t.endsWith("-USD")) {
+    const base = t.endsWith("USDT")
+      ? t.slice(0, -4)
+      : t.endsWith("-USD")
+        ? t.slice(0, -4)
+        : t;
+    if (base) return `${base}-USD`;
   }
 
   if (exchange === "KOSDAQ") return `${t}.KQ`;

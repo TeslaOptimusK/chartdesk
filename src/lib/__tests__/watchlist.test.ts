@@ -39,6 +39,16 @@ describe("watchlist sections", () => {
     assert.deepEqual(flattenWatchlist(sections), ["kr_005930", "us_TSLA"]);
   });
 
+  it("lists the same coin on each exchange", () => {
+    const hits = searchSymbolDb("솔라");
+    const sol = hits.filter((hit) => hit.ticker === "SOL" && hit.assetClass === "crypto");
+    assert.ok(sol.some((hit) => hit.exchange === "UPBIT" && hit.name.includes("솔라나")));
+    assert.ok(sol.some((hit) => hit.exchange === "BINANCE"));
+    const bitcoin = searchSymbolDb("비트").filter((hit) => hit.ticker === "BTC");
+    assert.ok(bitcoin.some((hit) => hit.exchange === "UPBIT"));
+    assert.ok(bitcoin.some((hit) => hit.exchange === "BITHUMB"));
+  });
+
   it("finds Pharma Research from a two-character name", () => {
     const hits = searchSymbolDb("파마");
     assert.ok(hits.some((hit) => hit.ticker === "214450" && hit.name === "파마리서치"));
