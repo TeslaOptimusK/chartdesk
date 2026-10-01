@@ -1,4 +1,51 @@
+import { readFileSync } from "fs";
+import path from "path";
 import type { AssetClass, SymbolMeta } from "@/lib/types";
+
+interface DbRow {
+  t: string;
+  n: string;
+  e: string;
+  a: AssetClass;
+}
+
+let db: DbRow[] | null = null;
+
+function symbolDb(): DbRow[] {
+  if (db) return db;
+  const file = path.join(process.cwd(), "data", "symbol-db.json");
+  db = JSON.parse(readFileSync(file, "utf8")) as DbRow[];
+  return db;
+}
+
+/** Local ticker and name search. Two characters are enough for a name match. */
+export function searchSymbolDb(query: string, limit = 12): SymbolSuggestion[] {
+  const q = query.trim().toLowerCase();
+  if (q.length < 2) return [];
+  const qUpper = q.toUpperCase();
+  const scored: { row: DbRow; score: number }[] = [];
+  for (const row of symbolDb()) {
+    const ticker = row.t.toUpperCase();
+    const name = row.n.toLowerCase();
+    let score = 0;
+    if (ticker === qUpper) score = 100;
+    else if (ticker.startsWith(qUpper)) score = 80;
+    else if (name.startsWith(q)) score = 60;
+    else if (name.includes(q)) score = 40;
+    else continue;
+    scored.push({ row, score });
+  }
+  scored.sort(
+    (a, b) =>
+      b.score - a.score || a.row.n.length - b.row.n.length || a.row.t.localeCompare(b.row.t)
+  );
+  return scored.slice(0, limit).map((hit) => ({
+    ticker: hit.row.t,
+    name: hit.row.n,
+    exchange: hit.row.e,
+    assetClass: hit.row.a,
+  }));
+}
 
 export interface SymbolSuggestion {
   ticker: string;

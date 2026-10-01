@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { addSymbol, readStore, updateWatchlist, updateWatchlistSections } from "@/lib/storage";
-import { searchYahooSymbols } from "@/lib/symbol-search";
+import { searchSymbolDb, searchYahooSymbols } from "@/lib/symbol-search";
 import type { AssetClass, WatchlistSection } from "@/lib/types";
 import { symbolMatchesQuery } from "@/lib/watchlist";
 
@@ -9,7 +9,15 @@ export async function GET(req: Request) {
   const q = (searchParams.get("q") ?? "").trim().toLowerCase();
   const store = await readStore();
   const symbols = !q ? store.symbols : store.symbols.filter((s) => symbolMatchesQuery(s, q));
-  const suggestions = q ? await searchYahooSymbols(q, store.symbols) : [];
+  const known = new Set(store.symbols.map((s) => s.ticker.toUpperCase()));
+  const catalog =
+    q.length >= 2 ? searchSymbolDb(q).filter((hit) => !known.has(hit.ticker.toUpperCase())) : [];
+  const yahoo =
+    q.length >= 2 && catalog.length < 8 ? await searchYahooSymbols(q, store.symbols) : [];
+  const suggestions = [...catalog, ...yahoo.filter((hit) => !known.has(hit.ticker.toUpperCase()))].slice(
+    0,
+    12
+  );
   return NextResponse.json({
     symbols,
     suggestions,

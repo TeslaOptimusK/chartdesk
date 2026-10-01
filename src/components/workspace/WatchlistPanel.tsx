@@ -36,7 +36,7 @@ export function WatchlistPanel() {
 
   useEffect(() => {
     const q = query.trim();
-    if (!searchSectionId || q.length < 1) {
+    if (!searchSectionId || q.length < 2) {
       setSuggestions([]);
       return;
     }
@@ -188,7 +188,12 @@ export function WatchlistPanel() {
                   placeholder="티커 또는 종목명"
                   className="h-8 w-full rounded border border-[var(--workspace-border)] bg-transparent px-2 text-xs"
                 />
-                {query.trim() && (
+                {query.trim().length === 1 && (
+                  <div className="mt-1 px-1 text-[11px] text-[var(--workspace-faint)]">
+                    두 글자 이상 입력하세요
+                  </div>
+                )}
+                {query.trim().length >= 2 && (
                   <div className="mt-1 max-h-48 overflow-auto rounded border border-[var(--workspace-border)]">
                     {localHits.map((symbol) => {
                       const added = section.symbolIds.includes(symbol.id);

@@ -96,7 +96,8 @@ export function toKiwoomCode(
     exchange &&
     exchange !== "KRX" &&
     exchange !== "KOSPI" &&
-    exchange !== "KOSDAQ"
+    exchange !== "KOSDAQ" &&
+    exchange !== "KONEX"
   ) {
     return null;
   }
