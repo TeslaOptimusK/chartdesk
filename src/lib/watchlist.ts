@@ -57,9 +57,16 @@ export function symbolMatchesQuery(symbol: SymbolMeta, query: string): boolean {
   return hay.includes(q);
 }
 
-export function symbolIdFor(assetClass: AssetClass, ticker: string): string {
+export function symbolIdFor(
+  assetClass: AssetClass,
+  ticker: string,
+  exchange?: string
+): string {
   const code = ticker.toUpperCase().replace(/[^A-Z0-9]/g, "");
   if (assetClass === "kr_stock") return `kr_${code}`;
-  if (assetClass === "crypto") return `crypto_${code}`;
+  if (assetClass === "crypto") {
+    const venue = (exchange ?? "BINANCE").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    return `crypto_${venue}_${code}`;
+  }
   return `us_${code}`;
 }

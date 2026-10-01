@@ -7,6 +7,8 @@ interface DbRow {
   n: string;
   e: string;
   a: AssetClass;
+  /** Extra search text, such as the English coin name. */
+  k?: string;
 }
 
 let db: DbRow[] | null = null;
@@ -27,11 +29,12 @@ export function searchSymbolDb(query: string, limit = 12): SymbolSuggestion[] {
   for (const row of symbolDb()) {
     const ticker = row.t.toUpperCase();
     const name = row.n.toLowerCase();
+    const extra = (row.k ?? "").toLowerCase();
     let score = 0;
     if (ticker === qUpper) score = 100;
     else if (ticker.startsWith(qUpper)) score = 80;
-    else if (name.startsWith(q)) score = 60;
-    else if (name.includes(q)) score = 40;
+    else if (name.startsWith(q) || extra.startsWith(q)) score = row.a === "crypto" ? 70 : 60;
+    else if (name.includes(q) || extra.includes(q)) score = 40;
     else continue;
     scored.push({ row, score });
   }

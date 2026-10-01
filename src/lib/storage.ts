@@ -122,7 +122,7 @@ export async function addSymbol(
   input: Omit<SymbolMeta, "id" | "aliases"> & { aliases?: string[] }
 ): Promise<SymbolMeta> {
   const ticker = input.ticker.trim().toUpperCase();
-  const id = symbolIdFor(input.assetClass, ticker);
+  const id = symbolIdFor(input.assetClass, ticker, input.exchange);
   let saved: SymbolMeta = {
     ...input,
     ticker,
@@ -131,7 +131,11 @@ export async function addSymbol(
   };
   await mutate((d) => {
     const existing = d.symbols.find(
-      (symbol) => symbol.id === id || symbol.ticker.toUpperCase() === ticker
+      (symbol) =>
+        symbol.id === id ||
+        (symbol.ticker.toUpperCase() === ticker &&
+          symbol.exchange.toUpperCase() === input.exchange.toUpperCase() &&
+          symbol.assetClass === input.assetClass)
     );
     if (existing) {
       saved = existing;

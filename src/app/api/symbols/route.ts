@@ -9,15 +9,19 @@ export async function GET(req: Request) {
   const q = (searchParams.get("q") ?? "").trim().toLowerCase();
   const store = await readStore();
   const symbols = !q ? store.symbols : store.symbols.filter((s) => symbolMatchesQuery(s, q));
-  const known = new Set(store.symbols.map((s) => s.ticker.toUpperCase()));
+  const known = new Set(
+    store.symbols.map((s) => `${s.exchange.toUpperCase()}|${s.ticker.toUpperCase()}`)
+  );
   const catalog =
-    q.length >= 2 ? searchSymbolDb(q).filter((hit) => !known.has(hit.ticker.toUpperCase())) : [];
+    q.length >= 2
+      ? searchSymbolDb(q).filter((hit) => !known.has(`${hit.exchange.toUpperCase()}|${hit.ticker.toUpperCase()}`))
+      : [];
   const yahoo =
     q.length >= 2 && catalog.length < 8 ? await searchYahooSymbols(q, store.symbols) : [];
-  const suggestions = [...catalog, ...yahoo.filter((hit) => !known.has(hit.ticker.toUpperCase()))].slice(
-    0,
-    12
-  );
+  const suggestions = [
+    ...catalog,
+    ...yahoo.filter((hit) => !known.has(`${hit.exchange.toUpperCase()}|${hit.ticker.toUpperCase()}`)),
+  ].slice(0, 12);
   return NextResponse.json({
     symbols,
     suggestions,
