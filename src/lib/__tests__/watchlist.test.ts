@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { SymbolMeta } from "@/lib/types";
+import { searchSymbolDb } from "@/lib/symbol-search";
 import {
   defaultWatchlistSections,
   flattenWatchlist,
@@ -36,6 +37,14 @@ describe("watchlist sections", () => {
       ["국내", "미국"]
     );
     assert.deepEqual(flattenWatchlist(sections), ["kr_005930", "us_TSLA"]);
+  });
+
+  it("finds Pharma Research from a two-character name", () => {
+    const hits = searchSymbolDb("파마");
+    assert.ok(hits.some((hit) => hit.ticker === "214450" && hit.name === "파마리서치"));
+    const exact = searchSymbolDb("파마리서치");
+    assert.equal(exact[0]?.ticker, "214450");
+    assert.equal(searchSymbolDb("파").length, 0);
   });
 
   it("matches a ticker prefix and a Korean name", () => {

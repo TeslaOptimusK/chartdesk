@@ -42,9 +42,12 @@ export function toYahooSymbol(
     if (t.startsWith("ETH")) return "ETH-USD";
   }
 
+  if (exchange === "KOSDAQ") return `${t}.KQ`;
+  if (exchange === "KONEX") return null;
   if (
     assetClass === "kr_stock" ||
     exchange === "KRX" ||
+    exchange === "KOSPI" ||
     /^\d{6}$/.test(t)
   ) {
     return `${t}.KS`;
