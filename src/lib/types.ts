@@ -393,6 +393,12 @@ export interface CustomIndicatorScript {
   updatedAt: string;
 }
 
+export interface WatchlistSection {
+  id: string;
+  name: string;
+  symbolIds: string[];
+}
+
 export interface AppStoreData {
   symbols: SymbolMeta[];
   posts: Post[];
@@ -402,6 +408,8 @@ export interface AppStoreData {
   drawings: Drawing[];
   alerts: AlertItem[];
   watchlist: string[];
+  /** Named groups. The flat watchlist is the unique ids across these sections. */
+  watchlistSections?: WatchlistSection[];
   /** Feature ID: alert.price — server-side watch definitions */
   priceWatches: PriceWatch[];
   /** Feature ID: note / commentary tab */

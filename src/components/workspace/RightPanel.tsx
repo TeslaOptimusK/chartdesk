@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { PublishPostForm } from "@/components/workspace/Phase3Panels";
-import { LiveQuoteBadge } from "@/components/market/LiveQuoteBadge";
+import { WatchlistPanel } from "@/components/workspace/WatchlistPanel";
 import type { MultiAlertCondition, MultiAlertLogic } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -58,7 +58,7 @@ export function RightPanel() {
         ))}
       </div>
       <ScrollArea className="flex-1">
-        {rightTab === "watchlist" && <WatchlistTab />}
+        {rightTab === "watchlist" && <WatchlistPanel />}
         {rightTab === "news" && <NewsTab />}
         {rightTab === "recent" && <RecentTab />}
         {rightTab === "patterns" && <PatternsTab />}
@@ -67,72 +67,6 @@ export function RightPanel() {
         {rightTab === "commentary" && <CommentaryTab />}
       </ScrollArea>
     </aside>
-  );
-}
-
-function WatchlistTab() {
-  const {
-    symbols,
-    watchlist,
-    activeSymbolId,
-    setActiveSymbol,
-    setWatchlist,
-    setSecondarySymbols,
-  } = useWorkspace();
-
-  const toggle = async (id: string) => {
-    const next = watchlist.includes(id)
-      ? watchlist.filter((x) => x !== id)
-      : [...watchlist, id];
-    setWatchlist(next);
-    setSecondarySymbols(next.filter((x) => x !== activeSymbolId).slice(0, 3));
-    await fetch("/api/symbols", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ watchlist: next }),
-    });
-  };
-
-  return (
-    <div className="space-y-1 p-2" data-feature="watchlist">
-      {symbols.map((s) => {
-        const on = watchlist.includes(s.id);
-        return (
-          <div
-            key={s.id}
-            className={cn(
-              "flex items-center gap-2 rounded-md px-2 py-1.5",
-              activeSymbolId === s.id && "bg-[var(--workspace-elevated)]"
-            )}
-          >
-            <button
-              type="button"
-              className="min-w-0 flex-1 text-left"
-              onClick={() => setActiveSymbol(s.id)}
-            >
-              <div className="truncate text-sm font-medium text-[var(--workspace-fg)]">
-                {s.ticker}
-              </div>
-              <div className="truncate text-[10px] text-[var(--workspace-muted)]">
-                {s.nameKo} · {s.exchange}
-              </div>
-            </button>
-            <LiveQuoteBadge symbolId={s.id} assetClass={s.assetClass} compact />
-            <button
-              type="button"
-              className={cn(
-                "text-xs",
-                on ? "text-amber-300" : "text-[var(--workspace-faint)]"
-              )}
-              onClick={() => toggle(s.id)}
-              title="워치리스트"
-            >
-              {on ? "★" : "☆"}
-            </button>
-          </div>
-        );
-      })}
-    </div>
   );
 }
 

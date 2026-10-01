@@ -14,11 +14,18 @@ import type {
   PaperAccount,
   CustomIndicatorScript,
   PriceWatch,
+  SymbolMeta,
   TechnicalAlert,
+  WatchlistSection,
   WebhookConfig,
 } from "@/lib/types";
 import { DEFAULT_PAPER_ACCOUNT, DEFAULT_WEBHOOK_CONFIG } from "@/lib/types";
 import { createSeedStore, SEED_PATTERNS } from "@/lib/seed";
+import {
+  flattenWatchlist,
+  normalizeWatchlistSections,
+  symbolIdFor,
+} from "@/lib/watchlist";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const STORE_PATH = path.join(DATA_DIR, "store.json");
@@ -35,9 +42,17 @@ function migrateStore(raw: AppStoreData): AppStoreData {
   if (pendingDemo && !patterns.some((p) => p.id === "pat_pending_demo")) {
     patterns = [pendingDemo, ...patterns];
   }
+  const symbols = raw.symbols ?? [];
+  const watchlistSections = normalizeWatchlistSections(
+    raw.watchlistSections,
+    symbols,
+    symbols.map((symbol) => symbol.id)
+  );
   return {
     ...raw,
     patterns,
+    watchlist: flattenWatchlist(watchlistSections),
+    watchlistSections,
     priceWatches: raw.priceWatches ?? [],
     comments: raw.comments ?? [],
     news: raw.news ?? [],
@@ -86,6 +101,45 @@ export async function updateWatchlist(ids: string[]): Promise<AppStoreData> {
   return mutate((d) => {
     d.watchlist = ids;
   });
+}
+
+export async function updateWatchlistSections(
+  sections: WatchlistSection[]
+): Promise<AppStoreData> {
+  return mutate((d) => {
+    const known = new Set(d.symbols.map((symbol) => symbol.id));
+    const next = sections.map((section) => ({
+      id: section.id,
+      name: section.name.trim() || "관심",
+      symbolIds: section.symbolIds.filter((id) => known.has(id)),
+    }));
+    d.watchlistSections = next;
+    d.watchlist = flattenWatchlist(next);
+  });
+}
+
+export async function addSymbol(
+  input: Omit<SymbolMeta, "id" | "aliases"> & { aliases?: string[] }
+): Promise<SymbolMeta> {
+  const ticker = input.ticker.trim().toUpperCase();
+  const id = symbolIdFor(input.assetClass, ticker);
+  let saved: SymbolMeta = {
+    ...input,
+    ticker,
+    id,
+    aliases: input.aliases ?? [],
+  };
+  await mutate((d) => {
+    const existing = d.symbols.find(
+      (symbol) => symbol.id === id || symbol.ticker.toUpperCase() === ticker
+    );
+    if (existing) {
+      saved = existing;
+      return;
+    }
+    d.symbols.push(saved);
+  });
+  return saved;
 }
 
 export async function addPost(post: Omit<Post, "id" | "createdAt">): Promise<Post> {

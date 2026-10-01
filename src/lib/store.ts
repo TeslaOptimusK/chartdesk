@@ -21,6 +21,7 @@ import type {
   PriceWatch,
   RangePreset,
   SymbolMeta,
+  WatchlistSection,
   MultiConditionAlert,
   PaperAccount,
   TechnicalAlert,
@@ -35,6 +36,7 @@ import {
   INDICATOR_TEMPLATES,
 } from "@/lib/types";
 import { buildCalendarEvents } from "@/lib/phase2-data";
+import { flattenWatchlist, normalizeWatchlistSections } from "@/lib/watchlist";
 import {
   DEFAULT_EASY_TOGGLES,
   type EasyOverlayPreset,
@@ -243,6 +245,7 @@ interface WorkspaceState {
   alerts: AlertItem[];
   drawings: Drawing[];
   watchlist: string[];
+  watchlistSections: WatchlistSection[];
   news: NewsItem[];
   comments: ChartComment[];
   /** Feature ID: symbol.recent */
@@ -386,6 +389,7 @@ interface WorkspaceState {
     alerts: AlertItem[];
     drawings: Drawing[];
     watchlist: string[];
+    watchlistSections?: WatchlistSection[];
     priceWatches?: PriceWatch[];
     comments?: ChartComment[];
     news?: NewsItem[];
@@ -421,6 +425,8 @@ interface WorkspaceState {
   undoDrawings: () => void;
   redoDrawings: () => void;
   setWatchlist: (ids: string[]) => void;
+  setWatchlistSections: (sections: WatchlistSection[]) => void;
+  addSymbol: (symbol: SymbolMeta) => void;
   setPriceWatches: (watches: PriceWatch[]) => void;
   setComments: (comments: ChartComment[]) => void;
   setNews: (news: NewsItem[]) => void;
@@ -582,6 +588,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   alerts: [],
   drawings: [],
   watchlist: [],
+  watchlistSections: [],
   news: [],
   comments: [],
   recentSymbolIds: [],
@@ -737,13 +744,19 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     const easy = readEasyPrefs();
     const symbols = Array.isArray(data?.symbols) ? data.symbols : [];
     const watchlist = Array.isArray(data?.watchlist) ? data.watchlist : [];
+    const watchlistSections = normalizeWatchlistSections(
+      data?.watchlistSections,
+      symbols,
+      symbols.map((symbol) => symbol.id)
+    );
     if (symbols.length === 0) {
       throw new Error("부트스트랩 데이터에 심볼이 없습니다");
     }
     set({
       ...data,
       symbols,
-      watchlist,
+      watchlist: flattenWatchlist(watchlistSections),
+      watchlistSections,
       posts: Array.isArray(data.posts) ? data.posts : [],
       opinions: Array.isArray(data.opinions) ? data.opinions : [],
       patterns: Array.isArray(data.patterns) ? data.patterns : [],
@@ -914,6 +927,13 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     });
   },
   setWatchlist: (ids) => set({ watchlist: ids }),
+  setWatchlistSections: (watchlistSections) =>
+    set({ watchlistSections, watchlist: flattenWatchlist(watchlistSections) }),
+  addSymbol: (symbol) => {
+    const symbols = get().symbols;
+    if (symbols.some((row) => row.id === symbol.id)) return;
+    set({ symbols: [...symbols, symbol] });
+  },
   setPriceWatches: (watches) => set({ priceWatches: watches }),
   setComments: (comments) => set({ comments }),
   setNews: (news) => set({ news }),

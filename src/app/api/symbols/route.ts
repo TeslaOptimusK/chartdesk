@@ -1,29 +1,57 @@
 import { NextResponse } from "next/server";
-import { readStore, updateWatchlist } from "@/lib/storage";
+import { addSymbol, readStore, updateWatchlist, updateWatchlistSections } from "@/lib/storage";
+import { searchYahooSymbols } from "@/lib/symbol-search";
+import type { AssetClass, WatchlistSection } from "@/lib/types";
+import { symbolMatchesQuery } from "@/lib/watchlist";
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const q = (searchParams.get("q") ?? "").trim().toLowerCase();
   const store = await readStore();
-  const symbols = !q
-    ? store.symbols
-    : store.symbols.filter((s) => {
-        const hay = [
-          s.ticker,
-          s.nameKo,
-          s.nameEn,
-          s.exchange,
-          ...s.aliases,
-        ]
-          .join(" ")
-          .toLowerCase();
-        return hay.includes(q);
-      });
-  return NextResponse.json({ symbols, watchlist: store.watchlist });
+  const symbols = !q ? store.symbols : store.symbols.filter((s) => symbolMatchesQuery(s, q));
+  const suggestions = q ? await searchYahooSymbols(q, store.symbols) : [];
+  return NextResponse.json({
+    symbols,
+    suggestions,
+    watchlist: store.watchlist,
+    watchlistSections: store.watchlistSections ?? [],
+  });
+}
+
+export async function POST(req: Request) {
+  const body = (await req.json()) as {
+    ticker?: string;
+    name?: string;
+    exchange?: string;
+    assetClass?: AssetClass;
+  };
+  const ticker = body.ticker?.trim();
+  if (!ticker || !body.assetClass || !body.exchange) {
+    return NextResponse.json({ error: "ticker, exchange, assetClass required" }, { status: 400 });
+  }
+  const name = body.name?.trim() || ticker;
+  const symbol = await addSymbol({
+    ticker,
+    exchange: body.exchange,
+    nameKo: name,
+    nameEn: name,
+    assetClass: body.assetClass,
+  });
+  return NextResponse.json({ symbol });
 }
 
 export async function PUT(req: Request) {
-  const body = (await req.json()) as { watchlist?: string[] };
+  const body = (await req.json()) as {
+    watchlist?: string[];
+    watchlistSections?: WatchlistSection[];
+  };
+  if (Array.isArray(body.watchlistSections)) {
+    const store = await updateWatchlistSections(body.watchlistSections);
+    return NextResponse.json({
+      watchlist: store.watchlist,
+      watchlistSections: store.watchlistSections ?? [],
+    });
+  }
   if (!Array.isArray(body.watchlist)) {
     return NextResponse.json({ error: "watchlist[] required" }, { status: 400 });
   }
