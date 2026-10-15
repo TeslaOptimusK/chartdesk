@@ -17,6 +17,7 @@ mode = ""
 If WScript.Arguments.Count > 0 Then mode = LCase(WScript.Arguments(0))
 
 If mode = "" Or mode = "launch" Then
+  OpenSplash
   sh.CurrentDirectory = repo
   sh.Run "cmd /c """ & scriptDir & "\start-chartdesk.bat"" --hidden", 0, False
   WScript.Quit 0
@@ -38,7 +39,18 @@ If mode = "server" Then
   WScript.Quit 0
 End If
 
+If mode = "splash" Then
+  OpenSplash
+  WScript.Quit 0
+End If
+
+If mode = "splash-close" Then
+  CloseSplash
+  WScript.Quit 0
+End If
+
 If mode = "alert" Then
+  CloseSplash
   Dim msg
   msg = "ChartDesk could not start."
   If WScript.Arguments.Count > 1 Then msg = WScript.Arguments(1)
@@ -62,6 +74,22 @@ Sub FixShortcut()
   iconPath = repo & "\public\chartdesk.ico"
   If fso.FileExists(iconPath) Then sc.IconLocation = iconPath & ",0"
   sc.Save
+End Sub
+
+Sub OpenSplash()
+  Dim hta
+  hta = scriptDir & "\chartdesk-splash.hta"
+  If Not fso.FileExists(hta) Then Exit Sub
+  sh.Run "mshta.exe """ & hta & """", 1, False
+End Sub
+
+Sub CloseSplash()
+  Dim cmd
+  cmd = "powershell -NoProfile -Command " & _
+    """Get-CimInstance Win32_Process -Filter 'Name=''mshta.exe''' | " & _
+    "Where-Object { $_.CommandLine -like '*chartdesk-splash.hta*' } | " & _
+    "ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
+  sh.Run cmd, 0, True
 End Sub
 
 Sub StartServer()

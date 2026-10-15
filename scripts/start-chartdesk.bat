@@ -17,6 +17,7 @@ exit /b 0
 
 :hidden_start
 call :hide_console
+wscript //nologo "%~dp0chartdesk-launch.vbs" splash
 wscript //nologo "%~dp0chartdesk-launch.vbs" shortcut
 
 where git >nul 2>&1
@@ -59,6 +60,7 @@ REM cannot desync the rest of the update. The new file is started afterwards.
 
 :launch
 call :hide_console
+wscript //nologo "%~dp0chartdesk-launch.vbs" splash
 wscript //nologo "%~dp0chartdesk-launch.vbs" shortcut
 where node >nul 2>&1
 if errorlevel 1 goto fail_node
@@ -131,11 +133,19 @@ if defined CHROME (
 
 if not defined OPENED start "" "%APP_URL%"
 
+REM The app window is opening. Drop the splash that has been up since the double-click.
+timeout /t 1 /nobreak >nul
+call :close_splash
+
 endlocal
 exit /b 0
 
 :hide_console
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0hide-console.ps1" >nul 2>&1
+exit /b 0
+
+:close_splash
+wscript //nologo "%~dp0chartdesk-launch.vbs" splash-close
 exit /b 0
 
 :fail_cd
