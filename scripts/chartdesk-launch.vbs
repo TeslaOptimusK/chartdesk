@@ -77,19 +77,17 @@ Sub FixShortcut()
 End Sub
 
 Sub OpenSplash()
-  Dim hta
-  hta = scriptDir & "\chartdesk-splash.hta"
-  If Not fso.FileExists(hta) Then Exit Sub
-  sh.Run "mshta.exe """ & hta & """", 1, False
+  Dim splash
+  splash = scriptDir & "\chartdesk-splash.ps1"
+  If Not fso.FileExists(splash) Then Exit Sub
+  sh.Run "powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -WindowStyle Hidden -File """ & splash & """", 0, False
 End Sub
 
 Sub CloseSplash()
-  Dim cmd
-  cmd = "powershell -NoProfile -Command " & _
-    """Get-CimInstance Win32_Process -Filter 'Name=''mshta.exe''' | " & _
-    "Where-Object { $_.CommandLine -like '*chartdesk-splash.hta*' } | " & _
-    "ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
-  sh.Run cmd, 0, True
+  Dim splash
+  splash = scriptDir & "\chartdesk-splash.ps1"
+  If Not fso.FileExists(splash) Then Exit Sub
+  sh.Run "powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -WindowStyle Hidden -File """ & splash & """ -Close", 0, True
 End Sub
 
 Sub StartServer()
