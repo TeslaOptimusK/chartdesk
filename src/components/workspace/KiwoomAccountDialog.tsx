@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -30,6 +30,8 @@ interface PositionRow {
   krwEvalAmount?: number | null;
   krwPnl?: number | null;
   weightPct: number | null;
+  venue?: "ND" | "NY" | "NA";
+  lots?: { date: string; qty: number; price: number }[];
 }
 
 interface FxCashRow {
@@ -147,6 +149,10 @@ export function KiwoomAccountDialog({
 }) {
   const setActiveSymbol = useWorkspace((s) => s.setActiveSymbol);
   const [account, setAccount] = useState<AccountView | null>(null);
+  const [openLots, setOpenLots] = useState<Record<string, boolean>>({});
+  const [confirmLive, setConfirmLive] = useState(false);
+  const [sellMsg, setSellMsg] = useState<string | null>(null);
+  const [ipNotice, setIpNotice] = useState<string | null>(null);
 
   const load = () => {
     fetch("/api/kiwoom/account")
@@ -162,6 +168,40 @@ export function KiwoomAccountDialog({
     return () => window.clearInterval(id);
   }, [open]);
 
+  useEffect(() => {
+    const ip = account?.outboundIp;
+    if (!ip || account?.error) return;
+    const key = "chartdesk.kiwoom-ip";
+    const prev = window.localStorage.getItem(key);
+    if (prev && prev !== ip) {
+      setIpNotice(`접속 주소가 ${prev}에서 ${ip}로 바뀌었습니다. 키움 등록 목록에 새 주소가 없으면 다음 조회가 막힙니다.`);
+    } else {
+      setIpNotice(null);
+    }
+    window.localStorage.setItem(key, ip);
+  }, [account?.outboundIp, account?.error]);
+
+  const sellLot = async (row: PositionRow, qty: number) => {
+    setSellMsg(null);
+    const res = await fetch("/api/kiwoom/sell", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        code: row.code,
+        qty,
+        stex: row.venue ?? "ND",
+        confirmLive,
+      }),
+    });
+    const data = (await res.json().catch(() => ({}))) as { error?: string; orderNo?: string };
+    if (!res.ok) {
+      setSellMsg(data.error ?? "매도에 실패했습니다");
+      return;
+    }
+    setSellMsg(`${row.code} ${qty}주 매도 접수 ${data.orderNo ?? ""}`);
+    load();
+  };
+
   const live = account?.live === true;
   const rate = account?.mode === "rest" ? account.usdKrw : null;
   const rows = account?.positions ?? [];
@@ -176,7 +216,7 @@ export function KiwoomAccountDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-h-[88vh] max-w-5xl overflow-auto border-[var(--workspace-border)] bg-[var(--workspace-panel)]"
+        className="h-[92vh] max-h-[92vh] w-[96vw] max-w-[96vw] overflow-auto border-[var(--workspace-border)] bg-[var(--workspace-panel)] sm:max-w-[96vw]"
         data-feature="trade.kiwoom.account.panel"
       >
         <DialogHeader>
@@ -203,10 +243,33 @@ export function KiwoomAccountDialog({
 
         {account?.error && <div className="text-[12px] text-rose-300">{account.error}</div>}
         {account?.outboundIp && (
-          <div className="text-[12px] text-[var(--workspace-fg)]">
-            이 PC의 주소 <span className="font-mono text-rose-200">{account.outboundIp}</span>
-            를 키움 API 사용신청에 추가하세요.
+          <div className="flex flex-wrap items-center gap-2 text-[12px] text-[var(--workspace-fg)]">
+            <span>
+              이 PC 접속 주소 <span className="font-mono text-rose-200">{account.outboundIp}</span>
+            </span>
+            <button
+              type="button"
+              className="rounded border border-[var(--workspace-border)] px-2 py-0.5 text-[11px]"
+              onClick={() => void navigator.clipboard.writeText(account.outboundIp ?? "")}
+            >
+              주소 복사
+            </button>
+            <span className="text-[11px] text-[var(--workspace-faint)]">
+              키움은 등록된 주소만 허용하고, 집 IP는 바뀝니다. 바뀐 주소를 사용신청에 추가하세요.
+            </span>
           </div>
+        )}
+        {ipNotice && <div className="text-[12px] text-amber-200">{ipNotice}</div>}
+        {sellMsg && <div className="text-[12px] text-[var(--workspace-fg)]">{sellMsg}</div>}
+        {live && (
+          <label className="flex items-center gap-2 text-[12px] text-rose-200">
+            <input
+              type="checkbox"
+              checked={confirmLive}
+              onChange={(ev) => setConfirmLive(ev.target.checked)}
+            />
+            실전 매도입니다. 건별 매도 버튼을 허용합니다.
+          </label>
         )}
 
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -234,8 +297,8 @@ export function KiwoomAccountDialog({
         </div>
 
         {rows.length ? (
-          <div className="max-h-[48vh] overflow-auto rounded-md border border-[var(--workspace-border)]">
-            <table className="w-full min-w-[760px] border-collapse text-left font-mono text-[11px]">
+          <div className="max-h-[62vh] overflow-auto rounded-md border border-[var(--workspace-border)]">
+            <table className="w-full min-w-[980px] border-collapse text-left font-mono text-[12px]">
               <thead className="sticky top-0 bg-[var(--workspace-panel)] text-[10px] text-[var(--workspace-faint)]">
                 <tr>
                   {["종목", "보유", "가능", "매수가", "현재가", "매입금액", "평가금액", "손익", "수익률", "비중"].map(
@@ -250,16 +313,30 @@ export function KiwoomAccountDialog({
               <tbody>
                 {rows.map((row) => {
                   const known = symbols.find((s) => s.ticker === row.code || s.id === row.code);
+                  const lots = row.lots ?? [];
+                  const expanded = openLots[row.code] === true;
                   return (
+                    <Fragment key={row.code}>
                     <tr
-                      key={row.code}
                       className={cn(
                         "border-t border-[var(--workspace-border)]",
                         known && "cursor-pointer hover:bg-white/5"
                       )}
                       onClick={() => openSymbol(row.code)}
                     >
-                      <td className="max-w-[140px] truncate px-2 py-1.5 text-[var(--workspace-fg)]" title={row.name}>
+                      <td className="max-w-[180px] truncate px-2 py-1.5 text-[var(--workspace-fg)]" title={row.name}>
+                        {lots.length > 0 && (
+                          <button
+                            type="button"
+                            className="mr-1 rounded border border-[var(--workspace-border)] px-1 text-[11px]"
+                            onClick={(ev) => {
+                              ev.stopPropagation();
+                              setOpenLots((prev) => ({ ...prev, [row.code]: !prev[row.code] }));
+                            }}
+                          >
+                            {expanded ? "−" : "+"}
+                          </button>
+                        )}
                         {known?.nameKo || row.name}
                         <span className="ml-1 text-[10px] text-[var(--workspace-faint)]">{row.code}</span>
                       </td>
@@ -285,6 +362,44 @@ export function KiwoomAccountDialog({
                       <td className={cn("px-2 py-1.5 text-right", tone(row.returnPct))}>{pct(row.returnPct)}</td>
                       <td className="px-2 py-1.5 text-right text-[var(--workspace-muted)]">{share(row.weightPct)}</td>
                     </tr>
+                    {expanded &&
+                      lots.map((lot, index) => {
+                        const ret =
+                          row.lastPrice != null && lot.price > 0
+                            ? ((row.lastPrice - lot.price) / lot.price) * 100
+                            : null;
+                        const when = lot.date.length === 8
+                          ? `${lot.date.slice(0, 4)}-${lot.date.slice(4, 6)}-${lot.date.slice(6)}`
+                          : "이전 잔고";
+                        return (
+                          <tr key={`${row.code}-${lot.date}-${index}`} className="border-t border-[var(--workspace-border)] bg-white/[0.02]">
+                            <td className="px-2 py-1.5 pl-8 text-[11px] text-[var(--workspace-muted)]">{when}</td>
+                            <td className="px-2 py-1.5 text-right">{lot.qty.toLocaleString("ko-KR")}</td>
+                            <td />
+                            <td className="px-2 py-1.5 text-right">
+                              {row.currency === "USD" ? usd(lot.price) : krw(lot.price)}
+                            </td>
+                            <td className="px-2 py-1.5 text-right">
+                              {row.currency === "USD" ? usd(row.lastPrice) : krw(row.lastPrice)}
+                            </td>
+                            <td />
+                            <td />
+                            <td />
+                            <td className={cn("px-2 py-1.5 text-right", tone(ret))}>{pct(ret)}</td>
+                            <td className="px-2 py-1.5 text-right">
+                              <button
+                                type="button"
+                                className="rounded border border-rose-400/40 px-2 py-0.5 text-[10px] text-rose-200 disabled:opacity-40"
+                                disabled={live && !confirmLive}
+                                onClick={() => void sellLot(row, lot.qty)}
+                              >
+                                매도
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </Fragment>
                   );
                 })}
               </tbody>
