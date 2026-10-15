@@ -1,5 +1,11 @@
 import { normalizeItemCode, parseKiwoomAbs } from "@/lib/kiwoom/quote-protocol";
 import {
+  classifyDeal,
+  openLotsFromFills,
+  reconcileLots,
+  type FillEvent,
+} from "@/lib/kiwoom/lots";
+import {
   KiwoomQuoteError,
   kiwoomAuthorizedPost,
   kiwoomAuthorizedPostAll,
@@ -32,6 +38,10 @@ export interface KiwoomPosition {
   fxRate: number | null;
   /** Share of the account's evaluated stocks, in won. */
   weightPct: number | null;
+  /** US board for a sell: ND NASDAQ, NY NYSE, NA AMEX. */
+  venue?: "ND" | "NY" | "NA";
+  /** Open buy lots, oldest first. Empty when the broker did not return fills. */
+  lots?: { date: string; qty: number; price: number }[];
 }
 
 export interface KiwoomFxCash {
@@ -79,6 +89,16 @@ export function positionReturnPct(
   if (avgPrice != null && avgPrice > 0 && lastPrice != null && lastPrice > 0) {
     return ((lastPrice - avgPrice) / avgPrice) * 100;
   }
+  return reported;
+}
+
+/** A tiny reported total must not hide a real stock evaluation. */
+export function reportedAssetsIfComplete(
+  reported: number | null,
+  evaluation: number
+): number | null {
+  if (reported == null || reported <= 0) return null;
+  if (evaluation > 0 && reported < evaluation) return null;
   return reported;
 }
 
@@ -281,6 +301,13 @@ function wonBook(currency: string, native: number | null, krw: number | null): n
   return 0;
 }
 
+export function usBoard(name: unknown): "ND" | "NY" | "NA" {
+  const text = String(name ?? "").toUpperCase();
+  if (text.includes("NYSE") || text.includes("뉴욕")) return "NY";
+  if (text.includes("AMEX") || text.includes("아멕스")) return "NA";
+  return "ND";
+}
+
 function usTicker(raw: unknown): string {
   return String(raw ?? "")
     .trim()
@@ -334,7 +361,9 @@ export function parseUsLedger(body: unknown): KiwoomAccountSnapshot {
         krwPnl: signed(row.pl_amt_krw),
         fxRate: firstAbs(row, ["exch_rate"]),
         weightPct: null as number | null,
-      } satisfies KiwoomPosition;
+        venue: usBoard(row.stex_nm),
+        lots: [] as { date: string; qty: number; price: number }[],
+      } as KiwoomPosition;
     })
     .filter((row): row is KiwoomPosition => row != null);
 
@@ -499,7 +528,7 @@ export function mergeAccountSnapshots(parts: KiwoomAccountSnapshot[]): KiwoomAcc
       estimatedAssets: accountEstimatedAssets(
         deposit,
         evaluation > 0 ? evaluation : null,
-        reportedAssets && reportedAssets > 0 ? reportedAssets : null
+        reportedAssetsIfComplete(reportedAssets, evaluation)
       ),
     },
     positions,
@@ -544,10 +573,86 @@ export async function fetchKiwoomAccount(): Promise<KiwoomAccountSnapshot> {
   if (usLedger) snaps.push(parseUsLedger(usLedger));
   if (usValue) snaps.push(parseUsValuation(usValue));
   const merged = mergeAccountSnapshots(snaps);
+  const history = await readBook("/api/us/acnt", "ust21100", {
+    strt_dt: kstYmd(370),
+    end_dt: kstYmd(0),
+    tp: "3",
+    stex_tp: "",
+    stk_cd: "",
+    krw_repl_skip_yn: "Y",
+  });
+  const lotsByCode = openLotsFromFills(fillsFromHistory(history));
+  for (const position of merged.positions) {
+    if (/^\d{6}$/.test(position.code)) continue;
+    position.lots = reconcileLots(
+      lotsByCode.get(position.code) ?? [],
+      position.qty,
+      position.avgPrice
+    );
+  }
   return {
     ...merged,
     accountNo: formatKiwoomAccountNo(accountNo ?? merged.accountNo),
   };
+}
+
+function kstYmd(daysAgo: number): string {
+  const when = new Date(Date.now() - daysAgo * 86_400_000);
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  })
+    .format(when)
+    .replace(/-/g, "");
+}
+
+export function fillsFromHistory(body: Record<string, unknown> | null): FillEvent[] {
+  const list = Array.isArray(body?.result_list) ? body.result_list : [];
+  const out: FillEvent[] = [];
+  for (const item of list) {
+    const row = asRecord(item);
+    if (!row) continue;
+    const side = classifyDeal(String(row.deal_kind_nm ?? row.rmrk_nm ?? ""));
+    const code = usTicker(row.stk_cd);
+    const qty = firstAbs(row, ["deal_qty"]) ?? 0;
+    const amount = firstAbs(row, ["fc_deal_amt"]);
+    const unit = firstAbs(row, ["uv_exrt"]);
+    const price =
+      amount != null && qty > 0 ? amount / qty : unit != null && unit < 100_000 ? unit : 0;
+    if (!side || !code || qty <= 0 || price <= 0) continue;
+    out.push({
+      date: String(row.deal_dt ?? "").replace(/\D/g, ""),
+      time: String(row.proc_time ?? "").replace(/\D/g, ""),
+      code,
+      side,
+      qty,
+      price,
+    });
+  }
+  return out;
+}
+
+/** Market sell on the US book. trde_tp 03 is the exchange market order. */
+export async function placeKiwoomUsSell(input: {
+  code: string;
+  qty: number;
+  stex: "ND" | "NY" | "NA";
+}): Promise<{ orderNo: string }> {
+  const qty = Math.trunc(input.qty);
+  const code = input.code.trim().toUpperCase();
+  if (!code || qty <= 0) throw new KiwoomQuoteError("종목코드와 수량을 확인하세요");
+  const json = await kiwoomAuthorizedPost("/api/us/ordr", "ust20001", {
+    stk_cd: code,
+    stex_tp: input.stex,
+    ord_qty: String(qty),
+    trde_tp: "03",
+    ord_uv: "",
+  });
+  const orderNo = String(json.ord_no ?? json.ordNo ?? "").trim();
+  if (!orderNo) throw new KiwoomQuoteError("주문번호가 없습니다");
+  return { orderNo };
 }
 
 export async function placeKiwoomCashOrder(input: {

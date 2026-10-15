@@ -43,12 +43,17 @@ export async function GET() {
   }
 
   try {
-    const [account, usdKrw] = await Promise.all([fetchKiwoomAccount(), fetchUsdKrw()]);
+    const [account, usdKrw, outboundIp] = await Promise.all([
+      fetchKiwoomAccount(),
+      fetchUsdKrw(),
+      lookupOutboundIp(),
+    ]);
     return NextResponse.json({
       mode: "rest",
       live,
       ...account,
       usdKrw,
+      outboundIp,
       brackets: brackets.filter((b) => b.armed),
     });
   } catch (err) {

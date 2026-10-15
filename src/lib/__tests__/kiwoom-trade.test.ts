@@ -9,8 +9,10 @@ import {
   parseKiwoomAccount,
   parseUsLedger,
   parseUsValuation,
+  reportedAssetsIfComplete,
 } from "@/lib/kiwoom/rest-trade";
 import { bracketAction, separateLongLevels } from "@/lib/kiwoom/brackets";
+import { openLotsFromFills, reconcileLots } from "@/lib/kiwoom/lots";
 import { buildScaleInOrders, krxTickSize, roundToTick } from "@/lib/kiwoom/scale-plan";
 
 describe("krx ticks", () => {
@@ -163,12 +165,38 @@ describe("us ledger", () => {
   });
 });
 
+describe("open lots", () => {
+  it("keeps yesterday and today buys after no sale", () => {
+    const books = openLotsFromFills([
+      { date: "20261015", time: "100000", code: "TSLA", side: "buy", qty: 20, price: 370 },
+      { date: "20261016", time: "100000", code: "TSLA", side: "buy", qty: 13, price: 380 },
+    ]);
+    const lots = reconcileLots(books.get("TSLA") ?? [], 33, 376.81);
+    assert.equal(lots.length, 2);
+    assert.equal(lots[0]?.price, 370);
+    assert.equal(lots[1]?.qty, 13);
+  });
+
+  it("removes the oldest shares first when some were sold", () => {
+    const books = openLotsFromFills([
+      { date: "20261001", time: "100000", code: "TSLA", side: "buy", qty: 10, price: 300 },
+      { date: "20261015", time: "100000", code: "TSLA", side: "buy", qty: 10, price: 370 },
+      { date: "20261016", time: "110000", code: "TSLA", side: "sell", qty: 10, price: 360 },
+    ]);
+    const lots = reconcileLots(books.get("TSLA") ?? [], 10, 370);
+    assert.equal(lots.length, 1);
+    assert.equal(lots[0]?.price, 370);
+  });
+});
+
 describe("won and dollar totals", () => {
   it("converts won with the dollar rate and prefers the broker asset total", () => {
     assert.equal(krwToUsd(1_400_000, 1400), 1000);
     assert.equal(krwToUsd(null, 1400), null);
     assert.equal(accountEstimatedAssets(1000, 2000, 9000), 9000);
     assert.equal(accountEstimatedAssets(1000, 2000, null), 3000);
+    assert.equal(reportedAssetsIfComplete(8, 42_000_000), null);
+    assert.equal(reportedAssetsIfComplete(50_000_000, 42_000_000), 50_000_000);
   });
 });
 
