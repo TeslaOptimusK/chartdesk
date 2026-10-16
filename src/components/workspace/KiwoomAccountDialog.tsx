@@ -349,7 +349,7 @@ export function KiwoomAccountDialog({
                   const known = symbols.find((s) => s.ticker === row.code || s.id === row.code);
                   const lots = row.lots ?? [];
                   const datedLots = lots.filter((lot) => lot.date.length === 8).length;
-                  const expanded = openLots[row.code] ?? datedLots >= 2;
+                  const expanded = openLots[row.code] ?? datedLots >= 1;
                   return (
                     <Fragment key={row.code}>
                     <tr
