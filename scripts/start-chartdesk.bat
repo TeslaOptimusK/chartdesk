@@ -50,10 +50,8 @@ REM cannot desync the rest of the update. The new file is started afterwards.
     exit /b 1
   )
   git pull --ff-only origin cursor/chartdesk-desktop
-  if errorlevel 1 (
-    wscript //nologo "%~dp0chartdesk-launch.vbs" alert "ChartDesk could not fast-forward. The local branch may have diverged. Nothing was reset."
-    exit /b 1
-  )
+  if errorlevel 1 call :recover_desktop
+  if errorlevel 1 exit /b 1
   wscript //nologo "%~dp0chartdesk-launch.vbs" updated
   exit /b 0
 )
@@ -138,6 +136,22 @@ timeout /t 1 /nobreak >nul
 call :close_splash
 
 endlocal
+exit /b 0
+
+:recover_desktop
+REM The desktop branch is only a copy of origin. If the folder has no local edits,
+REM move that branch onto origin so a diverged commit does not block startup.
+git status --porcelain > "%TEMP%\chartdesk-git-status.txt"
+for %%A in ("%TEMP%\chartdesk-git-status.txt") do set "CD_STATUS_SIZE=%%~zA"
+if not "%CD_STATUS_SIZE%"=="0" (
+  wscript //nologo "%~dp0chartdesk-launch.vbs" alert "ChartDesk could not update because this folder has local edits. Those files were kept."
+  exit /b 1
+)
+git reset --hard origin/cursor/chartdesk-desktop
+if errorlevel 1 (
+  wscript //nologo "%~dp0chartdesk-launch.vbs" alert "ChartDesk could not fast-forward. The local branch may have diverged. Nothing was reset."
+  exit /b 1
+)
 exit /b 0
 
 :hide_console
