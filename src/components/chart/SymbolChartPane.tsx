@@ -437,15 +437,15 @@ export function SymbolChartPane({
       onMouseDown={() => onActivate?.()}
     >
       <div
-        className="flex shrink-0 items-center justify-between border-b border-[var(--workspace-border)] px-3 py-1.5 text-xs text-[var(--workspace-muted)]"
+        className="flex h-11 shrink-0 items-center justify-between gap-3 overflow-hidden border-b border-[var(--workspace-border)] px-3 text-sm text-[var(--workspace-muted)]"
         data-feature="symbol.header"
       >
-        <div className="flex min-w-0 flex-wrap items-baseline gap-2">
+        <div className="flex min-w-0 flex-nowrap items-baseline gap-2 overflow-hidden">
           {symbol?.exchange && <ExchangeMark exchange={symbol.exchange} />}
           <span className="font-semibold tracking-wide text-[var(--workspace-fg)]">
             {symbol?.ticker ?? symbolId}
           </span>
-          <span>{symbol?.nameKo}</span>
+          <span className="min-w-0 truncate">{symbol?.nameKo}</span>
           <span className="text-[var(--workspace-faint)]">{symbol?.exchange}</span>
           <LiveQuoteBadge symbolId={symbolId} assetClass={symbol?.assetClass} />
         </div>
