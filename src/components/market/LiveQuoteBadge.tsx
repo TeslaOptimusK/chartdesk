@@ -47,7 +47,7 @@ export function LiveQuoteBadge({
     return (
       <span
         className={cn(
-          "font-mono text-[10px] text-[var(--workspace-faint)]",
+          "inline-block min-w-[6.5rem] text-right font-mono text-sm tabular-nums text-[var(--workspace-faint)]",
           className
         )}
         data-feature="quote.pending"
@@ -65,7 +65,7 @@ export function LiveQuoteBadge({
   if (compact) {
     return (
       <div
-        className={cn("text-right font-mono leading-tight", className)}
+        className={cn("w-[7.5rem] shrink-0 text-right font-mono tabular-nums leading-tight", className)}
         data-feature="quote.live"
         data-symbol={symbolId}
       >
@@ -87,7 +87,7 @@ export function LiveQuoteBadge({
 
   return (
     <span
-      className={cn("inline-flex items-baseline gap-1.5 font-mono", className)}
+      className={cn("inline-flex shrink-0 items-baseline gap-1.5 whitespace-nowrap font-mono tabular-nums", className)}
       data-feature="quote.live"
       data-symbol={symbolId}
     >

@@ -92,15 +92,15 @@ function dualMoney(
   if ((currency ?? "KRW") !== "KRW") {
     return (
       <>
-        <div>{usd(native)}</div>
-        <div className="text-[10px] text-[var(--workspace-faint)]">{krw(wonAmount)}</div>
+        <div className="whitespace-nowrap tabular-nums">{usd(native)}</div>
+        <div className="whitespace-nowrap text-sm tabular-nums text-[var(--workspace-faint)]">{krw(wonAmount)}</div>
       </>
     );
   }
   return (
     <>
-      <div>{krw(native)}</div>
-      <div className="text-[10px] text-[var(--workspace-faint)]">{usd(krwToUsd(native ?? null, rate))}</div>
+      <div className="whitespace-nowrap tabular-nums">{krw(native)}</div>
+      <div className="whitespace-nowrap text-sm tabular-nums text-[var(--workspace-faint)]">{usd(krwToUsd(native ?? null, rate))}</div>
     </>
   );
 }
@@ -116,6 +116,19 @@ function lotWhen(lot: { date: string; time?: string }): string {
 function share(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return "—";
   return `${value.toFixed(1)}%`;
+}
+
+function mergeAccount(prev: AccountView | null, next: AccountView): AccountView {
+  if (!prev) return next;
+  const lotsByCode = new Map(prev.positions.map((row) => [row.code, row.lots]));
+  return {
+    ...next,
+    historyNote: next.historyNote ?? prev.historyNote,
+    positions: next.positions.map((row) => ({
+      ...row,
+      lots: row.lots?.length ? row.lots : lotsByCode.get(row.code),
+    })),
+  };
 }
 
 function tone(value: number | null | undefined): string {
@@ -135,12 +148,12 @@ function MoneyPair({
   emphasize?: "pnl";
 }) {
   return (
-    <div className="rounded-md border border-[var(--workspace-border)] px-3 py-2">
-      <div className="text-[10px] text-[var(--workspace-faint)]">{label}</div>
-      <div className={cn("mt-0.5 font-mono text-sm", emphasize === "pnl" && tone(amount))}>
+    <div className="rounded-md border border-[var(--workspace-border)] px-4 py-3">
+      <div className="text-sm text-[var(--workspace-faint)]">{label}</div>
+      <div className={cn("mt-1 whitespace-nowrap font-mono text-2xl tabular-nums leading-none", emphasize === "pnl" && tone(amount))}>
         {krw(amount)}
       </div>
-      <div className={cn("font-mono text-[11px] text-[var(--workspace-muted)]", emphasize === "pnl" && tone(amount))}>
+      <div className={cn("mt-1 font-mono text-base tabular-nums text-[var(--workspace-muted)]", emphasize === "pnl" && tone(amount))}>
         {usd(krwToUsd(amount ?? null, rate))}
       </div>
     </div>
@@ -164,6 +177,7 @@ export function KiwoomAccountDialog({
   const [ipNotice, setIpNotice] = useState<string | null>(null);
   const [lotsPending, setLotsPending] = useState(false);
   const loadGen = useRef(0);
+  const accountRef = useRef<AccountView | null>(null);
 
   const load = () => {
     const mine = ++loadGen.current;
@@ -171,16 +185,20 @@ export function KiwoomAccountDialog({
       .then(async (res) => (await res.json()) as AccountView)
       .then((data) => {
         if (mine !== loadGen.current) return;
-        setAccount(data);
+        const hadLots = (accountRef.current?.positions ?? []).some((row) => (row.lots?.length ?? 0) > 0);
+        const next = mergeAccount(accountRef.current, data);
+        accountRef.current = next;
+        setAccount(next);
         if (data.mode !== "rest" || data.error) {
           setLotsPending(false);
           return;
         }
-        setLotsPending(true);
+        if (!hadLots) setLotsPending(true);
         return fetch("/api/kiwoom/account?lots=1")
           .then(async (res) => (await res.json()) as AccountView)
           .then((detail) => {
             if (mine !== loadGen.current || detail.error) return;
+            accountRef.current = detail;
             setAccount(detail);
           })
           .finally(() => {
@@ -189,6 +207,7 @@ export function KiwoomAccountDialog({
       })
       .catch(() => {
         if (mine !== loadGen.current) return;
+        accountRef.current = null;
         setAccount(null);
         setLotsPending(false);
       });
@@ -249,53 +268,53 @@ export function KiwoomAccountDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="h-[92vh] max-h-[92vh] w-[96vw] max-w-[96vw] overflow-auto border-[var(--workspace-border)] bg-[var(--workspace-panel)] sm:max-w-[96vw]"
+        className="flex h-[92vh] max-h-[92vh] w-[96vw] max-w-[96vw] flex-col gap-3 overflow-hidden border-[var(--workspace-border)] bg-[var(--workspace-panel)] p-6 text-base sm:max-w-[96vw]"
         data-feature="trade.kiwoom.account.panel"
       >
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
+          <DialogTitle className="flex items-center gap-2 text-xl">
             계좌 · 키움
             <span
               className={cn(
-                "rounded px-1.5 py-0.5 text-[10px] font-medium",
+                "rounded px-2 py-0.5 text-sm font-medium",
                 live ? "bg-rose-500/20 text-rose-300" : "bg-sky-500/20 text-sky-200"
               )}
             >
               {account == null ? "확인 중" : live ? "실전" : account.mode === "rest" ? "모의" : "로컬 모의"}
             </span>
             {account?.accountNo && (
-              <span className="font-mono text-[11px] font-normal text-[var(--workspace-muted)]">
+              <span className="font-mono text-base font-normal text-[var(--workspace-muted)]">
                 {account.accountNo}
               </span>
             )}
-            <button type="button" className="ml-auto text-[11px] font-normal text-[var(--workspace-muted)] underline" onClick={load}>
+            <button type="button" className="ml-auto text-base font-normal text-[var(--workspace-muted)] underline" onClick={load}>
               새로고침
             </button>
           </DialogTitle>
         </DialogHeader>
 
-        {account?.error && <div className="text-[12px] text-rose-300">{account.error}</div>}
+        {account?.error && <div className="text-base text-rose-300">{account.error}</div>}
         {account?.outboundIp && (
-          <div className="flex flex-wrap items-center gap-2 text-[12px] text-[var(--workspace-fg)]">
+          <div className="flex flex-wrap items-center gap-2 text-base text-[var(--workspace-fg)]">
             <span>
               이 PC 접속 주소 <span className="font-mono text-rose-200">{account.outboundIp}</span>
             </span>
             <button
               type="button"
-              className="rounded border border-[var(--workspace-border)] px-2 py-0.5 text-[11px]"
+              className="rounded border border-[var(--workspace-border)] px-2 py-0.5 text-sm"
               onClick={() => void navigator.clipboard.writeText(account.outboundIp ?? "")}
             >
               주소 복사
             </button>
-            <span className="text-[11px] text-[var(--workspace-faint)]">
+            <span className="text-sm text-[var(--workspace-faint)]">
               키움은 등록된 주소만 허용하고, 집 IP는 바뀝니다. 바뀐 주소를 사용신청에 추가하세요.
             </span>
           </div>
         )}
-        {ipNotice && <div className="text-[12px] text-amber-200">{ipNotice}</div>}
-        {sellMsg && <div className="text-[12px] text-[var(--workspace-fg)]">{sellMsg}</div>}
+        {ipNotice && <div className="text-base text-amber-200">{ipNotice}</div>}
+        {sellMsg && <div className="text-base text-[var(--workspace-fg)]">{sellMsg}</div>}
         {live && (
-          <label className="flex items-center gap-2 text-[12px] text-rose-200">
+          <label className="flex items-center gap-2 text-base text-rose-200">
             <input
               type="checkbox"
               checked={confirmLive}
@@ -312,7 +331,7 @@ export function KiwoomAccountDialog({
           <MoneyPair label="평가손익" amount={account?.summary?.pnl} rate={rate} emphasize="pnl" />
         </div>
 
-        <div className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-[11px] text-[var(--workspace-muted)]">
+        <div className="flex flex-wrap gap-x-5 gap-y-1 font-mono text-base tabular-nums text-[var(--workspace-muted)]">
           <span>총매입 {krw(account?.summary?.purchase)}</span>
           <span className={tone(account?.summary?.returnPct)}>
             총수익률 {pct(account?.summary?.returnPct)}
@@ -331,13 +350,25 @@ export function KiwoomAccountDialog({
         </div>
 
         {rows.length ? (
-          <div className="max-h-[62vh] overflow-auto rounded-md border border-[var(--workspace-border)]">
-            <table className="w-full min-w-[980px] border-collapse text-left font-mono text-[12px]">
-              <thead className="sticky top-0 bg-[var(--workspace-panel)] text-[10px] text-[var(--workspace-faint)]">
+          <div className="min-h-0 flex-1 overflow-auto rounded-md border border-[var(--workspace-border)]">
+            <table className="w-full table-fixed border-collapse text-left font-mono text-base tabular-nums">
+              <colgroup>
+                <col className="w-[16%]" />
+                <col className="w-[8%]" />
+                <col className="w-[7%]" />
+                <col className="w-[11%]" />
+                <col className="w-[11%]" />
+                <col className="w-[12%]" />
+                <col className="w-[12%]" />
+                <col className="w-[11%]" />
+                <col className="w-[7%]" />
+                <col className="w-[5%]" />
+              </colgroup>
+              <thead className="sticky top-0 bg-[var(--workspace-panel)] text-sm text-[var(--workspace-faint)]">
                 <tr>
                   {["종목", "보유", "가능", "매수가", "현재가", "매입금액", "평가금액", "손익", "수익률", "비중"].map(
                     (label, index) => (
-                      <th key={label} className={cn("px-2 py-1.5 font-normal", index > 0 && "text-right")}>
+                      <th key={label} className={cn("whitespace-nowrap px-2 py-2 font-normal", index > 0 && "text-right")}>
                         {label}
                       </th>
                     )
@@ -359,11 +390,11 @@ export function KiwoomAccountDialog({
                       )}
                       onClick={() => openSymbol(row.code)}
                     >
-                      <td className="max-w-[180px] truncate px-2 py-1.5 text-[var(--workspace-fg)]" title={row.name}>
+                      <td className="truncate px-2 py-2 text-[var(--workspace-fg)]" title={row.name}>
                         {lots.length > 0 && (
                           <button
                             type="button"
-                            className="mr-1 rounded border border-[var(--workspace-border)] px-1 text-[11px]"
+                            className="mr-1 rounded border border-[var(--workspace-border)] px-1.5 text-sm"
                             onClick={(ev) => {
                               ev.stopPropagation();
                               setOpenLots((prev) => ({ ...prev, [row.code]: !prev[row.code] }));
@@ -373,29 +404,29 @@ export function KiwoomAccountDialog({
                           </button>
                         )}
                         {known?.nameKo || row.name}
-                        <span className="ml-1 text-[10px] text-[var(--workspace-faint)]">{row.code}</span>
+                        <span className="ml-1 text-sm text-[var(--workspace-faint)]">{row.code}</span>
                       </td>
-                      <td className="px-2 py-1.5 text-right">{row.qty.toLocaleString("ko-KR")}</td>
-                      <td className="px-2 py-1.5 text-right text-[var(--workspace-muted)]">
+                      <td className="whitespace-nowrap px-2 py-2 text-right">{row.qty.toLocaleString("ko-KR")}</td>
+                      <td className="whitespace-nowrap px-2 py-2 text-right text-[var(--workspace-muted)]">
                         {row.sellableQty.toLocaleString("ko-KR")}
                       </td>
-                      <td className="px-2 py-1.5 text-right">
+                      <td className="px-2 py-2 text-right">
                         {dualMoney(row.currency, row.avgPrice, row.krwAvgPrice, rate)}
                       </td>
-                      <td className="px-2 py-1.5 text-right">
+                      <td className="px-2 py-2 text-right">
                         {dualMoney(row.currency, row.lastPrice, row.krwLastPrice, rate)}
                       </td>
-                      <td className="px-2 py-1.5 text-right">
+                      <td className="px-2 py-2 text-right">
                         {dualMoney(row.currency, row.purchaseAmount, row.krwPurchaseAmount, rate)}
                       </td>
-                      <td className="px-2 py-1.5 text-right">
+                      <td className="px-2 py-2 text-right">
                         {dualMoney(row.currency, row.evalAmount, row.krwEvalAmount, rate)}
                       </td>
-                      <td className={cn("px-2 py-1.5 text-right", tone(row.pnl))}>
+                      <td className={cn("px-2 py-2 text-right", tone(row.pnl))}>
                         {dualMoney(row.currency, row.pnl, row.krwPnl, rate)}
                       </td>
-                      <td className={cn("px-2 py-1.5 text-right", tone(row.returnPct))}>{pct(row.returnPct)}</td>
-                      <td className="px-2 py-1.5 text-right text-[var(--workspace-muted)]">{share(row.weightPct)}</td>
+                      <td className={cn("whitespace-nowrap px-2 py-2 text-right", tone(row.returnPct))}>{pct(row.returnPct)}</td>
+                      <td className="whitespace-nowrap px-2 py-2 text-right text-[var(--workspace-muted)]">{share(row.weightPct)}</td>
                     </tr>
                     {expanded &&
                       lots.map((lot, index) => {
@@ -409,30 +440,30 @@ export function KiwoomAccountDialog({
                         const won = (amount: number | null) =>
                           row.currency === "USD" && rate != null && amount != null ? amount * rate : null;
                         return (
-                          <tr key={`${row.code}-${lot.date}-${lot.time ?? ""}-${index}`} className="border-t border-[var(--workspace-border)] bg-white/[0.02]">
-                            <td className="px-2 py-1.5 pl-8 text-[11px] text-[var(--workspace-muted)]">{lotWhen(lot)}</td>
-                            <td className="px-2 py-1.5 text-right">{lot.qty.toLocaleString("ko-KR")}</td>
+                          <tr key={`${row.code}-${lot.date}-${lot.time ?? ""}-${index}`} className="border-t border-[var(--workspace-border)] bg-white/[0.02] text-sm">
+                            <td className="truncate px-2 py-2 pl-6 text-[var(--workspace-muted)]">{lotWhen(lot)}</td>
+                            <td className="whitespace-nowrap px-2 py-2 text-right">{lot.qty.toLocaleString("ko-KR")}</td>
                             <td />
-                            <td className="px-2 py-1.5 text-right">
+                            <td className="whitespace-nowrap px-2 py-2 text-right">
                               {row.currency === "USD" ? usd(lot.price) : krw(lot.price)}
                             </td>
-                            <td className="px-2 py-1.5 text-right">
+                            <td className="whitespace-nowrap px-2 py-2 text-right">
                               {row.currency === "USD" ? usd(row.lastPrice) : krw(row.lastPrice)}
                             </td>
-                            <td className="px-2 py-1.5 text-right">
+                            <td className="px-2 py-2 text-right">
                               {dualMoney(row.currency, buyAmt, won(buyAmt), rate)}
                             </td>
-                            <td className="px-2 py-1.5 text-right">
+                            <td className="px-2 py-2 text-right">
                               {dualMoney(row.currency, evalAmt, won(evalAmt), rate)}
                             </td>
-                            <td className={cn("px-2 py-1.5 text-right", tone(pnlAmt))}>
+                            <td className={cn("px-2 py-2 text-right", tone(pnlAmt))}>
                               {dualMoney(row.currency, pnlAmt, won(pnlAmt), rate)}
                             </td>
-                            <td className={cn("px-2 py-1.5 text-right", tone(ret))}>{pct(ret)}</td>
-                            <td className="px-2 py-1.5 text-right">
+                            <td className={cn("whitespace-nowrap px-2 py-2 text-right", tone(ret))}>{pct(ret)}</td>
+                            <td className="px-2 py-2 text-right">
                               <button
                                 type="button"
-                                className="rounded border border-rose-400/40 px-2 py-0.5 text-[10px] text-rose-200 disabled:opacity-40"
+                                className="rounded border border-rose-400/40 px-2 py-0.5 text-sm text-rose-200 disabled:opacity-40"
                                 disabled={live && !confirmLive}
                                 onClick={() => void sellLot(row, lot.qty)}
                               >
@@ -449,7 +480,7 @@ export function KiwoomAccountDialog({
             </table>
           </div>
         ) : (
-          <div className="text-[12px] text-[var(--workspace-faint)]">
+          <div className="text-base text-[var(--workspace-faint)]">
             {account == null
               ? "계좌를 불러오는 중"
               : account.error
@@ -460,7 +491,7 @@ export function KiwoomAccountDialog({
           </div>
         )}
 
-        <p className="text-[10px] text-[var(--workspace-faint)]">
+        <p className="text-sm leading-relaxed text-[var(--workspace-faint)]">
           계좌번호 10자리는 8자리 계좌에 상품코드 2자리가 붙은 값입니다. 10은 위탁종합입니다.
           국내 잔고는 kt00018, 미국 잔고는 원장잔고확인 ust21070, 원화 추정자산은 통화별 평가 ust21120입니다.
           미국 종목은 달러가 위, 키움이 환산한 원이 아래입니다. + 줄은 매수일별 수량과 금액입니다.

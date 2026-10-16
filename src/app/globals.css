@@ -132,6 +132,24 @@
   }
 }
 
+/* The workspace is a large screen. Step the small utility sizes up so labels are not lost in the gaps. */
+[data-chartdesk] .text-\[10px\] {
+  font-size: 13px;
+  line-height: 1.35;
+}
+[data-chartdesk] .text-\[11px\] {
+  font-size: 14px;
+  line-height: 1.35;
+}
+[data-chartdesk] .text-xs {
+  font-size: 14px;
+  line-height: 1.4;
+}
+[data-chartdesk] .text-sm {
+  font-size: 16px;
+  line-height: 1.4;
+}
+
 /* Hide lightweight-charts TradingView attribution logo if it still mounts. */
 #tv-attr-logo,
 a#tv-attr-logo,

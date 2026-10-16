@@ -328,9 +328,10 @@ export function WorkspaceShell() {
   return (
     <div
       className={cn(
-        "flex h-screen flex-col overflow-hidden bg-[var(--workspace-bg)] text-[var(--workspace-fg)]",
+        "flex h-screen flex-col overflow-hidden bg-[var(--workspace-bg)] text-[15px] text-[var(--workspace-fg)]",
         fullscreen && "fixed inset-0 z-50"
       )}
+      data-chartdesk=""
       data-fullscreen={fullscreen ? "1" : "0"}
     >
       {showDisclaimer && !fullscreen && (
