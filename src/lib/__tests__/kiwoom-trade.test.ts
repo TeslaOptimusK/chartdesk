@@ -4,6 +4,7 @@ import { kiwoomNeedsIpRegistration } from "@/lib/kiwoom/quote-rest";
 import {
   accountEstimatedAssets,
   fillsFromHistory,
+  fillsFromOrders,
   formatKiwoomAccountNo,
   historyFillPrice,
   krwToUsd,
@@ -14,7 +15,7 @@ import {
   reportedAssetsIfComplete,
 } from "@/lib/kiwoom/rest-trade";
 import { bracketAction, separateLongLevels } from "@/lib/kiwoom/brackets";
-import { historyWindows, lotKey, lotsCover, openLotsFromFills, reconcileLots } from "@/lib/kiwoom/lots";
+import { groupLotsByPrice, historyWindows, lotKey, lotsCover, openLotsFromFills, reconcileLots } from "@/lib/kiwoom/lots";
 import { buildScaleInOrders, krxTickSize, roundToTick } from "@/lib/kiwoom/scale-plan";
 
 describe("krx ticks", () => {
@@ -238,6 +239,49 @@ describe("open lots", () => {
     assert.equal(lots.length, 2);
     assert.equal(lots[1]?.time, "221001");
     assert.equal(historyFillPrice({ fc_deal_amt: "0", uv_exrt: "10.61" }, 795), 10.61);
+  });
+
+  it("keeps each filled order at its own price", () => {
+    const fills = fillsFromOrders({
+      result_list: [
+        {
+          ord_dt: "20261001",
+          ord_no: "11",
+          stk_cd: "TSLA",
+          slby_tp_nm: "매수",
+          cntr_qty: "20",
+          cntr_uv: "370.00",
+          ord_uv: "371.00",
+        },
+        {
+          ord_dt: "20261015",
+          ord_no: "12",
+          stk_cd: "TSLA",
+          slby_tp_nm: "매수",
+          cntr_qty: "13",
+          cntr_uv: "392.50",
+          ord_uv: "0",
+        },
+        {
+          ord_dt: "20261016",
+          ord_no: "13",
+          stk_cd: "TSLA",
+          slby_tp: "2",
+          cntr_qty: "0",
+          ord_uv: "380",
+        },
+      ],
+    });
+    assert.equal(fills.length, 2);
+    assert.equal(fills[0]?.price, 370);
+    assert.equal(fills[0]?.qty, 20);
+    assert.equal(fills[1]?.price, 392.5);
+    const lots = groupLotsByPrice(
+      reconcileLots(openLotsFromFills(fills).get("TSLA") ?? [], 33, 379.01)
+    );
+    assert.equal(lots.length, 2);
+    assert.equal(lots[0]?.qty, 20);
+    assert.equal(lots[1]?.qty, 13);
   });
 
   it("splits the history request into three-month windows", () => {

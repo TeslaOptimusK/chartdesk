@@ -4,6 +4,7 @@ import {
   historyWindows,
   lotKey,
   lotsCover,
+  groupLotsByPrice,
   openLotsFromFills,
   reconcileLots,
   type FillEvent,
@@ -601,10 +602,12 @@ export async function fetchKiwoomAccount(options?: { lots?: boolean }): Promise<
   const lotsByCode = openLotsFromFills(events);
   for (const position of snapshot.positions) {
     if (/^\d{6}$/.test(position.code)) continue;
-    position.lots = reconcileLots(
-      lotsByCode.get(lotKey(position.code)) ?? [],
-      position.qty,
-      position.avgPrice
+    position.lots = groupLotsByPrice(
+      reconcileLots(
+        lotsByCode.get(lotKey(position.code)) ?? [],
+        position.qty,
+        position.avgPrice
+      )
     );
   }
   snapshot.historyNote =
@@ -615,7 +618,7 @@ export async function fetchKiwoomAccount(options?: { lots?: boolean }): Promise<
 }
 
 const US_HISTORY_SPAN_DAYS = 89;
-const US_HISTORY_HORIZON_DAYS = 89 * 3;
+const US_HISTORY_HORIZON_DAYS = 89 * 8;
 
 async function readUsTradeWindow(
   startAgo: number,
@@ -624,19 +627,19 @@ async function readUsTradeWindow(
 ): Promise<FillEvent[] | null> {
   const body = await readBook(
     "/api/us/acnt",
-    "ust21100",
+    "ust21180",
     {
       strt_dt: kstYmd(startAgo),
       end_dt: kstYmd(endAgo),
-      tp: "3",
+      slby_tp: "0",
       stex_tp: "",
       stk_cd: stockCode,
-      krw_repl_skip_yn: "Y",
+      oppo_trde_tp: "%",
     },
     4
   );
   if (!body) return null;
-  return fillsFromHistory(body);
+  return fillsFromOrders(body);
 }
 
 function pushFills(into: FillEvent[], seen: Set<string>, next: FillEvent[]): void {
@@ -678,31 +681,31 @@ async function readUsTradeFillsFresh(
   const events: FillEvent[] = [];
   const seen = new Set<string>();
   let failed = false;
-  let misses = 0;
-  for (const window of historyWindows(US_HISTORY_HORIZON_DAYS, US_HISTORY_SPAN_DAYS)) {
-    const page = await readUsTradeWindow(window.startAgo, window.endAgo, "");
-    if (!page) {
-      failed = true;
-      misses += 1;
-      if (misses >= 2) break;
-      continue;
+  const windows = historyWindows(US_HISTORY_HORIZON_DAYS, US_HISTORY_SPAN_DAYS);
+  const first = windows[0];
+  if (first) {
+    const page = await readUsTradeWindow(first.startAgo, first.endAgo, "");
+    if (!page) failed = true;
+    else {
+      pushFills(events, seen, page);
+      if (lotsCover(events, held)) return { events, failed: false };
     }
-    misses = 0;
-    pushFills(events, seen, page);
-    if (lotsCover(events, held)) return { events, failed: false };
   }
   const uncovered = held.filter((position) => !lotsCover(events, [position]));
   for (const position of uncovered) {
-    const windows = historyWindows(US_HISTORY_HORIZON_DAYS, US_HISTORY_SPAN_DAYS);
-    const first = windows[0];
-    if (!first) break;
-    const recent = await readUsTradeWindow(first.startAgo, first.endAgo, position.code);
-    if (!recent) {
-      failed = true;
-      continue;
+    let symbolMisses = 0;
+    for (const window of windows) {
+      const page = await readUsTradeWindow(window.startAgo, window.endAgo, position.code);
+      if (!page) {
+        failed = true;
+        symbolMisses += 1;
+        if (symbolMisses >= 2) break;
+        continue;
+      }
+      symbolMisses = 0;
+      pushFills(events, seen, page);
+      if (lotsCover(events, [position])) break;
     }
-    if (recent.length === 0) continue;
-    pushFills(events, seen, recent);
   }
   return { events, failed };
 }
@@ -774,6 +777,52 @@ export function historyFillPrice(row: Record<string, unknown>, qty: number): num
   if (fromAmount > 0) return fromAmount;
   if (unit != null && unit > 0) return unit;
   return 0;
+}
+
+function orderSide(row: Record<string, unknown>): "buy" | "sell" | null {
+  const named = classifyDeal(String(row.slby_tp_nm ?? ""));
+  if (named) return named;
+  const code = String(row.slby_tp ?? "").trim();
+  if (code === "2") return "buy";
+  if (code === "1") return "sell";
+  return null;
+}
+
+/** ust21180 rows. Each filled order keeps its own fill price and quantity. */
+export function fillsFromOrders(body: Record<string, unknown> | null): FillEvent[] {
+  const list = Array.isArray(body?.result_list) ? body.result_list : [];
+  const out: FillEvent[] = [];
+  for (const item of list) {
+    const row = asRecord(item);
+    if (!row) continue;
+    const side = orderSide(row);
+    const code = lotKey(usTicker(row.stk_cd));
+    const qty = firstAbs(row, ["cntr_qty"]) ?? 0;
+    const unit = firstAbs(row, ["cntr_uv"]);
+    const amount = firstAbs(row, ["cntr_amt"]);
+    const ordered = firstAbs(row, ["ord_uv"]);
+    const price =
+      unit != null && unit > 0
+        ? unit
+        : amount != null && amount > 0 && qty > 0
+          ? amount / qty
+          : ordered != null && ordered > 0
+            ? ordered
+            : 0;
+    if (!side || !code || qty <= 0 || price <= 0) continue;
+    const date = String(row.ord_dt ?? "").replace(/\D/g, "");
+    const orderNo = String(row.ord_no ?? "").trim();
+    out.push({
+      date,
+      time: String(row.ord_time ?? "").replace(/\D/g, ""),
+      code,
+      side,
+      qty,
+      price: Math.round(price * 10000) / 10000,
+      dealNo: orderNo ? `${date}|${orderNo}` : undefined,
+    });
+  }
+  return out;
 }
 
 export function fillsFromHistory(body: Record<string, unknown> | null): FillEvent[] {

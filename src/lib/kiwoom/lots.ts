@@ -98,6 +98,32 @@ export function reconcileLots(
   return kept;
 }
 
+/** Same fill price shares one row. The undated remainder stays on its own. */
+export function groupLotsByPrice(lots: OpenLot[]): OpenLot[] {
+  const grouped: OpenLot[] = [];
+  const index = new Map<string, OpenLot>();
+  for (const lot of lots) {
+    if (!lot.date) {
+      grouped.push({ ...lot });
+      continue;
+    }
+    const key = lot.price.toFixed(4);
+    const prev = index.get(key);
+    if (!prev) {
+      const copy = { ...lot };
+      index.set(key, copy);
+      grouped.push(copy);
+      continue;
+    }
+    prev.qty = roundQty(prev.qty + lot.qty);
+    if (lot.date < prev.date) {
+      prev.date = lot.date;
+      prev.time = lot.time;
+    }
+  }
+  return grouped;
+}
+
 /** True when every holding is explained by the fills gathered so far. */
 export function lotsCover(
   events: FillEvent[],
