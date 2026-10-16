@@ -131,9 +131,111 @@ function mergeAccount(prev: AccountView | null, next: AccountView): AccountView 
   };
 }
 
+interface TradeCard {
+  title: string;
+  code: string;
+  when: string;
+  qty: number;
+  entry: number | null;
+  last: number | null;
+  pnl: number | null;
+  ret: number | null;
+  currency?: string;
+  symbolId: string | null;
+}
+
+function priceText(currency: string | undefined, value: number | null): string {
+  if ((currency ?? "KRW") === "USD") return usd(value);
+  return krw(value);
+}
+
 function tone(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value) || value === 0) return "text-[var(--workspace-fg)]";
   return value > 0 ? "text-emerald-400" : "text-rose-400";
+}
+
+function TradePnlCard({
+  card,
+  rate,
+  onClose,
+  onChart,
+}: {
+  card: TradeCard;
+  rate: number | null;
+  onClose: () => void;
+  onChart: () => void;
+}) {
+  const up = (card.ret ?? 0) > 0;
+  const down = (card.ret ?? 0) < 0;
+  const color = up ? "text-emerald-300" : down ? "text-rose-300" : "text-white";
+  const wash = up ? "bg-emerald-400/15" : down ? "bg-rose-400/15" : "bg-white/10";
+  const glow = up
+    ? "shadow-[0_0_90px_rgba(52,211,153,0.28)]"
+    : down
+      ? "shadow-[0_0_90px_rgba(251,113,133,0.28)]"
+      : "";
+  const won =
+    card.currency === "USD" && rate != null && card.pnl != null ? card.pnl * rate : null;
+  return (
+    <div
+      className="absolute inset-0 z-30 flex items-center justify-center bg-black/75 p-4"
+      onClick={onClose}
+    >
+      <article
+        className={cn(
+          "flex h-[min(760px,92%)] w-[min(390px,100%)] flex-col rounded-[28px] border border-white/10 bg-[#0b1220] px-6 py-7",
+          glow
+        )}
+        onClick={(ev) => ev.stopPropagation()}
+      >
+        <div className="text-sm tracking-[0.18em] text-white/45">CHARTDESK</div>
+        <h2 className="mt-8 text-2xl font-semibold leading-tight text-white">{card.title}</h2>
+        <p className="mt-1 font-mono text-sm text-white/50">
+          {card.code} · {card.when}
+        </p>
+        <div className="flex flex-1 flex-col items-center justify-center">
+          <div className="text-sm text-white/55">수익률</div>
+          <div className={cn("mt-3 font-mono text-7xl font-bold tabular-nums leading-none", color)}>
+            {pct(card.ret)}
+          </div>
+          <div className={cn("mt-5 rounded-full px-5 py-2 text-center font-mono text-xl tabular-nums", wash, color)}>
+            <div>{priceText(card.currency, card.pnl)}</div>
+            {won != null && <div className="text-sm text-white/55">{krw(won)}</div>}
+          </div>
+        </div>
+        <dl className="space-y-3 border-t border-white/10 pt-5 text-base">
+          {[
+            ["매수가", priceText(card.currency, card.entry)],
+            ["현재가", priceText(card.currency, card.last)],
+            ["수량", `${card.qty.toLocaleString("ko-KR")}주`],
+          ].map(([label, value]) => (
+            <div key={label} className="flex items-baseline justify-between gap-4">
+              <dt className="text-white/50">{label}</dt>
+              <dd className="font-mono tabular-nums text-white">{value}</dd>
+            </div>
+          ))}
+        </dl>
+        <div className="mt-6 flex gap-2">
+          {card.symbolId && (
+            <button
+              type="button"
+              className="h-11 flex-1 rounded-full bg-white text-sm font-medium text-[#0b1220]"
+              onClick={onChart}
+            >
+              차트로
+            </button>
+          )}
+          <button
+            type="button"
+            className="h-11 flex-1 rounded-full border border-white/15 text-sm text-white/80"
+            onClick={onClose}
+          >
+            닫기
+          </button>
+        </div>
+      </article>
+    </div>
+  );
 }
 
 function MoneyPair({
@@ -176,6 +278,7 @@ export function KiwoomAccountDialog({
   const [sellMsg, setSellMsg] = useState<string | null>(null);
   const [ipNotice, setIpNotice] = useState<string | null>(null);
   const [lotsPending, setLotsPending] = useState(false);
+  const [tradeCard, setTradeCard] = useState<TradeCard | null>(null);
   const loadGen = useRef(0);
   const accountRef = useRef<AccountView | null>(null);
 
@@ -268,7 +371,7 @@ export function KiwoomAccountDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="flex h-[92vh] max-h-[92vh] w-[96vw] max-w-[96vw] flex-col gap-3 overflow-hidden border-[var(--workspace-border)] bg-[var(--workspace-panel)] p-6 text-base sm:max-w-[96vw]"
+        className="relative flex h-[92vh] max-h-[92vh] w-[96vw] max-w-[96vw] flex-col gap-3 overflow-hidden border-[var(--workspace-border)] bg-[var(--workspace-panel)] p-6 text-base sm:max-w-[96vw]"
         data-feature="trade.kiwoom.account.panel"
       >
         <DialogHeader>
@@ -384,11 +487,21 @@ export function KiwoomAccountDialog({
                   return (
                     <Fragment key={row.code}>
                     <tr
-                      className={cn(
-                        "border-t border-[var(--workspace-border)]",
-                        known && "cursor-pointer hover:bg-white/5"
-                      )}
-                      onClick={() => openSymbol(row.code)}
+                      className="cursor-pointer border-t border-[var(--workspace-border)] hover:bg-white/5"
+                      onClick={() =>
+                        setTradeCard({
+                          title: known?.nameKo || row.name,
+                          code: row.code,
+                          when: "전체 보유",
+                          qty: row.qty,
+                          entry: row.avgPrice,
+                          last: row.lastPrice,
+                          pnl: row.pnl,
+                          ret: row.returnPct,
+                          currency: row.currency,
+                          symbolId: known?.id ?? null,
+                        })
+                      }
                     >
                       <td className="truncate px-2 py-2 text-[var(--workspace-fg)]" title={row.name}>
                         {lots.length > 0 && (
@@ -440,7 +553,24 @@ export function KiwoomAccountDialog({
                         const won = (amount: number | null) =>
                           row.currency === "USD" && rate != null && amount != null ? amount * rate : null;
                         return (
-                          <tr key={`${row.code}-${lot.date}-${lot.time ?? ""}-${index}`} className="border-t border-[var(--workspace-border)] bg-white/[0.02] text-sm">
+                          <tr
+                            key={`${row.code}-${lot.date}-${lot.time ?? ""}-${index}`}
+                            className="cursor-pointer border-t border-[var(--workspace-border)] bg-white/[0.02] text-sm hover:bg-white/5"
+                            onClick={() =>
+                              setTradeCard({
+                                title: known?.nameKo || row.name,
+                                code: row.code,
+                                when: lotWhen(lot),
+                                qty: lot.qty,
+                                entry: lot.price,
+                                last: row.lastPrice,
+                                pnl: pnlAmt,
+                                ret,
+                                currency: row.currency,
+                                symbolId: known?.id ?? null,
+                              })
+                            }
+                          >
                             <td className="truncate px-2 py-2 pl-6 text-[var(--workspace-muted)]">{lotWhen(lot)}</td>
                             <td className="whitespace-nowrap px-2 py-2 text-right">{lot.qty.toLocaleString("ko-KR")}</td>
                             <td />
@@ -465,7 +595,10 @@ export function KiwoomAccountDialog({
                                 type="button"
                                 className="rounded border border-rose-400/40 px-2 py-0.5 text-sm text-rose-200 disabled:opacity-40"
                                 disabled={live && !confirmLive}
-                                onClick={() => void sellLot(row, lot.qty)}
+                                onClick={(ev) => {
+                                  ev.stopPropagation();
+                                  void sellLot(row, lot.qty);
+                                }}
                               >
                                 매도
                               </button>
@@ -494,9 +627,19 @@ export function KiwoomAccountDialog({
         <p className="text-sm leading-relaxed text-[var(--workspace-faint)]">
           계좌번호 10자리는 8자리 계좌에 상품코드 2자리가 붙은 값입니다. 10은 위탁종합입니다.
           국내 잔고는 kt00018, 미국 잔고는 원장잔고확인 ust21070, 원화 추정자산은 통화별 평가 ust21120입니다.
-          미국 종목은 달러가 위, 키움이 환산한 원이 아래입니다. + 줄은 매수일별 수량과 금액입니다.
-          {account?.historyNote ? ` ${account.historyNote}` : ""} 차트에 있는 종목을 누르면 그 차트로 이동합니다.
+          미국 종목은 달러가 위, 키움이 환산한 원이 아래입니다. 항목을 누르면 그 거래의 수익률 카드가 열립니다.
+          {account?.historyNote ? ` ${account.historyNote}` : ""}
         </p>
+        {tradeCard && (
+          <TradePnlCard
+            card={tradeCard}
+            rate={rate}
+            onClose={() => setTradeCard(null)}
+            onChart={() => {
+              if (tradeCard.symbolId) openSymbol(tradeCard.symbolId);
+            }}
+          />
+        )}
       </DialogContent>
     </Dialog>
   );
