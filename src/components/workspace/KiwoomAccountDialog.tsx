@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -162,12 +162,36 @@ export function KiwoomAccountDialog({
   const [confirmLive, setConfirmLive] = useState(false);
   const [sellMsg, setSellMsg] = useState<string | null>(null);
   const [ipNotice, setIpNotice] = useState<string | null>(null);
+  const [lotsPending, setLotsPending] = useState(false);
+  const loadGen = useRef(0);
 
   const load = () => {
+    const mine = ++loadGen.current;
     fetch("/api/kiwoom/account")
       .then(async (res) => (await res.json()) as AccountView)
-      .then((data) => setAccount(data))
-      .catch(() => setAccount(null));
+      .then((data) => {
+        if (mine !== loadGen.current) return;
+        setAccount(data);
+        if (data.mode !== "rest" || data.error) {
+          setLotsPending(false);
+          return;
+        }
+        setLotsPending(true);
+        return fetch("/api/kiwoom/account?lots=1")
+          .then(async (res) => (await res.json()) as AccountView)
+          .then((detail) => {
+            if (mine !== loadGen.current || detail.error) return;
+            setAccount(detail);
+          })
+          .finally(() => {
+            if (mine === loadGen.current) setLotsPending(false);
+          });
+      })
+      .catch(() => {
+        if (mine !== loadGen.current) return;
+        setAccount(null);
+        setLotsPending(false);
+      });
   };
 
   useEffect(() => {
@@ -295,6 +319,7 @@ export function KiwoomAccountDialog({
           </span>
           <span>주문가능 {krw(account?.orderable)}</span>
           <span>보유 {rows.length}종목</span>
+          {lotsPending && <span>분할 매수 내역을 불러오는 중</span>}
           {(account?.fxCash ?? []).map((cash) => (
             <span key={cash.currency}>
               {cash.currency} 예수금 {cash.currency === "USD" ? usd(cash.deposit) : (cash.deposit ?? "—")}
