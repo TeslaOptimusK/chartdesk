@@ -34,24 +34,23 @@ if exist "C:\Program Files\GitHub CLI\gh.exe" (
 REM This block is parsed before it runs, so a pull that replaces this file
 REM cannot desync the rest of the update. The new file is started afterwards.
 (
-  git fetch origin
-  if errorlevel 1 (
-    wscript //nologo "%~dp0chartdesk-launch.vbs" alert "ChartDesk could not download the update. Check the network, then open ChartDesk again. Local files were not reset."
-    exit /b 1
-  )
+  git fetch origin > "%TEMP%\chartdesk-update.log" 2>&1
   git rev-parse --verify --quiet refs/heads/cursor/chartdesk-desktop >nul 2>&1
   if errorlevel 1 (
-    git checkout -b cursor/chartdesk-desktop --track origin/cursor/chartdesk-desktop
+    git checkout -b cursor/chartdesk-desktop --track origin/cursor/chartdesk-desktop >> "%TEMP%\chartdesk-update.log" 2>&1
   ) else (
-    git checkout cursor/chartdesk-desktop
+    git checkout cursor/chartdesk-desktop >> "%TEMP%\chartdesk-update.log" 2>&1
   )
+  git rev-parse HEAD > "%TEMP%\chartdesk-head.txt" 2>nul
+  git rev-parse origin/cursor/chartdesk-desktop > "%TEMP%\chartdesk-origin.txt" 2>nul
+  fc /b "%TEMP%\chartdesk-head.txt" "%TEMP%\chartdesk-origin.txt" >nul 2>&1
   if errorlevel 1 (
-    wscript //nologo "%~dp0chartdesk-launch.vbs" alert "ChartDesk could not switch to the desktop branch. Local edits were not discarded."
-    exit /b 1
+    git pull --ff-only origin cursor/chartdesk-desktop >> "%TEMP%\chartdesk-update.log" 2>&1
+    if errorlevel 1 (
+      git status --porcelain > "%TEMP%\chartdesk-git-status.txt"
+      for %%A in ("%TEMP%\chartdesk-git-status.txt") do if %%~zA==0 git reset --hard origin/cursor/chartdesk-desktop >> "%TEMP%\chartdesk-update.log" 2>&1
+    )
   )
-  git pull --ff-only origin cursor/chartdesk-desktop
-  if errorlevel 1 call :recover_desktop
-  if errorlevel 1 exit /b 1
   wscript //nologo "%~dp0chartdesk-launch.vbs" updated
   exit /b 0
 )
@@ -136,22 +135,6 @@ timeout /t 1 /nobreak >nul
 call :close_splash
 
 endlocal
-exit /b 0
-
-:recover_desktop
-REM The desktop branch is only a copy of origin. If the folder has no local edits,
-REM move that branch onto origin so a diverged commit does not block startup.
-git status --porcelain > "%TEMP%\chartdesk-git-status.txt"
-for %%A in ("%TEMP%\chartdesk-git-status.txt") do set "CD_STATUS_SIZE=%%~zA"
-if not "%CD_STATUS_SIZE%"=="0" (
-  wscript //nologo "%~dp0chartdesk-launch.vbs" alert "ChartDesk could not update because this folder has local edits. Those files were kept."
-  exit /b 1
-)
-git reset --hard origin/cursor/chartdesk-desktop
-if errorlevel 1 (
-  wscript //nologo "%~dp0chartdesk-launch.vbs" alert "ChartDesk could not fast-forward. The local branch may have diverged. Nothing was reset."
-  exit /b 1
-)
 exit /b 0
 
 :hide_console
