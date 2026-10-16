@@ -558,7 +558,12 @@ async function readBalance(apiId: string, body: Record<string, unknown>): Promis
   return readBook("/api/dostk/acnt", apiId, body);
 }
 
-export async function fetchKiwoomAccount(): Promise<KiwoomAccountSnapshot> {
+const BALANCE_CACHE_MS = 15_000;
+let balanceCache: { until: number; snapshot: KiwoomAccountSnapshot } | null = null;
+
+async function loadKiwoomBalance(): Promise<KiwoomAccountSnapshot> {
+  const now = Date.now();
+  if (balanceCache && now < balanceCache.until) return structuredClone(balanceCache.snapshot);
   const [depositEstimated, depositPlain, accountBody, krx18, nxt18, krx04, nxt04, usLedger, usValue] =
     await Promise.all([
       kiwoomAuthorizedPost("/api/dostk/acnt", "kt00001", { qry_tp: "3" }),
@@ -571,7 +576,7 @@ export async function fetchKiwoomAccount(): Promise<KiwoomAccountSnapshot> {
       readBook("/api/us/acnt", "ust21070", { stex_tp: "", stk_cd: "" }),
       readBook("/api/us/acnt", "ust21120", { cmsn_incl_tp: "", exrt_tp: "" }),
     ]);
-  const accountNo = readAccountNumber(accountBody);
+  const rawAccountNo = readAccountNumber(accountBody);
   const snaps = [krx18, nxt18, krx04, nxt04]
     .filter((body): body is Record<string, unknown> => body != null)
     .map((body) => parseKiwoomAccount(depositPlain ?? depositEstimated, body));
@@ -579,10 +584,22 @@ export async function fetchKiwoomAccount(): Promise<KiwoomAccountSnapshot> {
   if (usLedger) snaps.push(parseUsLedger(usLedger));
   if (usValue) snaps.push(parseUsValuation(usValue));
   const merged = mergeAccountSnapshots(snaps);
-  const held = merged.positions.filter((position) => !/^\d{6}$/.test(position.code) && position.qty > 0);
+  const snapshot: KiwoomAccountSnapshot = {
+    ...merged,
+    accountNo: formatKiwoomAccountNo(rawAccountNo ?? merged.accountNo),
+    historyNote: null,
+  };
+  balanceCache = { until: Date.now() + BALANCE_CACHE_MS, snapshot };
+  return structuredClone(snapshot);
+}
+
+export async function fetchKiwoomAccount(options?: { lots?: boolean }): Promise<KiwoomAccountSnapshot> {
+  const snapshot = await loadKiwoomBalance();
+  if (!options?.lots) return snapshot;
+  const held = snapshot.positions.filter((position) => !/^\d{6}$/.test(position.code) && position.qty > 0);
   const { events, failed } = await readUsTradeFills(held);
   const lotsByCode = openLotsFromFills(events);
-  for (const position of merged.positions) {
+  for (const position of snapshot.positions) {
     if (/^\d{6}$/.test(position.code)) continue;
     position.lots = reconcileLots(
       lotsByCode.get(lotKey(position.code)) ?? [],
@@ -590,18 +607,15 @@ export async function fetchKiwoomAccount(): Promise<KiwoomAccountSnapshot> {
       position.avgPrice
     );
   }
-  return {
-    ...merged,
-    accountNo: formatKiwoomAccountNo(accountNo ?? merged.accountNo),
-    historyNote:
-      held.length > 0 && failed && events.length === 0
-        ? "미국 매수 내역을 읽지 못해 분할 잔고 대신 평균만 표시합니다."
-        : null,
-  };
+  snapshot.historyNote =
+    held.length > 0 && failed && events.length === 0
+      ? "미국 매수 내역을 읽지 못해 분할 잔고 대신 평균만 표시합니다."
+      : null;
+  return snapshot;
 }
 
 const US_HISTORY_SPAN_DAYS = 89;
-const US_HISTORY_HORIZON_DAYS = 730;
+const US_HISTORY_HORIZON_DAYS = 89 * 3;
 
 async function readUsTradeWindow(
   startAgo: number,
@@ -619,7 +633,7 @@ async function readUsTradeWindow(
       stk_cd: stockCode,
       krw_repl_skip_yn: "Y",
     },
-    20
+    4
   );
   if (!body) return null;
   return fillsFromHistory(body);
@@ -689,16 +703,6 @@ async function readUsTradeFillsFresh(
     }
     if (recent.length === 0) continue;
     pushFills(events, seen, recent);
-    if (lotsCover(events, [position])) continue;
-    for (const window of windows.slice(1)) {
-      const older = await readUsTradeWindow(window.startAgo, window.endAgo, position.code);
-      if (!older) {
-        failed = true;
-        break;
-      }
-      pushFills(events, seen, older);
-      if (lotsCover(events, [position])) break;
-    }
   }
   return { events, failed };
 }

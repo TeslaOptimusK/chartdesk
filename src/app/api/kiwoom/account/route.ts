@@ -13,7 +13,8 @@ import { readPaperAccount } from "@/lib/storage";
 export const dynamic = "force-dynamic";
 
 /** Current Kiwoom deposit, positions, and local TP/SL watches. Paper ledger when keys are absent. */
-export async function GET() {
+export async function GET(request: Request) {
+  const lots = new URL(request.url).searchParams.get("lots") === "1";
   const configured = kiwoomQuotesConfigured();
   const live = configured && !kiwoomEndpoints().mock;
   await resumeBracketWatcher().catch(() => undefined);
@@ -44,7 +45,7 @@ export async function GET() {
 
   try {
     const [account, usdKrw, outboundIp] = await Promise.all([
-      fetchKiwoomAccount(),
+      fetchKiwoomAccount({ lots }),
       fetchUsdKrw(),
       lookupOutboundIp(),
     ]);
