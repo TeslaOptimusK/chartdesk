@@ -3,7 +3,9 @@ import { describe, it } from "node:test";
 import { kiwoomNeedsIpRegistration } from "@/lib/kiwoom/quote-rest";
 import {
   accountEstimatedAssets,
+  fillsFromHistory,
   formatKiwoomAccountNo,
+  historyFillPrice,
   krwToUsd,
   mergeAccountSnapshots,
   parseKiwoomAccount,
@@ -12,7 +14,7 @@ import {
   reportedAssetsIfComplete,
 } from "@/lib/kiwoom/rest-trade";
 import { bracketAction, separateLongLevels } from "@/lib/kiwoom/brackets";
-import { openLotsFromFills, reconcileLots } from "@/lib/kiwoom/lots";
+import { historyWindows, lotKey, lotsCover, openLotsFromFills, reconcileLots } from "@/lib/kiwoom/lots";
 import { buildScaleInOrders, krxTickSize, roundToTick } from "@/lib/kiwoom/scale-plan";
 
 describe("krx ticks", () => {
@@ -186,6 +188,64 @@ describe("open lots", () => {
     const lots = reconcileLots(books.get("TSLA") ?? [], 10, 370);
     assert.equal(lots.length, 1);
     assert.equal(lots[0]?.price, 370);
+  });
+
+  it("reads each US buy even when the foreign amount is empty or the rate is in the unit field", () => {
+    const fills = fillsFromHistory({
+      result_list: [
+        {
+          deal_dt: "20261015",
+          proc_time: "103015",
+          deal_kind_nm: "매수",
+          stk_cd: "NASDAQ:TSLA",
+          deal_qty: "20",
+          fc_deal_amt: "7400.00",
+          uv_exrt: "1450.12",
+          deal_no: "1",
+        },
+        {
+          deal_dt: "20261016",
+          proc_time: "221001",
+          deal_kind_nm: "주식매수",
+          stk_cd: "TSLA",
+          deal_qty: "13",
+          fc_deal_amt: "0",
+          uv_exrt: "392.50",
+          deal_no: "2",
+        },
+        {
+          deal_dt: "20261016",
+          deal_kind_nm: "매수취소",
+          stk_cd: "TSLA",
+          deal_qty: "13",
+          fc_deal_amt: "5000",
+          uv_exrt: "380",
+          deal_no: "3",
+        },
+      ],
+    });
+    assert.equal(fills.length, 2);
+    assert.equal(fills[0]?.code, "TSLA");
+    assert.equal(fills[0]?.price, 370);
+    assert.equal(fills[1]?.price, 392.5);
+    assert.equal(fills[1]?.time, "221001");
+    assert.equal(lotKey("TSLA.O"), "TSLA");
+    assert.equal(
+      lotsCover(fills, [{ code: "TSLA", qty: 33 }]),
+      true
+    );
+    const lots = reconcileLots(openLotsFromFills(fills).get("TSLA") ?? [], 33, 379.01);
+    assert.equal(lots.length, 2);
+    assert.equal(lots[1]?.time, "221001");
+    assert.equal(historyFillPrice({ fc_deal_amt: "0", uv_exrt: "10.61" }, 795), 10.61);
+  });
+
+  it("splits the history request into three-month windows", () => {
+    const windows = historyWindows(200, 89);
+    assert.deepEqual(windows[0], { startAgo: 88, endAgo: 0 });
+    assert.deepEqual(windows[1], { startAgo: 177, endAgo: 89 });
+    assert.ok(windows[1]!.endAgo === windows[0]!.startAgo + 1);
+    assert.ok(windows.at(-1)!.startAgo < 200);
   });
 });
 

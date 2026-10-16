@@ -31,7 +31,7 @@ interface PositionRow {
   krwPnl?: number | null;
   weightPct: number | null;
   venue?: "ND" | "NY" | "NA";
-  lots?: { date: string; qty: number; price: number }[];
+  lots?: { date: string; time?: string; qty: number; price: number }[];
 }
 
 interface FxCashRow {
@@ -59,6 +59,7 @@ interface AccountView {
   accountNo?: string | null;
   error?: string;
   outboundIp?: string | null;
+  historyNote?: string | null;
 }
 
 function krw(value: number | null | undefined): string {
@@ -102,6 +103,14 @@ function dualMoney(
       <div className="text-[10px] text-[var(--workspace-faint)]">{usd(krwToUsd(native ?? null, rate))}</div>
     </>
   );
+}
+
+function lotWhen(lot: { date: string; time?: string }): string {
+  if (lot.date.length !== 8) return "이전 잔고";
+  const day = `${lot.date.slice(0, 4)}-${lot.date.slice(4, 6)}-${lot.date.slice(6)}`;
+  const clock = (lot.time ?? "").replace(/\D/g, "");
+  if (clock.length < 4) return day;
+  return `${day} ${clock.slice(0, 2)}:${clock.slice(2, 4)}`;
 }
 
 function share(value: number | null | undefined): string {
@@ -314,7 +323,8 @@ export function KiwoomAccountDialog({
                 {rows.map((row) => {
                   const known = symbols.find((s) => s.ticker === row.code || s.id === row.code);
                   const lots = row.lots ?? [];
-                  const expanded = openLots[row.code] === true;
+                  const datedLots = lots.filter((lot) => lot.date.length === 8).length;
+                  const expanded = openLots[row.code] ?? datedLots >= 2;
                   return (
                     <Fragment key={row.code}>
                     <tr
@@ -368,12 +378,14 @@ export function KiwoomAccountDialog({
                           row.lastPrice != null && lot.price > 0
                             ? ((row.lastPrice - lot.price) / lot.price) * 100
                             : null;
-                        const when = lot.date.length === 8
-                          ? `${lot.date.slice(0, 4)}-${lot.date.slice(4, 6)}-${lot.date.slice(6)}`
-                          : "이전 잔고";
+                        const buyAmt = lot.price * lot.qty;
+                        const evalAmt = row.lastPrice != null ? row.lastPrice * lot.qty : null;
+                        const pnlAmt = evalAmt != null ? evalAmt - buyAmt : null;
+                        const won = (amount: number | null) =>
+                          row.currency === "USD" && rate != null && amount != null ? amount * rate : null;
                         return (
-                          <tr key={`${row.code}-${lot.date}-${index}`} className="border-t border-[var(--workspace-border)] bg-white/[0.02]">
-                            <td className="px-2 py-1.5 pl-8 text-[11px] text-[var(--workspace-muted)]">{when}</td>
+                          <tr key={`${row.code}-${lot.date}-${lot.time ?? ""}-${index}`} className="border-t border-[var(--workspace-border)] bg-white/[0.02]">
+                            <td className="px-2 py-1.5 pl-8 text-[11px] text-[var(--workspace-muted)]">{lotWhen(lot)}</td>
                             <td className="px-2 py-1.5 text-right">{lot.qty.toLocaleString("ko-KR")}</td>
                             <td />
                             <td className="px-2 py-1.5 text-right">
@@ -382,9 +394,15 @@ export function KiwoomAccountDialog({
                             <td className="px-2 py-1.5 text-right">
                               {row.currency === "USD" ? usd(row.lastPrice) : krw(row.lastPrice)}
                             </td>
-                            <td />
-                            <td />
-                            <td />
+                            <td className="px-2 py-1.5 text-right">
+                              {dualMoney(row.currency, buyAmt, won(buyAmt), rate)}
+                            </td>
+                            <td className="px-2 py-1.5 text-right">
+                              {dualMoney(row.currency, evalAmt, won(evalAmt), rate)}
+                            </td>
+                            <td className={cn("px-2 py-1.5 text-right", tone(pnlAmt))}>
+                              {dualMoney(row.currency, pnlAmt, won(pnlAmt), rate)}
+                            </td>
                             <td className={cn("px-2 py-1.5 text-right", tone(ret))}>{pct(ret)}</td>
                             <td className="px-2 py-1.5 text-right">
                               <button
@@ -420,7 +438,8 @@ export function KiwoomAccountDialog({
         <p className="text-[10px] text-[var(--workspace-faint)]">
           계좌번호 10자리는 8자리 계좌에 상품코드 2자리가 붙은 값입니다. 10은 위탁종합입니다.
           국내 잔고는 kt00018, 미국 잔고는 원장잔고확인 ust21070, 원화 추정자산은 통화별 평가 ust21120입니다.
-          미국 종목은 달러가 위, 키움이 환산한 원이 아래입니다. 차트에 있는 종목을 누르면 그 차트로 이동합니다.
+          미국 종목은 달러가 위, 키움이 환산한 원이 아래입니다. + 줄은 매수일별 수량과 금액입니다.
+          {account?.historyNote ? ` ${account.historyNote}` : ""} 차트에 있는 종목을 누르면 그 차트로 이동합니다.
         </p>
       </DialogContent>
     </Dialog>

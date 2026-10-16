@@ -1,6 +1,9 @@
 import { normalizeItemCode, parseKiwoomAbs } from "@/lib/kiwoom/quote-protocol";
 import {
   classifyDeal,
+  historyWindows,
+  lotKey,
+  lotsCover,
   openLotsFromFills,
   reconcileLots,
   type FillEvent,
@@ -41,7 +44,7 @@ export interface KiwoomPosition {
   /** US board for a sell: ND NASDAQ, NY NYSE, NA AMEX. */
   venue?: "ND" | "NY" | "NA";
   /** Open buy lots, oldest first. Empty when the broker did not return fills. */
-  lots?: { date: string; qty: number; price: number }[];
+  lots?: { date: string; time?: string; qty: number; price: number }[];
 }
 
 export interface KiwoomFxCash {
@@ -69,6 +72,8 @@ export interface KiwoomAccountSnapshot {
   positions: KiwoomPosition[];
   /** Foreign cash from ust21120. Empty for a domestic-only read. */
   fxCash: KiwoomFxCash[];
+  /** Set when US trade history could not be read, so lots stay on the average. */
+  historyNote?: string | null;
 }
 
 function signed(raw: unknown): number | null {
@@ -362,7 +367,7 @@ export function parseUsLedger(body: unknown): KiwoomAccountSnapshot {
         fxRate: firstAbs(row, ["exch_rate"]),
         weightPct: null as number | null,
         venue: usBoard(row.stex_nm),
-        lots: [] as { date: string; qty: number; price: number }[],
+        lots: [] as { date: string; time?: string; qty: number; price: number }[],
       } as KiwoomPosition;
     })
     .filter((row): row is KiwoomPosition => row != null);
@@ -539,10 +544,11 @@ export function mergeAccountSnapshots(parts: KiwoomAccountSnapshot[]): KiwoomAcc
 async function readBook(
   path: string,
   apiId: string,
-  body: Record<string, unknown>
+  body: Record<string, unknown>,
+  maxPages = 8
 ): Promise<Record<string, unknown> | null> {
   try {
-    return await kiwoomAuthorizedPostAll(path, apiId, body);
+    return await kiwoomAuthorizedPostAll(path, apiId, body, maxPages);
   } catch {
     return null;
   }
@@ -573,19 +579,13 @@ export async function fetchKiwoomAccount(): Promise<KiwoomAccountSnapshot> {
   if (usLedger) snaps.push(parseUsLedger(usLedger));
   if (usValue) snaps.push(parseUsValuation(usValue));
   const merged = mergeAccountSnapshots(snaps);
-  const history = await readBook("/api/us/acnt", "ust21100", {
-    strt_dt: kstYmd(370),
-    end_dt: kstYmd(0),
-    tp: "3",
-    stex_tp: "",
-    stk_cd: "",
-    krw_repl_skip_yn: "Y",
-  });
-  const lotsByCode = openLotsFromFills(fillsFromHistory(history));
+  const held = merged.positions.filter((position) => !/^\d{6}$/.test(position.code) && position.qty > 0);
+  const { events, failed } = await readUsTradeFills(held);
+  const lotsByCode = openLotsFromFills(events);
   for (const position of merged.positions) {
     if (/^\d{6}$/.test(position.code)) continue;
     position.lots = reconcileLots(
-      lotsByCode.get(position.code) ?? [],
+      lotsByCode.get(lotKey(position.code)) ?? [],
       position.qty,
       position.avgPrice
     );
@@ -593,7 +593,114 @@ export async function fetchKiwoomAccount(): Promise<KiwoomAccountSnapshot> {
   return {
     ...merged,
     accountNo: formatKiwoomAccountNo(accountNo ?? merged.accountNo),
+    historyNote:
+      held.length > 0 && failed && events.length === 0
+        ? "미국 매수 내역을 읽지 못해 분할 잔고 대신 평균만 표시합니다."
+        : null,
   };
+}
+
+const US_HISTORY_SPAN_DAYS = 89;
+const US_HISTORY_HORIZON_DAYS = 730;
+
+async function readUsTradeWindow(
+  startAgo: number,
+  endAgo: number,
+  stockCode: string
+): Promise<FillEvent[] | null> {
+  const body = await readBook(
+    "/api/us/acnt",
+    "ust21100",
+    {
+      strt_dt: kstYmd(startAgo),
+      end_dt: kstYmd(endAgo),
+      tp: "3",
+      stex_tp: "",
+      stk_cd: stockCode,
+      krw_repl_skip_yn: "Y",
+    },
+    20
+  );
+  if (!body) return null;
+  return fillsFromHistory(body);
+}
+
+function pushFills(into: FillEvent[], seen: Set<string>, next: FillEvent[]): void {
+  for (const event of next) {
+    if (!event.dealNo) {
+      into.push(event);
+      continue;
+    }
+    const key = `${event.code}|${event.dealNo}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    into.push(event);
+  }
+}
+
+let usFillCache: { until: number; key: string; events: FillEvent[]; failed: boolean } | null = null;
+
+/** ust21100 allows about three months per call, so walk backward until the open lots are covered. */
+async function readUsTradeFills(
+  held: { code: string; qty: number }[]
+): Promise<{ events: FillEvent[]; failed: boolean }> {
+  const key = held
+    .map((position) => `${lotKey(position.code)}:${position.qty}`)
+    .sort()
+    .join("|");
+  const now = Date.now();
+  if (usFillCache && usFillCache.key === key && now < usFillCache.until) {
+    return { events: usFillCache.events, failed: usFillCache.failed };
+  }
+  const result = await readUsTradeFillsFresh(held);
+  const ttl = result.failed && result.events.length === 0 ? 60_000 : 5 * 60_000;
+  usFillCache = { until: now + ttl, key, events: result.events, failed: result.failed };
+  return result;
+}
+
+async function readUsTradeFillsFresh(
+  held: { code: string; qty: number }[]
+): Promise<{ events: FillEvent[]; failed: boolean }> {
+  const events: FillEvent[] = [];
+  const seen = new Set<string>();
+  let failed = false;
+  let misses = 0;
+  for (const window of historyWindows(US_HISTORY_HORIZON_DAYS, US_HISTORY_SPAN_DAYS)) {
+    const page = await readUsTradeWindow(window.startAgo, window.endAgo, "");
+    if (!page) {
+      failed = true;
+      misses += 1;
+      if (misses >= 2) break;
+      continue;
+    }
+    misses = 0;
+    pushFills(events, seen, page);
+    if (lotsCover(events, held)) return { events, failed: false };
+  }
+  const uncovered = held.filter((position) => !lotsCover(events, [position]));
+  for (const position of uncovered) {
+    const windows = historyWindows(US_HISTORY_HORIZON_DAYS, US_HISTORY_SPAN_DAYS);
+    const first = windows[0];
+    if (!first) break;
+    const recent = await readUsTradeWindow(first.startAgo, first.endAgo, position.code);
+    if (!recent) {
+      failed = true;
+      continue;
+    }
+    if (recent.length === 0) continue;
+    pushFills(events, seen, recent);
+    if (lotsCover(events, [position])) continue;
+    for (const window of windows.slice(1)) {
+      const older = await readUsTradeWindow(window.startAgo, window.endAgo, position.code);
+      if (!older) {
+        failed = true;
+        break;
+      }
+      pushFills(events, seen, older);
+      if (lotsCover(events, [position])) break;
+    }
+  }
+  return { events, failed };
 }
 
 function kstYmd(daysAgo: number): string {
@@ -608,27 +715,83 @@ function kstYmd(daysAgo: number): string {
     .replace(/-/g, "");
 }
 
+const HISTORY_COLUMNS = [
+  "deal_dt",
+  "deal_kind_nm",
+  "rmrk_nm",
+  "deal_amt",
+  "tax_tot_amt",
+  "exct_amt",
+  "uncl_ocr",
+  "fc_uncl_ocr",
+  "entra_remn",
+  "deal_no",
+  "stk_nm",
+  "deal_qty",
+  "fc_deal_tax",
+  "frgn_pay_txam",
+  "rpym_sum",
+  "fc_rpym_sum",
+  "fc_entra",
+  "mdia_nm",
+  "orig_deal_no",
+  "stk_cd",
+  "uv_exrt",
+  "fc_cmsn",
+  "fc_exct_amt",
+  "dly_sum",
+  "fc_dly_sum",
+  "vlbl_nowrm",
+  "stex_nm",
+  "fc_deal_amt",
+  "proc_time",
+  "crnc_code",
+];
+
+function historyRow(item: unknown): Record<string, unknown> | null {
+  const row = asRecord(item);
+  if (row) return row;
+  if (!Array.isArray(item)) return null;
+  const out: Record<string, unknown> = {};
+  HISTORY_COLUMNS.forEach((key, index) => {
+    if (item[index] != null) out[key] = item[index];
+  });
+  return out;
+}
+
+/** Share price from the foreign amount, or the unit field when that amount is empty. */
+export function historyFillPrice(row: Record<string, unknown>, qty: number): number {
+  const amount = firstAbs(row, ["fc_deal_amt"]);
+  const unit = firstAbs(row, ["uv_exrt"]);
+  const fromAmount = amount != null && amount > 0 && qty > 0 ? amount / qty : 0;
+  if (fromAmount > 0 && unit != null && unit > 0 && Math.abs(unit - fromAmount) / fromAmount <= 0.2) {
+    return unit;
+  }
+  if (fromAmount > 0) return fromAmount;
+  if (unit != null && unit > 0) return unit;
+  return 0;
+}
+
 export function fillsFromHistory(body: Record<string, unknown> | null): FillEvent[] {
   const list = Array.isArray(body?.result_list) ? body.result_list : [];
   const out: FillEvent[] = [];
   for (const item of list) {
-    const row = asRecord(item);
+    const row = historyRow(item);
     if (!row) continue;
     const side = classifyDeal(String(row.deal_kind_nm ?? row.rmrk_nm ?? ""));
-    const code = usTicker(row.stk_cd);
+    const code = lotKey(usTicker(row.stk_cd));
     const qty = firstAbs(row, ["deal_qty"]) ?? 0;
-    const amount = firstAbs(row, ["fc_deal_amt"]);
-    const unit = firstAbs(row, ["uv_exrt"]);
-    const price =
-      amount != null && qty > 0 ? amount / qty : unit != null && unit < 100_000 ? unit : 0;
+    const price = historyFillPrice(row, qty);
     if (!side || !code || qty <= 0 || price <= 0) continue;
+    const dealNo = String(row.deal_no ?? "").trim();
     out.push({
       date: String(row.deal_dt ?? "").replace(/\D/g, ""),
       time: String(row.proc_time ?? "").replace(/\D/g, ""),
       code,
       side,
       qty,
-      price,
+      price: Math.round(price * 10000) / 10000,
+      dealNo: dealNo || undefined,
     });
   }
   return out;

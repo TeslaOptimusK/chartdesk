@@ -182,9 +182,14 @@ async function kiwoomAuthorizedPage(
   );
   const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   assertBodyOk(json, res.status);
-  const bodyNext = typeof json.next_key === "string" ? json.next_key : null;
+  const bodyNext =
+    typeof json.next_key === "string"
+      ? json.next_key
+      : typeof json["next-key"] === "string"
+        ? json["next-key"]
+        : null;
   const bodyCont =
-    json.cont_yn === "Y" || json.contin_yn === "Y" ? "Y" : null;
+    json.cont_yn === "Y" || json.contin_yn === "Y" || json["cont-yn"] === "Y" ? "Y" : null;
   return {
     json,
     contYn: headerValue(res, "cont-yn") ?? bodyCont,
@@ -204,12 +209,14 @@ function appendListPages(into: Record<string, unknown>, page: Record<string, unk
 export async function kiwoomAuthorizedPostAll(
   path: string,
   apiId: string,
-  body: Record<string, unknown>
+  body: Record<string, unknown>,
+  maxPages = 8
 ): Promise<Record<string, unknown>> {
   let contYn = "N";
   let nextKey = "";
   let merged: Record<string, unknown> | null = null;
-  for (let page = 0; page < 8; page++) {
+  const pages = Math.max(1, Math.min(30, Math.trunc(maxPages)));
+  for (let page = 0; page < pages; page++) {
     const result = await kiwoomAuthorizedPage(path, apiId, body, contYn, nextKey);
     if (!merged) merged = result.json;
     else appendListPages(merged, result.json);

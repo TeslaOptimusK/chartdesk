@@ -5,19 +5,30 @@ export interface FillEvent {
   side: "buy" | "sell";
   qty: number;
   price: number;
+  /** Broker deal number, used to skip the same row on a later page. */
+  dealNo?: string;
 }
 
 export interface OpenLot {
   date: string;
+  time?: string;
   qty: number;
   price: number;
 }
 
 export function classifyDeal(kind: string): "buy" | "sell" | null {
   const text = kind.replace(/\s/g, "");
-  if (text.includes("매도")) return "sell";
-  if (text.includes("매수")) return "buy";
+  if (!text || text.includes("취소") || text.includes("정정")) return null;
+  if (/매도|sell/i.test(text)) return "sell";
+  if (/매수|buy/i.test(text)) return "buy";
   return null;
+}
+
+/** Map a ledger ticker and a history ticker onto the same lot key. */
+export function lotKey(code: string): string {
+  const cleaned = code.toUpperCase().replace(/\s+/g, "");
+  const tail = cleaned.split(/[^A-Z0-9.]+/).filter(Boolean).pop() ?? cleaned;
+  return tail.replace(/\.(O|N|A|K|Q)$/, "");
 }
 
 /** Buys still open after later sells, oldest first. */
@@ -30,7 +41,7 @@ export function openLotsFromFills(events: FillEvent[]): Map<string, OpenLot[]> {
     if (event.qty <= 0 || event.price <= 0) continue;
     const lots = books.get(event.code) ?? [];
     if (event.side === "buy") {
-      lots.push({ date: event.date, qty: event.qty, price: event.price });
+      lots.push({ date: event.date, time: event.time, qty: event.qty, price: event.price });
       books.set(event.code, lots);
       continue;
     }
@@ -85,4 +96,36 @@ export function reconcileLots(
     kept.unshift({ date: "", qty: missing, price });
   }
   return kept;
+}
+
+/** True when every holding is explained by the fills gathered so far. */
+export function lotsCover(
+  events: FillEvent[],
+  positions: { code: string; qty: number }[]
+): boolean {
+  if (!positions.length) return true;
+  const books = openLotsFromFills(events);
+  return positions.every((position) => {
+    const have = (books.get(lotKey(position.code)) ?? []).reduce((sum, lot) => sum + lot.qty, 0);
+    return have + 1e-6 >= position.qty;
+  });
+}
+
+/**
+ * ust21100 rejects a span longer than about three months. Windows are inclusive
+ * and do not share a day.
+ */
+export function historyWindows(
+  horizonDays: number,
+  spanDays: number
+): { startAgo: number; endAgo: number }[] {
+  const horizon = Math.max(1, Math.trunc(horizonDays));
+  const span = Math.max(1, Math.trunc(spanDays));
+  const windows: { startAgo: number; endAgo: number }[] = [];
+  for (let endAgo = 0; endAgo < horizon; endAgo += span) {
+    const startAgo = Math.min(horizon - 1, endAgo + span - 1);
+    windows.push({ startAgo, endAgo });
+    if (startAgo >= horizon - 1) break;
+  }
+  return windows;
 }
