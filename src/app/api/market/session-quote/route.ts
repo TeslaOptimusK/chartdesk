@@ -53,7 +53,8 @@ async function quoteFor(symbol: {
     dailyCloses: snap.closes.map((bar) => bar.close),
     lastBarIsToday: barIsToday(last.time, now, zone),
     livePrice: snap.livePrice,
-    prePrice: phase === "pre" ? snap.prePrice : null,
+    prePrice: snap.prePrice,
+    postPrice: snap.postPrice,
   });
   if (!view) return null;
   cache.set(symbol.id, { at: Date.now(), quote: view });

@@ -35,7 +35,23 @@ describe("session quote", () => {
     assert.equal(view?.displayPrice, 355);
     assert.equal(view?.changeBase, 357.45);
     assert.equal(view?.closeLine, 357.45);
-    assert.equal(view?.preLine, null);
+    assert.equal(view?.preLine, 353.53);
+    assert.equal(view?.postLine, null);
+  });
+
+  it("keeps the after-hours price next to a closed session", () => {
+    const view = resolveSessionQuote({
+      phase: "after",
+      dailyCloses: [357.45, 352.84],
+      lastBarIsToday: true,
+      livePrice: 352.84,
+      prePrice: 353.53,
+      postPrice: 351.1,
+    });
+    assert.equal(view?.displayPrice, 352.84);
+    assert.equal(view?.closeLine, 352.84);
+    assert.equal(view?.preLine, 353.53);
+    assert.equal(view?.postLine, 351.1);
   });
 
   it("keeps a closed session on the official close", () => {
@@ -49,6 +65,7 @@ describe("session quote", () => {
     assert.equal(view?.displayPrice, 352.84);
     assert.equal(view?.changeBase, 357.45);
     assert.equal(view?.preLine, null);
+    assert.equal(view?.postLine, null);
   });
 
   it("lets Yahoo's closed state override a pre-market clock", () => {
