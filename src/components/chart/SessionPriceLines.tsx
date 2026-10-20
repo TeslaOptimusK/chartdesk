@@ -29,6 +29,8 @@ export function SessionPriceLines({
           lineWidth: 1,
           lineStyle: LineStyle.Dashed,
           axisLabelVisible: true,
+          axisLabelColor: "#f8fafc",
+          axisLabelTextColor: "#0b1220",
           title: "종가",
         })
       );
@@ -41,6 +43,8 @@ export function SessionPriceLines({
           lineWidth: 2,
           lineStyle: LineStyle.Solid,
           axisLabelVisible: true,
+          axisLabelColor: "#fb923c",
+          axisLabelTextColor: "#1a1004",
           title: "장전",
         })
       );
@@ -53,6 +57,8 @@ export function SessionPriceLines({
           lineWidth: 2,
           lineStyle: LineStyle.Solid,
           axisLabelVisible: true,
+          axisLabelColor: "#38bdf8",
+          axisLabelTextColor: "#041018",
           title: "장후",
         })
       );
