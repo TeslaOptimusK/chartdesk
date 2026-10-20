@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { placeTagYs } from "@/components/chart/chart-label";
 import {
   clockQuotePhase,
   mergeQuotePhase,
@@ -72,6 +73,13 @@ describe("session quote", () => {
     assert.equal(mergeQuotePhase("pre", "CLOSED"), "closed");
     assert.equal(mergeQuotePhase("closed", "PRE"), "pre");
     assert.equal(mergeQuotePhase("always", "PRE"), "always");
+  });
+
+  it("separates price tags that would otherwise sit on each other", () => {
+    const placed = placeTagYs([368, 372, 100], 500);
+    const gap = (a: number, b: number) => Math.abs(a - b);
+    assert.ok(gap(placed[0]!, placed[1]!) >= 20);
+    assert.equal(placed[2], 100);
   });
 
   it("treats a Korean morning before 9 as pre-market", () => {

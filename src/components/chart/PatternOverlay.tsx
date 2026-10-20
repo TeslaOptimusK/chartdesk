@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import type { Time } from "lightweight-charts";
 import type { ChartApiBundle } from "@/components/chart/DrawingOverlay";
 import type { EasyOverlayToggles, EasyZone } from "@/lib/easychart";
-import { fillChartLabel, fillRightPriceTag, formatLinePrice } from "@/components/chart/chart-label";
+import { fillChartLabel, fillRightPriceTag, formatLinePrice, placeTagYs } from "@/components/chart/chart-label";
 import { cn } from "@/lib/utils";
 
 interface PatternOverlayProps {
@@ -57,12 +57,14 @@ export function PatternOverlay({
       ctx.clearRect(0, 0, w, h);
 
       const visible = zones.filter((z) => kindEnabled(z.kind, toggles));
+      const scaleW = Math.max(56, chartApi.chart.priceScale("right").width() || 64);
+      const plotRight = w - scaleW - 8;
+      const shapeEnd = Math.max(48, plotRight - 72);
       const tags: PriceTag[] = [];
       for (const z of visible) {
-        drawShape(ctx, chartApi, z, w, toggles, showStopLines, tags);
+        drawShape(ctx, chartApi, z, shapeEnd, toggles, showStopLines, tags);
       }
-      const scaleW = chartApi.chart.priceScale("right").width() || 64;
-      paintPriceTags(ctx, tags, w - Math.max(4, scaleW - 2), h);
+      paintPriceTags(ctx, tags, w - 4, shapeEnd, h);
     };
 
     paint();
@@ -134,23 +136,29 @@ function paintPriceTags(
   ctx: CanvasRenderingContext2D,
   tags: PriceTag[],
   right: number,
+  plotRight: number,
   height: number
 ) {
-  const sorted = tags
-    .filter((tag) => tag.y >= 0 && tag.y <= height)
-    .sort((a, b) => a.y - b.y);
-  const placed: number[] = [];
-  const gap = 20;
-  for (const tag of sorted) {
-    let y = tag.y;
-    for (let nudge = 0; nudge < 8 && placed.some((py) => Math.abs(py - y) < gap); nudge++) {
-      y = tag.y + gap * (nudge + 1);
-      if (y > height - 12) y = tag.y - gap * (nudge + 1);
+  const visible = tags.filter((tag) => tag.y >= 0 && tag.y <= height);
+  const ys = placeTagYs(
+    visible.map((tag) => tag.y),
+    height
+  );
+  visible.forEach((tag, index) => {
+    const y = ys[index] ?? tag.y;
+    if (Math.abs(y - tag.y) > 1) {
+      ctx.save();
+      ctx.strokeStyle = tag.bg;
+      ctx.globalAlpha = 0.85;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(plotRight, tag.y);
+      ctx.lineTo(plotRight, y);
+      ctx.stroke();
+      ctx.restore();
     }
-    y = Math.max(12, Math.min(height - 12, y));
-    placed.push(y);
     fillRightPriceTag(ctx, tag.text, right, y, tag.bg, tag.fg);
-  }
+  });
 }
 
 function xy(
@@ -223,7 +231,7 @@ function drawBox(
   const yTop = api.series.priceToCoordinate(z.priceTop);
   const yBot = api.series.priceToCoordinate(z.priceBottom);
   if (x0 == null || yTop == null || yBot == null) return;
-  const x1 = canvasW - 8;
+  const x1 = canvasW;
   if (x1 <= x0) return;
 
   const alpha = fade ? 0.08 : strong ? 0.32 : 0.16;
@@ -302,7 +310,7 @@ function drawTrend(
   if (!p0 || !p1) return;
   const dt = b.time - a.time;
   const slope = dt !== 0 ? (b.price - a.price) / dt : 0;
-  const xEnd = canvasW - 8;
+  const xEnd = canvasW;
   // Extend by projecting price at a far time using x ratio approx via last known
   const lastT = b.time + (b.time - a.time);
   const extPrice = b.price + slope * (lastT - b.time);
@@ -340,7 +348,7 @@ function drawChannel(
   const q0 = xy(api, c.time, c.price);
   const q1 = xy(api, d.time, d.price);
   if (!p0 || !p1 || !q0 || !q1) return;
-  const xEnd = canvasW - 8;
+  const xEnd = canvasW;
   const dt = b.time - a.time;
   const slope = dt !== 0 ? (b.price - a.price) / dt : 0;
   const tFar = b.time + (b.time - a.time);
@@ -410,7 +418,7 @@ function drawRay(
   ctx.lineWidth = strong ? 1.75 : 1;
   ctx.beginPath();
   ctx.moveTo(x0, y);
-  ctx.lineTo(canvasW - 8, y);
+  ctx.lineTo(canvasW, y);
   ctx.stroke();
   const support = z.meta?.role === "support";
   tags.push({
@@ -446,7 +454,7 @@ function drawFib(
     ctx.setLineDash(emphasis ? [] : [3, 3]);
     ctx.beginPath();
     ctx.moveTo(x0, y);
-    ctx.lineTo(canvasW - 8, y);
+    ctx.lineTo(canvasW, y);
     ctx.stroke();
     ctx.setLineDash([]);
     const name = z.kind === "fib_ext" ? "Ext" : "Fib";
