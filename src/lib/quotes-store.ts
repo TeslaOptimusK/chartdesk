@@ -157,6 +157,7 @@ export const useQuotesStore = create<QuotesState>((set, get) => ({
             changePct: quote.changePct,
             closeLine: null,
             preLine: null,
+            postLine: null,
             priceKind: "live",
           },
         },

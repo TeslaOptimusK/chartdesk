@@ -41,7 +41,19 @@ export function SessionPriceLines({
           lineWidth: 2,
           lineStyle: LineStyle.Solid,
           axisLabelVisible: true,
-          title: "프리",
+          title: "장전",
+        })
+      );
+    }
+    if (session.phase === "after" && session.postLine != null) {
+      lines.push(
+        series.createPriceLine({
+          price: session.postLine,
+          color: "#38bdf8",
+          lineWidth: 2,
+          lineStyle: LineStyle.Solid,
+          axisLabelVisible: true,
+          title: "장후",
         })
       );
     }

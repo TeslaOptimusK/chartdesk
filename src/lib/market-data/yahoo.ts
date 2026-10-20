@@ -172,6 +172,7 @@ export interface YahooSessionSnapshot {
   closes: { time: number; close: number }[];
   livePrice: number | null;
   prePrice: number | null;
+  postPrice: number | null;
   marketState: string | null;
 }
 
@@ -211,6 +212,7 @@ export async function fetchYahooSessionSnapshot(
           meta?: {
             regularMarketPrice?: number;
             preMarketPrice?: number;
+            postMarketPrice?: number;
             marketState?: string;
           };
         }>;
@@ -232,6 +234,7 @@ export async function fetchYahooSessionSnapshot(
       closes: bars,
       livePrice: numOrNull(meta?.regularMarketPrice),
       prePrice: numOrNull(meta?.preMarketPrice),
+      postPrice: numOrNull(meta?.postMarketPrice),
       marketState: typeof meta?.marketState === "string" ? meta.marketState : null,
     };
   } catch {

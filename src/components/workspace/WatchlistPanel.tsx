@@ -255,7 +255,7 @@ export function WatchlistPanel() {
                   <div
                     key={id}
                     className={cn(
-                      "flex items-center gap-2 rounded-md px-2 py-1.5",
+                      "flex items-start gap-2 rounded-md px-2 py-1.5",
                       activeSymbolId === id && "bg-[var(--workspace-elevated)]"
                     )}
                   >

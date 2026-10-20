@@ -13,14 +13,23 @@ export interface SessionQuoteView {
   changePct: number;
   /** Horizontal line for the official close, or the prior close once the session is open. */
   closeLine: number | null;
-  /** Pre-market last. Drawn only before the open. */
+  /** Pre-market last, when it differs from the regular close. */
   preLine: number | null;
+  /** After-hours last, when it differs from the regular close. */
+  postLine: number | null;
   priceKind: QuotePriceKind;
 }
 
 function pct(price: number, base: number): number {
   if (!base) return 0;
   return ((price - base) / base) * 100;
+}
+
+/** Ignore an extended price that is missing or the same print as the regular close. */
+function distinctPrice(price: number | null, official: number): number | null {
+  if (price == null || !(price > 0) || !(official > 0)) return null;
+  if (Math.abs(price - official) / official <= 0.00005) return null;
+  return price;
 }
 
 function clock(now: Date, timeZone: string): { day: number; minutes: number } {
@@ -103,7 +112,7 @@ export function barIsToday(timeSec: number, now: Date, timeZone: string): boolea
  * TradingView-style quote.
  * Closed and pre-market show the official close versus the close before it.
  * The regular session shows the live price versus that prior close.
- * Pre-market also keeps a separate pre line.
+ * Pre-market and after-hours prices stay on the quote whenever they differ from that close.
  */
 export function resolveSessionQuote(input: {
   phase: QuotePhase;
@@ -112,6 +121,7 @@ export function resolveSessionQuote(input: {
   lastBarIsToday: boolean;
   livePrice: number | null;
   prePrice: number | null;
+  postPrice?: number | null;
 }): SessionQuoteView | null {
   const closes = input.dailyCloses.filter((n) => Number.isFinite(n) && n > 0);
   if (closes.length < 2) return null;
@@ -119,6 +129,8 @@ export function resolveSessionQuote(input: {
   const prev = closes[closes.length - 2]!;
   const older = closes.length > 2 ? closes[closes.length - 3]! : prev;
   const live = input.livePrice != null && input.livePrice > 0 ? input.livePrice : null;
+  const prePrice = input.prePrice ?? null;
+  const postPrice = input.postPrice ?? null;
 
   if (input.phase === "regular" || input.phase === "always") {
     const base = input.lastBarIsToday ? prev : last;
@@ -129,7 +141,8 @@ export function resolveSessionQuote(input: {
       changeBase: base,
       changePct: pct(price, base),
       closeLine: base,
-      preLine: null,
+      preLine: distinctPrice(prePrice, base),
+      postLine: distinctPrice(postPrice, base),
       priceKind: "live",
     };
   }
@@ -137,19 +150,14 @@ export function resolveSessionQuote(input: {
   if (input.phase === "pre") {
     const official = input.lastBarIsToday ? prev : last;
     const base = input.lastBarIsToday ? older : prev;
-    const pre =
-      input.prePrice != null &&
-      input.prePrice > 0 &&
-      Math.abs(input.prePrice - official) / official > 0.00005
-        ? input.prePrice
-        : null;
     return {
       phase: "pre",
       displayPrice: official,
       changeBase: base,
       changePct: pct(official, base),
       closeLine: official,
-      preLine: pre,
+      preLine: distinctPrice(prePrice, official),
+      postLine: distinctPrice(postPrice, official),
       priceKind: "close",
     };
   }
@@ -160,7 +168,8 @@ export function resolveSessionQuote(input: {
     changeBase: prev,
     changePct: pct(last, prev),
     closeLine: last,
-    preLine: null,
+    preLine: distinctPrice(prePrice, last),
+    postLine: distinctPrice(postPrice, last),
     priceKind: "close",
   };
 }

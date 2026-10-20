@@ -26,9 +26,29 @@ function formatVenuePrice(n: number, ccy?: string): string {
   return formatQuotePrice(n);
 }
 
-function preChange(session: SessionQuoteView): number | null {
-  if (session.preLine == null || session.closeLine == null || session.closeLine === 0) return null;
-  return ((session.preLine - session.closeLine) / session.closeLine) * 100;
+function extChange(price: number | null, closeLine: number | null): number | null {
+  if (price == null || closeLine == null || closeLine === 0) return null;
+  return ((price - closeLine) / closeLine) * 100;
+}
+
+function ExtendedPrice({
+  label,
+  price,
+  change,
+  ccy,
+}: {
+  label: string;
+  price: number;
+  change: number;
+  ccy?: string;
+}) {
+  const up = change >= 0;
+  return (
+    <div className={cn("whitespace-nowrap text-[10px]", up ? "text-emerald-300" : "text-rose-300")}>
+      <span className="text-[var(--workspace-faint)]">{label} </span>
+      {formatVenuePrice(price, ccy)} {formatChangePct(change)}
+    </div>
+  );
 }
 
 export function LiveQuoteBadge({
@@ -60,12 +80,23 @@ export function LiveQuoteBadge({
   const up = quote.changePct >= 0;
   const color = up ? "text-emerald-300" : "text-rose-300";
   const label = kindLabel(quote.session);
-  const prePct = quote.session ? preChange(quote.session) : null;
+  const prePct = quote.session ? extChange(quote.session.preLine, quote.session.closeLine) : null;
+  const postPct = quote.session ? extChange(quote.session.postLine, quote.session.closeLine) : null;
+  const extended = (
+    <>
+      {quote.session?.preLine != null && prePct != null && (
+        <ExtendedPrice label="장전" price={quote.session.preLine} change={prePct} ccy={quote.quoteCcy} />
+      )}
+      {quote.session?.postLine != null && postPct != null && (
+        <ExtendedPrice label="장후" price={quote.session.postLine} change={postPct} ccy={quote.quoteCcy} />
+      )}
+    </>
+  );
 
   if (compact) {
     return (
       <div
-        className={cn("w-[7.5rem] shrink-0 text-right font-mono tabular-nums leading-tight", className)}
+        className={cn("shrink-0 text-right font-mono tabular-nums leading-tight", className)}
         data-feature="quote.live"
         data-symbol={symbolId}
       >
@@ -76,11 +107,7 @@ export function LiveQuoteBadge({
           {formatChangePct(quote.changePct)}
           {label && <span className="ml-1 text-[var(--workspace-faint)]">{label}</span>}
         </div>
-        {quote.session?.preLine != null && prePct != null && (
-          <div className={cn("text-[10px]", prePct >= 0 ? "text-emerald-300" : "text-rose-300")}>
-            프리 {formatQuotePrice(quote.session.preLine)} {formatChangePct(prePct)}
-          </div>
-        )}
+        {extended}
       </div>
     );
   }
@@ -98,11 +125,7 @@ export function LiveQuoteBadge({
         {formatChangePct(quote.changePct)}
       </span>
       {label && <span className="text-[10px] text-[var(--workspace-faint)]">{label}</span>}
-      {quote.session?.preLine != null && prePct != null && (
-        <span className={cn("text-[10px]", prePct >= 0 ? "text-emerald-300" : "text-rose-300")}>
-          프리 {formatQuotePrice(quote.session.preLine)} {formatChangePct(prePct)}
-        </span>
-      )}
+      {extended}
     </span>
   );
 }
