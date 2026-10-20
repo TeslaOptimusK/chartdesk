@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import type { Time } from "lightweight-charts";
 import type { ChartApiBundle } from "@/components/chart/DrawingOverlay";
 import type { EasyOverlayToggles, EasyZone } from "@/lib/easychart";
-import { fillChartLabel } from "@/components/chart/chart-label";
+import { fillChartLabel, fillRightPriceTag, formatLinePrice } from "@/components/chart/chart-label";
 import { cn } from "@/lib/utils";
 
 interface PatternOverlayProps {
@@ -57,9 +57,12 @@ export function PatternOverlay({
       ctx.clearRect(0, 0, w, h);
 
       const visible = zones.filter((z) => kindEnabled(z.kind, toggles));
+      const tags: PriceTag[] = [];
       for (const z of visible) {
-        drawShape(ctx, chartApi, z, w, toggles, showStopLines);
+        drawShape(ctx, chartApi, z, w, toggles, showStopLines, tags);
       }
+      const scaleW = chartApi.chart.priceScale("right").width() || 64;
+      paintPriceTags(ctx, tags, w - Math.max(4, scaleW - 2), h);
     };
 
     paint();
@@ -120,6 +123,36 @@ function kindEnabled(
   }
 }
 
+interface PriceTag {
+  y: number;
+  text: string;
+  bg: string;
+  fg: string;
+}
+
+function paintPriceTags(
+  ctx: CanvasRenderingContext2D,
+  tags: PriceTag[],
+  right: number,
+  height: number
+) {
+  const sorted = tags
+    .filter((tag) => tag.y >= 0 && tag.y <= height)
+    .sort((a, b) => a.y - b.y);
+  const placed: number[] = [];
+  const gap = 20;
+  for (const tag of sorted) {
+    let y = tag.y;
+    for (let nudge = 0; nudge < 8 && placed.some((py) => Math.abs(py - y) < gap); nudge++) {
+      y = tag.y + gap * (nudge + 1);
+      if (y > height - 12) y = tag.y - gap * (nudge + 1);
+    }
+    y = Math.max(12, Math.min(height - 12, y));
+    placed.push(y);
+    fillRightPriceTag(ctx, tag.text, right, y, tag.bg, tag.fg);
+  }
+}
+
 function xy(
   api: ChartApiBundle,
   time: number,
@@ -137,30 +170,31 @@ function drawShape(
   z: EasyZone,
   canvasW: number,
   toggles: EasyOverlayToggles,
-  showStop: boolean
+  showStop: boolean,
+  tags: PriceTag[]
 ) {
   const emphasize = toggles.confluence;
   const strong = z.htfOverlap || z.score >= 3 || z.kind === "overlap";
   const fade = emphasize && !strong && z.score < 2 && (z.kind === "ob" || z.kind === "fvg");
 
   if (z.kind === "ob" || z.kind === "fvg" || z.kind === "overlap") {
-    drawBox(ctx, api, z, canvasW, strong, fade, toggles.halfTpLabel, showStop);
+    drawBox(ctx, api, z, canvasW, strong, fade, toggles.halfTpLabel, showStop, tags);
     return;
   }
   if (z.kind === "trend") {
-    drawTrend(ctx, api, z, canvasW, strong);
+    drawTrend(ctx, api, z, canvasW, strong, tags);
     return;
   }
   if (z.kind === "channel") {
-    drawChannel(ctx, api, z, canvasW, strong);
+    drawChannel(ctx, api, z, canvasW, strong, tags);
     return;
   }
   if (z.kind === "sr_flip") {
-    drawRay(ctx, api, z, canvasW, strong);
+    drawRay(ctx, api, z, canvasW, strong, tags);
     return;
   }
   if (z.kind === "fib" || z.kind === "fib_ext") {
-    drawFib(ctx, api, z, canvasW, strong);
+    drawFib(ctx, api, z, canvasW, strong, tags);
     return;
   }
   if (z.kind === "fakeout" || z.kind === "trap") {
@@ -168,7 +202,7 @@ function drawShape(
     return;
   }
   if (z.kind === "sma365") {
-    drawSma(ctx, api, z, canvasW);
+    drawSma(ctx, api, z, canvasW, tags);
   }
 }
 
@@ -180,7 +214,8 @@ function drawBox(
   strong: boolean,
   fade: boolean,
   halfTp: boolean,
-  showStop: boolean
+  showStop: boolean,
+  tags: PriceTag[]
 ) {
   const x0 =
     api.chart.timeScale().timeToCoordinate(z.extendFrom as Time) ??
@@ -216,15 +251,27 @@ function drawBox(
   ctx.rect(x0, top, x1 - x0, height);
   ctx.fill();
   ctx.stroke();
-  fillChartLabel(
-    ctx,
-    `${z.kind.toUpperCase()} ${bull ? "↑" : z.bias === "bearish" ? "↓" : "·"} ${z.score}${z.htfOverlap ? " HTF" : ""}`,
-    x0 + 3,
-    top + 14,
-    stroke
-  );
+  const name = z.kind === "fvg" ? "FVG" : z.kind === "ob" ? "OB" : "OVERLAP";
+  const mark = bull ? "↑" : z.bias === "bearish" ? "↓" : "";
+  tags.push({
+    y: top,
+    text: `${name}${mark} ${formatLinePrice(Math.max(z.priceTop, z.priceBottom))}`,
+    bg: stroke.replace(/[\d.]+\)$/, "1)"),
+    fg: "#0b1220",
+  });
+  tags.push({
+    y: top + height,
+    text: formatLinePrice(Math.min(z.priceTop, z.priceBottom)),
+    bg: stroke.replace(/[\d.]+\)$/, "1)"),
+    fg: "#0b1220",
+  });
   if (halfTp && z.touched) {
-    fillChartLabel(ctx, "½TP · 반익반본", x0 + 3, top + 30, "rgba(250,204,21,0.95)");
+    tags.push({
+      y: top + height / 2,
+      text: "½TP",
+      bg: "#facc15",
+      fg: "#1c1404",
+    });
   }
   if (showStop && z.stopPrice != null) {
     const ys = api.series.priceToCoordinate(z.stopPrice);
@@ -245,7 +292,8 @@ function drawTrend(
   api: ChartApiBundle,
   z: EasyZone,
   canvasW: number,
-  strong: boolean
+  strong: boolean,
+  tags: PriceTag[]
 ) {
   if (!z.points || z.points.length < 2) return;
   const [a, b] = z.points;
@@ -268,7 +316,12 @@ function drawTrend(
   ctx.lineTo(p1.x, p1.y);
   ctx.lineTo(Math.max(pExt.x, xEnd), pExt.y);
   ctx.stroke();
-  fillChartLabel(ctx, "TL wick", p0.x + 2, p0.y - 6, color);
+  tags.push({
+    y: p1.y,
+    text: `TL ${formatLinePrice(b.price)}`,
+    bg: z.bias === "bullish" ? "#38bdf8" : "#fb7185",
+    fg: "#0b1220",
+  });
 }
 
 function drawChannel(
@@ -276,7 +329,8 @@ function drawChannel(
   api: ChartApiBundle,
   z: EasyZone,
   canvasW: number,
-  strong: boolean
+  strong: boolean,
+  tags: PriceTag[]
 ) {
   if (!z.points || z.points.length < 2 || !z.parallelPoints) return;
   const [a, b] = z.points;
@@ -323,7 +377,18 @@ function drawChannel(
     ctx.stroke();
     ctx.setLineDash([]);
   }
-  fillChartLabel(ctx, "CH mid", p0.x + 2, p0.y - 6, color);
+  tags.push({
+    y: p1.y,
+    text: `CH ${formatLinePrice(b.price)}`,
+    bg: "#a78bfa",
+    fg: "#1a1030",
+  });
+  tags.push({
+    y: q1.y,
+    text: formatLinePrice(d.price),
+    bg: "#a78bfa",
+    fg: "#1a1030",
+  });
 }
 
 function drawRay(
@@ -331,7 +396,8 @@ function drawRay(
   api: ChartApiBundle,
   z: EasyZone,
   canvasW: number,
-  strong: boolean
+  strong: boolean,
+  tags: PriceTag[]
 ) {
   const y = api.series.priceToCoordinate(z.priceTop);
   const x0 =
@@ -346,13 +412,13 @@ function drawRay(
   ctx.moveTo(x0, y);
   ctx.lineTo(canvasW - 8, y);
   ctx.stroke();
-  fillChartLabel(
-    ctx,
-    `S/R ${z.meta?.role === "support" ? "지지" : "저항"}`,
-    x0 + 2,
-    y - 6,
-    color
-  );
+  const support = z.meta?.role === "support";
+  tags.push({
+    y,
+    text: `${support ? "지지" : "저항"} ${formatLinePrice(z.priceTop)}`,
+    bg: support ? "#34d399" : "#fb7185",
+    fg: "#0b1220",
+  });
 }
 
 function drawFib(
@@ -360,7 +426,8 @@ function drawFib(
   api: ChartApiBundle,
   z: EasyZone,
   canvasW: number,
-  strong: boolean
+  strong: boolean,
+  tags: PriceTag[]
 ) {
   if (!z.fibLevels?.length) return;
   const x0 =
@@ -382,13 +449,13 @@ function drawFib(
     ctx.lineTo(canvasW - 8, y);
     ctx.stroke();
     ctx.setLineDash([]);
-    fillChartLabel(
-      ctx,
-      `${z.kind === "fib_ext" ? "Ext" : "Fib"} ${lv.ratio}`,
-      x0 + 2,
-      y - 6,
-      emphasis ? "rgba(250,204,21,0.95)" : "rgba(226,232,240,0.9)"
-    );
+    const name = z.kind === "fib_ext" ? "Ext" : "Fib";
+    tags.push({
+      y,
+      text: `${name} ${lv.ratio}  ${formatLinePrice(lv.price)}`,
+      bg: emphasis ? "#facc15" : "#334155",
+      fg: emphasis ? "#1c1404" : "#f8fafc",
+    });
   }
 }
 
@@ -413,7 +480,8 @@ function drawSma(
   ctx: CanvasRenderingContext2D,
   api: ChartApiBundle,
   z: EasyZone,
-  canvasW: number
+  canvasW: number,
+  tags: PriceTag[]
 ) {
   const pts = z.points ?? [];
   if (pts.length < 2) {
@@ -446,6 +514,11 @@ function drawSma(
   const label = String(z.meta?.label ?? "365 SMA");
   const y = api.series.priceToCoordinate(z.priceTop);
   if (y != null) {
-    fillChartLabel(ctx, label, 8, y - 6, "rgba(251,191,36,0.95)");
+    tags.push({
+      y,
+      text: `${label} ${formatLinePrice(z.priceTop)}`,
+      bg: "#fbbf24",
+      fg: "#1c1404",
+    });
   }
 }
