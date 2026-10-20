@@ -13,7 +13,46 @@ export function formatLinePrice(n: number): string {
   return n.toPrecision(4);
 }
 
-/** Solid tag anchored to `right`, centered on `y`. Sits on the price scale like a TradingView axis chip. */
+/** Keep every tag on its own row. Close prices step away instead of painting on each other. */
+export function placeTagYs(ys: number[], height: number, band = 20): number[] {
+  const order = ys
+    .map((y, index) => ({ y, index }))
+    .sort((a, b) => a.y - b.y || a.index - b.index);
+  const placed: number[] = [];
+  const out = new Array<number>(ys.length);
+  const minY = 12;
+  const maxY = Math.max(minY, height - 12);
+  for (const item of order) {
+    const taken = (yy: number) => placed.some((py) => Math.abs(py - yy) < band);
+    let y = Math.max(minY, Math.min(maxY, item.y));
+    if (taken(y)) {
+      let found = false;
+      for (let step = 1; step < 48; step++) {
+        const down = item.y + step * band;
+        const up = item.y - step * band;
+        if (down <= maxY && !taken(down)) {
+          y = down;
+          found = true;
+          break;
+        }
+        if (up >= minY && !taken(up)) {
+          y = up;
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        y = minY;
+        while (taken(y) && y + band <= maxY) y += band;
+      }
+    }
+    placed.push(y);
+    out[item.index] = y;
+  }
+  return out;
+}
+
+/** Solid tag anchored to `right`, centered on `y`. Returns the tag's left edge. */
 export function fillRightPriceTag(
   ctx: CanvasRenderingContext2D,
   text: string,
@@ -22,7 +61,7 @@ export function fillRightPriceTag(
   bg: string,
   fg: string,
   px = 12
-): void {
+): number {
   ctx.save();
   ctx.font = chartLabelFont(px, 600);
   const padX = 6;
@@ -44,6 +83,7 @@ export function fillRightPriceTag(
   ctx.textBaseline = "middle";
   ctx.fillText(text, left + padX, top + h / 2);
   ctx.restore();
+  return left;
 }
 
 /** Dark stroke then fill, in the canvas's current (CSS-pixel) space. */
