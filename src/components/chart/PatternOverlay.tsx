@@ -58,13 +58,13 @@ export function PatternOverlay({
 
       const visible = zones.filter((z) => kindEnabled(z.kind, toggles));
       const scaleW = Math.max(56, chartApi.chart.priceScale("right").width() || 64);
-      const plotRight = w - scaleW - 8;
-      const shapeEnd = Math.max(48, plotRight - 72);
+      const plotRight = w - scaleW - 10;
+      const shapeEnd = Math.max(48, plotRight - 8);
       const tags: PriceTag[] = [];
       for (const z of visible) {
         drawShape(ctx, chartApi, z, shapeEnd, toggles, showStopLines, tags);
       }
-      paintPriceTags(ctx, tags, w - 4, shapeEnd, h);
+      paintPriceTags(ctx, tags, plotRight, shapeEnd, h);
     };
 
     paint();
