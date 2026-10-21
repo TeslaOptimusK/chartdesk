@@ -48,10 +48,13 @@ Do not run git yourself. Double-click the Desktop **ChartDesk** icon. The launch
 | `npm run start` | Start production server |
 | `npm run lint` | ESLint |
 | `npm run typecheck` | `tsc --noEmit` |
+| `npm test` | All unit tests (`node:test` via `tsx`) |
 
 ## Environment
 
-See `.env.example`. Default `MARKET_DATA_MODE=delayed` pulls **Yahoo Finance** chart OHLCV (no API key) for KR `.KS`, US tickers, `BTC-USD`/`ETH-USD`, `^GSPC`/`^SOX`. Synthetic symbols (`MAG7`, `VNPA`) and fetch failures fall back to mock. Set `MARKET_DATA_MODE=mock` for offline deterministic candles. `MARKET_DATA_MODE=realtime` uses Yahoo poll (or optional `MARKET_DATA_WS_URL`); `LLM_API_KEY` for draft enrichment.
+See `.env.example`. Default `MARKET_DATA_MODE=delayed` pulls **Yahoo Finance** chart OHLCV (no API key) for KR `.KS`, US tickers, `BTC-USD`/`ETH-USD`, `^GSPC`/`^SOX`. Synthetic symbols (`MAG7`, `VNPA`) and fetch failures fall back to mock; the chart header then shows **샘플 데이터 · 다시 불러오기** so generated bars are never mistaken for prices.
+
+The API only answers `localhost` and IP addresses, and refuses order, alert, and drawing changes that come from another site's page. Add a host name such as a Tailscale MagicDNS name to `CHARTDESK_ALLOWED_HOSTS` to open ChartDesk by name. `POST /api/ingest/webhook` stays open to outside tools. Set `MARKET_DATA_MODE=mock` for offline deterministic candles. `MARKET_DATA_MODE=realtime` uses Yahoo poll (or optional `MARKET_DATA_WS_URL`); `LLM_API_KEY` for draft enrichment.
 
 If `KIWOOM_APP_KEY` and `KIWOOM_APP_SECRET` are both set in `.env.local`, domestic 6-digit symbols use **Kiwoom REST history + websocket trades** (`0B` on port 10000). Other symbols stay on Yahoo or mock. `KIWOOM_QUOTE_HOST=mock` points at the paper host; real and paper keys are not interchangeable. The desktop launcher can keep `MARKET_DATA_MODE=delayed` — Korean quotes still switch to Kiwoom when the keys are present. Close ChartDesk and double-click the desktop icon again after changing keys.
 
@@ -60,6 +63,8 @@ Mock SSE keeps an in-memory **forming bar** and ticks about every `MARKET_DATA_T
 ### Kiwoom 매매
 
 Toolbar **매매**. With `KIWOOM_APP_KEY` and `KIWOOM_APP_SECRET`, the ticket reads the account (`kt00001`, `kt00018`) and sends cash orders on the same host as quotes. `KIWOOM_QUOTE_HOST=real` is a live account and asks for a confirm checkbox; `mock` uses the paper host. A buy can set a take-profit and a stop: while ChartDesk is running, a realtime print sells only shares already held. **분할** places equal limit buys across a chart price band (2–20 slices). Without keys, orders stay on the local paper ledger and brackets are not watched. Never commit app keys.
+
+On a domestic holding the chart draws the fill, target, and stop lines. Solid lines are being watched; dashed lines marked **미설정** are suggestions. Dragging a suggestion arms only that level (the live account asks first); a click without a drag does nothing. Lines on US and crypto holdings are display only, since the watcher can sell KRX codes only.
 
 ### Alerts & webhooks
 
@@ -84,7 +89,7 @@ Toolbar **EC** + **OB** / **FVG** / **Conf** / **TL** / **CH** / **Sweep** / **S
 
 ## Data
 
-JSON store at `data/store.json` (created on first boot from seed). Includes drawings, alerts, **price watches**, comments, news. Safe to delete to reset.
+JSON store at `data/store.json` (created on first boot from seed). Includes drawings, alerts, **price watches**, comments, news. Safe to delete to reset. Writes go through a temp file and a rename, so a killed server leaves the previous store intact; a store that cannot be parsed is kept as `data/store.corrupt-<time>.json` before the seed is written.
 
 ## Compliance
 
