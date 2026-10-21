@@ -31,6 +31,7 @@ import type {
 } from "@/lib/types";
 import { DEFAULT_PAPER_ACCOUNT } from "@/lib/types";
 import {
+  ALL_TIMEFRAMES,
   DEFAULT_CHART_SETTINGS,
   DEFAULT_WEBHOOK_CONFIG,
   INDICATOR_TEMPLATES,
@@ -93,6 +94,100 @@ const PHASE2_KEY = "chartdesk-phase2-v1";
 const PHASE3_KEY = "chartdesk-phase3-v1";
 const PHASE4_KEY = "chartdesk-phase4-v1";
 const EASY_KEY = "chartdesk-easychart-overlay-v2";
+const WORKSPACE_KEY = "chartdesk-workspace-v1";
+
+/** What was on screen when the app last closed. */
+interface WorkspaceSnapshot {
+  activeSymbolId: string;
+  secondarySymbolIds: string[];
+  timeframe: Timeframe;
+  paneTimeframes: Timeframe[];
+  indicators: IndicatorId[];
+  chartStyle: ChartStyle;
+  layoutMode: LayoutMode;
+  magnet: boolean;
+}
+
+const CHART_STYLES: Record<ChartStyle, true> = {
+  candle: true,
+  bar: true,
+  hollow_candle: true,
+  line: true,
+  area: true,
+  baseline: true,
+  heikin_ashi: true,
+  renko: true,
+  kagi: true,
+  line_break: true,
+  point_figure: true,
+  range: true,
+  volume_candles: true,
+  volume_footprint: true,
+  tpo: true,
+};
+
+const LAYOUT_MODES: LayoutMode[] = ["single", "split2", "split4"];
+
+function isTimeframe(value: unknown): value is Timeframe {
+  return typeof value === "string" && (ALL_TIMEFRAMES as string[]).includes(value);
+}
+
+function readWorkspaceSnapshot(): Partial<WorkspaceSnapshot> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(WORKSPACE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : null;
+    return parsed && typeof parsed === "object" ? (parsed as Partial<WorkspaceSnapshot>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Keep only saved values that still make sense for this store. */
+export function restoreWorkspace(
+  saved: Partial<WorkspaceSnapshot>,
+  knownSymbolIds: Set<string>
+): Partial<WorkspaceSnapshot> {
+  const out: Partial<WorkspaceSnapshot> = {};
+  if (typeof saved.activeSymbolId === "string" && knownSymbolIds.has(saved.activeSymbolId)) {
+    out.activeSymbolId = saved.activeSymbolId;
+  }
+  if (Array.isArray(saved.secondarySymbolIds)) {
+    out.secondarySymbolIds = saved.secondarySymbolIds
+      .filter((id): id is string => typeof id === "string" && knownSymbolIds.has(id))
+      .slice(0, 3);
+  }
+  if (isTimeframe(saved.timeframe)) out.timeframe = saved.timeframe;
+  if (
+    Array.isArray(saved.paneTimeframes) &&
+    saved.paneTimeframes.length === 4 &&
+    saved.paneTimeframes.every(isTimeframe)
+  ) {
+    out.paneTimeframes = saved.paneTimeframes;
+  }
+  if (Array.isArray(saved.indicators)) {
+    out.indicators = saved.indicators.filter(
+      (id): id is IndicatorId => typeof id === "string"
+    );
+  }
+  if (typeof saved.chartStyle === "string" && saved.chartStyle in CHART_STYLES) {
+    out.chartStyle = saved.chartStyle;
+  }
+  if (saved.layoutMode && LAYOUT_MODES.includes(saved.layoutMode)) {
+    out.layoutMode = saved.layoutMode;
+  }
+  if (typeof saved.magnet === "boolean") out.magnet = saved.magnet;
+  return out;
+}
+
+function writeWorkspaceSnapshot(snapshot: WorkspaceSnapshot) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(WORKSPACE_KEY, JSON.stringify(snapshot));
+  } catch {
+    /* storage full or blocked */
+  }
+}
 
 interface EasyOverlayPrefs {
   enabled: boolean;
@@ -752,6 +847,10 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     if (symbols.length === 0) {
       throw new Error("부트스트랩 데이터에 심볼이 없습니다");
     }
+    const restored = restoreWorkspace(
+      readWorkspaceSnapshot(),
+      new Set(symbols.map((symbol) => symbol.id))
+    );
     set({
       ...data,
       symbols,
@@ -789,10 +888,20 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       brokerOpen: p4.brokerOpen,
       domOpen: p4.domOpen,
       activeSymbolId:
+        restored.activeSymbolId ??
         watchlist.find((id) => id === "us_NVDA") ??
         watchlist[0] ??
         symbols[0]?.id ??
         "us_NVDA",
+      ...(restored.secondarySymbolIds
+        ? { secondarySymbolIds: restored.secondarySymbolIds }
+        : {}),
+      ...(restored.timeframe ? { timeframe: restored.timeframe } : {}),
+      ...(restored.paneTimeframes ? { paneTimeframes: restored.paneTimeframes } : {}),
+      ...(restored.indicators ? { indicators: restored.indicators } : {}),
+      ...(restored.chartStyle ? { chartStyle: restored.chartStyle } : {}),
+      ...(restored.layoutMode ? { layoutMode: restored.layoutMode } : {}),
+      ...(restored.magnet != null ? { magnet: restored.magnet } : {}),
       ready: true,
       layouts: readLayouts(),
       recentSymbolIds: readRecent(),
@@ -1046,3 +1155,30 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   requestSnapshot: () =>
     set({ snapshotTick: get().snapshotTick + 1 }),
 }));
+
+useWorkspace.subscribe((state, prev) => {
+  if (!state.ready) return;
+  if (
+    state.ready === prev.ready &&
+    state.activeSymbolId === prev.activeSymbolId &&
+    state.secondarySymbolIds === prev.secondarySymbolIds &&
+    state.timeframe === prev.timeframe &&
+    state.paneTimeframes === prev.paneTimeframes &&
+    state.indicators === prev.indicators &&
+    state.chartStyle === prev.chartStyle &&
+    state.layoutMode === prev.layoutMode &&
+    state.magnet === prev.magnet
+  ) {
+    return;
+  }
+  writeWorkspaceSnapshot({
+    activeSymbolId: state.activeSymbolId,
+    secondarySymbolIds: state.secondarySymbolIds,
+    timeframe: state.timeframe,
+    paneTimeframes: state.paneTimeframes,
+    indicators: state.indicators,
+    chartStyle: state.chartStyle,
+    layoutMode: state.layoutMode,
+    magnet: state.magnet,
+  });
+});
