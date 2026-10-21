@@ -10,7 +10,7 @@ export async function GET() {
     mode,
     adapter: { id: adapter.id, label: adapter.label, mode: adapter.mode },
     pollMs,
-    ssePath: "/api/market/sse",
+    ssePath: "/api/market/stream",
     wsConfigured: Boolean(process.env.MARKET_DATA_WS_URL?.trim()) || kiwoomQuotesConfigured(),
     kiwoom: kiwoomQuotesConfigured(),
   });

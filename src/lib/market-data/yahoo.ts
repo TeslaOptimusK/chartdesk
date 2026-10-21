@@ -340,7 +340,7 @@ async function refreshSession(
 }
 
 /**
- * Shared Yahoo poll so chart SSE + watchlist quotes-sse share one last print.
+ * Shared Yahoo poll so chart and watchlist subscriptions share one last print.
  */
 export function createYahooPollSubscriber(
   query: CandleQuery,
