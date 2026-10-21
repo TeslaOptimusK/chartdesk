@@ -1,10 +1,15 @@
 import { promises as fs } from "fs";
 import path from "path";
 import type { AlertItem } from "@/lib/types";
-import { readWebhookConfig } from "@/lib/storage";
+import { readWebhookConfig, writeJsonAtomic } from "@/lib/storage";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const LOG_PATH = path.join(DATA_DIR, "webhook-log.json");
+const POST_TIMEOUT_MS = 8_000;
+
+const logQueue = globalThis as typeof globalThis & {
+  __chartdeskWebhookLog?: Promise<unknown>;
+};
 
 export interface WebhookLogEntry {
   at: string;
@@ -16,7 +21,7 @@ export interface WebhookLogEntry {
   error?: string;
 }
 
-async function appendLog(entry: WebhookLogEntry): Promise<void> {
+async function writeLogEntry(entry: WebhookLogEntry): Promise<void> {
   await fs.mkdir(DATA_DIR, { recursive: true });
   let list: WebhookLogEntry[] = [];
   try {
@@ -27,7 +32,15 @@ async function appendLog(entry: WebhookLogEntry): Promise<void> {
     list = [];
   }
   list.unshift(entry);
-  await fs.writeFile(LOG_PATH, JSON.stringify(list.slice(0, 500), null, 2), "utf8");
+  await writeJsonAtomic(LOG_PATH, list.slice(0, 500));
+}
+
+function appendLog(entry: WebhookLogEntry): Promise<void> {
+  const run = (logQueue.__chartdeskWebhookLog ?? Promise.resolve()).then(() =>
+    writeLogEntry(entry)
+  );
+  logQueue.__chartdeskWebhookLog = run.catch(() => undefined);
+  return run;
 }
 
 async function postWithRetries(
@@ -42,6 +55,7 @@ async function postWithRetries(
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
+        signal: AbortSignal.timeout(POST_TIMEOUT_MS),
       });
       if (res.ok) return { ok: true, status: res.status };
       if (i === attempts - 1) {
