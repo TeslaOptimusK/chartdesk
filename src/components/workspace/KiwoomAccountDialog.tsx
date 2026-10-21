@@ -8,6 +8,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { copyTradeShareImage, TradeShareArt } from "@/components/workspace/trade-share-card";
 import { krwToUsd } from "@/lib/kiwoom/rest-trade";
 import { useWorkspace } from "@/lib/store";
 import type { SymbolMeta } from "@/lib/types";
@@ -188,59 +189,50 @@ function TradePnlCard({
 }) {
   const up = (card.ret ?? 0) > 0;
   const down = (card.ret ?? 0) < 0;
-  const color = up ? "text-emerald-300" : down ? "text-rose-300" : "text-white";
-  const wash = up ? "bg-emerald-400/15" : down ? "bg-rose-400/15" : "bg-white/10";
-  const glow = up
-    ? "shadow-[0_0_90px_rgba(52,211,153,0.28)]"
-    : down
-      ? "shadow-[0_0_90px_rgba(251,113,133,0.28)]"
-      : "";
   const won =
     card.currency === "USD" && rate != null && card.pnl != null ? card.pnl * rate : null;
+  const art = {
+    title: card.title,
+    meta: `${card.code} · ${card.when}`,
+    pctLabel: pct(card.ret),
+    pnlLabel: priceText(card.currency, card.pnl),
+    wonLabel: won != null ? krw(won) : null,
+    rows: [
+      ["매수가", priceText(card.currency, card.entry)],
+      ["현재가", priceText(card.currency, card.last)],
+      ["수량", `${card.qty.toLocaleString("ko-KR")}주`],
+    ] as Array<[string, string]>,
+    positive: up,
+    negative: down,
+  };
+  const [copyMsg, setCopyMsg] = useState<string | null>(null);
+  const copyImage = async () => {
+    try {
+      await copyTradeShareImage(art);
+      setCopyMsg("이미지를 복사했습니다");
+    } catch {
+      setCopyMsg("이미지 복사에 실패했습니다");
+    }
+  };
   return (
     <div
       className="absolute inset-0 z-30 flex items-center justify-center bg-black/75 p-4"
       onClick={onClose}
     >
-      <article
-        className={cn(
-          "flex h-[min(760px,92%)] w-[min(390px,100%)] flex-col rounded-[28px] border border-white/10 bg-[#0b1220] px-6 py-7",
-          glow
-        )}
-        onClick={(ev) => ev.stopPropagation()}
-      >
-        <div className="text-sm tracking-[0.18em] text-white/45">CHARTDESK</div>
-        <h2 className="mt-8 text-2xl font-semibold leading-tight text-white">{card.title}</h2>
-        <p className="mt-1 font-mono text-sm text-white/50">
-          {card.code} · {card.when}
-        </p>
-        <div className="flex flex-1 flex-col items-center justify-center">
-          <div className="text-sm text-white/55">수익률</div>
-          <div className={cn("mt-3 font-mono text-7xl font-bold tabular-nums leading-none", color)}>
-            {pct(card.ret)}
-          </div>
-          <div className={cn("mt-5 rounded-full px-5 py-2 text-center font-mono text-xl tabular-nums", wash, color)}>
-            <div>{priceText(card.currency, card.pnl)}</div>
-            {won != null && <div className="text-sm text-white/55">{krw(won)}</div>}
-          </div>
-        </div>
-        <dl className="space-y-3 border-t border-white/10 pt-5 text-base">
-          {[
-            ["매수가", priceText(card.currency, card.entry)],
-            ["현재가", priceText(card.currency, card.last)],
-            ["수량", `${card.qty.toLocaleString("ko-KR")}주`],
-          ].map(([label, value]) => (
-            <div key={label} className="flex items-baseline justify-between gap-4">
-              <dt className="text-white/50">{label}</dt>
-              <dd className="font-mono tabular-nums text-white">{value}</dd>
-            </div>
-          ))}
-        </dl>
-        <div className="mt-6 flex gap-2">
+      <div className="flex w-[min(390px,100%)] flex-col" onClick={(ev) => ev.stopPropagation()}>
+        <TradeShareArt {...art} />
+        <div className="mt-3 flex gap-2">
+          <button
+            type="button"
+            className="h-11 flex-1 rounded-full bg-white text-sm font-medium text-[#0b1220]"
+            onClick={() => void copyImage()}
+          >
+            이미지 복사
+          </button>
           {card.symbolId && (
             <button
               type="button"
-              className="h-11 flex-1 rounded-full bg-white text-sm font-medium text-[#0b1220]"
+              className="h-11 flex-1 rounded-full border border-white/15 text-sm text-white/80"
               onClick={onChart}
             >
               차트로
@@ -254,7 +246,8 @@ function TradePnlCard({
             닫기
           </button>
         </div>
-      </article>
+        {copyMsg && <p className="mt-2 text-center text-sm text-white/70">{copyMsg}</p>}
+      </div>
     </div>
   );
 }
