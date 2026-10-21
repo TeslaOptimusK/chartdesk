@@ -3,7 +3,8 @@ setlocal EnableExtensions
 REM ChartDesk launcher. Fast-forward cursor/chartdesk-desktop, then start Next.js
 REM with no console, wait for /api/bootstrap, and open Chrome/Edge in --app= mode.
 REM A double-click from an old shortcut closes its console and continues hidden.
-REM Does not reset or discard local edits.
+REM Local edits are stashed, not deleted, so a fast-forward can finish.
+REM .env.local is ignored and stays put. The stash is not popped.
 
 cd /d "%~dp0.."
 if errorlevel 1 goto fail_cd
@@ -47,8 +48,13 @@ REM cannot desync the rest of the update. The new file is started afterwards.
   if errorlevel 1 (
     git pull --ff-only origin cursor/chartdesk-desktop >> "%TEMP%\chartdesk-update.log" 2>&1
     if errorlevel 1 (
-      git status --porcelain > "%TEMP%\chartdesk-git-status.txt"
-      for %%A in ("%TEMP%\chartdesk-git-status.txt") do if %%~zA==0 git reset --hard origin/cursor/chartdesk-desktop >> "%TEMP%\chartdesk-update.log" 2>&1
+      echo stashing local edits so cursor/chartdesk-desktop can fast-forward>> "%TEMP%\chartdesk-update.log"
+      git stash push -u -m "chartdesk-auto-update" >> "%TEMP%\chartdesk-update.log" 2>&1
+      git pull --ff-only origin cursor/chartdesk-desktop >> "%TEMP%\chartdesk-update.log" 2>&1
+      if errorlevel 1 (
+        git status --porcelain > "%TEMP%\chartdesk-git-status.txt"
+        for %%A in ("%TEMP%\chartdesk-git-status.txt") do if %%~zA==0 git reset --hard origin/cursor/chartdesk-desktop >> "%TEMP%\chartdesk-update.log" 2>&1
+      )
     )
   )
   wscript //nologo "%~dp0chartdesk-launch.vbs" updated
