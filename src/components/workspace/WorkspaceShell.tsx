@@ -21,6 +21,7 @@ import {
   timezoneDisplay,
 } from "@/lib/session";
 import { Button } from "@/components/ui/button";
+import { editCommand, isPlainShortcut } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 
 const TF_KEYS: Record<string, Timeframe> = {
@@ -166,23 +167,27 @@ export function WorkspaceShell() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
       const target = e.target as HTMLElement | null;
       const tag = target?.tagName;
       if (
         tag === "INPUT" ||
         tag === "TEXTAREA" ||
         tag === "SELECT" ||
-        target?.isContentEditable
+        target?.isContentEditable ||
+        target?.closest?.('[role="dialog"], [role="alertdialog"]')
       ) {
         return;
       }
 
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+      const edit = editCommand(e);
+      if (edit) {
         e.preventDefault();
-        if (e.shiftKey) redoDrawings();
+        if (edit === "redo") redoDrawings();
         else undoDrawings();
         return;
       }
+      if (!isPlainShortcut(e)) return;
 
       if (e.key === "Escape") {
         if (fullscreen) {
