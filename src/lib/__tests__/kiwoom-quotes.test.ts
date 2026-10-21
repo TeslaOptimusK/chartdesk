@@ -17,8 +17,10 @@ import {
 import { createQuoteHub, type KiwoomSocket } from "@/lib/kiwoom/quote-hub";
 import {
   fetchKiwoomCandles,
+  kiwoomAuthorizedPost,
   resetKiwoomRestForTests,
   setKiwoomRequestGapForTests,
+  setKiwoomRequestTimeoutForTests,
 } from "@/lib/kiwoom/quote-rest";
 import {
   KiwoomRoutedMarketDataAdapter,
@@ -336,6 +338,44 @@ describe("kiwoom routing", () => {
       assert.equal(bars.length, 1);
       assert.equal(bars[0]!.close, 74800);
       assert.equal(bars[0]!.open, 74700);
+    } finally {
+      globalThis.fetch = orig;
+      resetKiwoomRestForTests();
+    }
+  });
+});
+
+describe("kiwoom request deadline", () => {
+  it("gives up on a silent order call and lets the next request through", async () => {
+    process.env.KIWOOM_APP_KEY = "test-app";
+    process.env.KIWOOM_APP_SECRET = "test-secret";
+    process.env.KIWOOM_REST_URL = "https://kiwoom.test";
+    resetKiwoomRestForTests();
+    setKiwoomRequestGapForTests(0);
+    setKiwoomRequestTimeoutForTests(60);
+    const orig = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const ok = (body: unknown) =>
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      if (url.endsWith("/oauth2/token")) {
+        return ok({ token: "access-token", expires_dt: "20991231235959", return_code: 0 });
+      }
+      if (new Headers(init?.headers).get("api-id") === "kt10000") {
+        return new Promise<Response>((_, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(init.signal!.reason));
+        });
+      }
+      return ok({ return_code: 0, entr: "1000" });
+    }) as typeof fetch;
+    try {
+      const order = kiwoomAuthorizedPost("/api/dostk/ordr", "kt10000", { stk_cd: "005930" });
+      const next = kiwoomAuthorizedPost("/api/dostk/acnt", "kt00001", { qry_tp: "3" });
+      await assert.rejects(order, /접수 여부를 계좌에서 확인/);
+      assert.equal((await next).entr, "1000");
     } finally {
       globalThis.fetch = orig;
       resetKiwoomRestForTests();
