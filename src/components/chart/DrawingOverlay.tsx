@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type Ref } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { IChartApi, ISeriesApi, Time } from "lightweight-charts";
 import type {
   Candle,
@@ -47,8 +47,8 @@ interface DrawingOverlayProps {
   stayInDrawMode?: boolean;
   /** Raw candles for VP / anchored VWAP (unscaled) */
   candlesFull?: Candle[];
-  /** Expose drawing canvas for snapshot compositing */
-  drawingCanvasRef?: Ref<HTMLCanvasElement | null>;
+  /** Receives the drawing canvas so a snapshot can composite it */
+  onCanvasElement?: (el: HTMLCanvasElement | null) => void;
 }
 
 function pointToXY(
@@ -75,20 +75,18 @@ export function DrawingOverlay({
   locked = false,
   stayInDrawMode = false,
   candlesFull,
-  drawingCanvasRef,
+  onCanvasElement,
 }: DrawingOverlayProps) {
   const profileCandles = candlesFull?.length ? candlesFull : candles;
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  const bindCanvasRef = (el: HTMLCanvasElement | null) => {
-    canvasRef.current = el;
-    if (!drawingCanvasRef) return;
-    if (typeof drawingCanvasRef === "function") {
-      drawingCanvasRef(el);
-    } else {
-      drawingCanvasRef.current = el;
-    }
-  };
+  const bindCanvasRef = useCallback(
+    (el: HTMLCanvasElement | null) => {
+      canvasRef.current = el;
+      onCanvasElement?.(el);
+    },
+    [onCanvasElement]
+  );
   const pendingRef = useRef<DrawingPoint[]>([]);
   const [pending, setPending] = useState<DrawingPoint[]>([]);
   const [cursor, setCursor] = useState<DrawingPoint | null>(null);
@@ -96,10 +94,15 @@ export function DrawingOverlay({
   const brushingRef = useRef(false);
   const brushPointsRef = useRef<DrawingPoint[]>([]);
 
-  useEffect(() => {
-    pendingRef.current = [];
+  const draftKey = `${tool}|${symbolId}`;
+  const [pendingFor, setPendingFor] = useState(draftKey);
+  if (pendingFor !== draftKey) {
+    setPendingFor(draftKey);
     setPending([]);
     setCursor(null);
+  }
+  useEffect(() => {
+    pendingRef.current = [];
   }, [tool, symbolId]);
 
   const redraw = useCallback(() => {
@@ -561,7 +564,6 @@ function paintDrawing(
     d.points.length >= 2
   ) {
     const [p0, p1] = d.points;
-    const prices = fibPrices(p0, p1);
     const a = pointToXY(api, p0);
     const b = pointToXY(api, p1);
     if (a && b) {
@@ -807,7 +809,7 @@ function paintDrawing(
       const profile = volumeProfile(profileCandles, p0.time, p1.time, 16);
       const maxV = Math.max(...profile.map((b) => b.volume), 1);
       const barW = Math.min(28, (right - left) / Math.max(profile.length, 1));
-      profile.forEach((b, i) => {
+      profile.forEach((b) => {
         const y = api.series.priceToCoordinate(b.price);
         if (y == null) return;
         const w = (b.volume / maxV) * barW;

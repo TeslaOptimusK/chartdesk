@@ -30,7 +30,7 @@ export function toRenko(candles: Candle[], opts: TransformOptions = {}): Candle[
   let t = candles[0].time;
   for (const c of candles) {
     t = c.time;
-    let price = c.close;
+    const price = c.close;
     while (price >= lastClose + brick) {
       lastClose += brick;
       out.push({
@@ -158,7 +158,7 @@ export function toPointFigure(
   let t = candles[0].time;
   for (const c of candles) {
     t = c.time;
-    let price = c.close;
+    const price = c.close;
     if (dir === "X") {
       while (price >= top + box) {
         top += box;

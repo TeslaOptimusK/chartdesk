@@ -15,6 +15,8 @@ interface Suggestion {
   assetClass: AssetClass;
 }
 
+const NO_SUGGESTIONS: Suggestion[] = [];
+
 function newId(): string {
   return `wl_${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -31,16 +33,15 @@ export function WatchlistPanel() {
   const [sectionName, setSectionName] = useState("");
   const [searchSectionId, setSearchSectionId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [fetchedSuggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const searching = searchSectionId != null && query.trim().length >= 2;
+  const suggestions = searching ? fetchedSuggestions : NO_SUGGESTIONS;
 
   const byId = useMemo(() => new Map(symbols.map((symbol) => [symbol.id, symbol])), [symbols]);
 
   useEffect(() => {
     const q = query.trim();
-    if (!searchSectionId || q.length < 2) {
-      setSuggestions([]);
-      return;
-    }
+    if (!searchSectionId || q.length < 2) return;
     const handle = window.setTimeout(() => {
       void fetch(`/api/symbols?q=${encodeURIComponent(q)}`)
         .then((res) => res.json())
