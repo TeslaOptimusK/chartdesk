@@ -8,6 +8,7 @@ import {
   fetchKiwoomAccount,
   placeKiwoomCashOrder,
 } from "@/lib/kiwoom/rest-trade";
+import { writeJsonAtomic } from "@/lib/storage";
 
 const FILE = path.join(process.cwd(), "data", "kiwoom-brackets.json");
 
@@ -35,10 +36,35 @@ export interface KiwoomBracket {
   createdAt: number;
 }
 
-let mem: KiwoomBracket[] | null = null;
-let writing: Promise<void> = Promise.resolve();
-let booted = false;
-const unsubs = new Map<string, () => void>();
+interface BracketRuntime {
+  mem: KiwoomBracket[] | null;
+  writing: Promise<void>;
+  booted: boolean;
+  unsubs: Map<string, () => void>;
+  /** Failed sells per bracket id, and when the next attempt may run. */
+  failures: Map<string, number>;
+  retryAt: Map<string, number>;
+}
+
+/**
+ * A dev reload or a second route bundle must not get its own copy of the
+ * watcher, or a released bracket could still sell from the stale copy.
+ */
+const runtime: BracketRuntime = ((
+  globalThis as typeof globalThis & { __chartdeskBrackets?: BracketRuntime }
+).__chartdeskBrackets ??= {
+  mem: null,
+  writing: Promise.resolve(),
+  booted: false,
+  unsubs: new Map(),
+  failures: new Map(),
+  retryAt: new Map(),
+});
+
+/** Ticks arrive many times a second; a failing sell must not be retried on each one. */
+export function sellRetryDelayMs(failures: number): number {
+  return Math.min(60_000, 1_000 * 2 ** Math.max(0, failures - 1));
+}
 
 export function bracketAction(
   price: number,
@@ -52,23 +78,32 @@ export function bracketAction(
 }
 
 async function load(): Promise<KiwoomBracket[]> {
-  if (mem) return mem;
+  if (runtime.mem) return runtime.mem;
+  let rows: KiwoomBracket[] = [];
   try {
     const raw = await fs.readFile(FILE, "utf8");
     const parsed = JSON.parse(raw) as unknown;
-    mem = Array.isArray(parsed) ? (parsed as KiwoomBracket[]) : [];
+    rows = Array.isArray(parsed) ? (parsed as KiwoomBracket[]) : [];
   } catch {
-    mem = [];
+    rows = [];
   }
-  return mem;
+  runtime.mem ??= rows;
+  return runtime.mem;
 }
 
 function persist(): void {
-  const snapshot = mem ? mem.map((row) => ({ ...row, orderNos: row.orderNos.map((o) => ({ ...o })) })) : [];
-  writing = writing.then(async () => {
-    await fs.mkdir(path.dirname(FILE), { recursive: true });
-    await fs.writeFile(FILE, JSON.stringify(snapshot, null, 2));
-  });
+  const snapshot = runtime.mem
+    ? runtime.mem.map((row) => ({ ...row, orderNos: row.orderNos.map((o) => ({ ...o })) }))
+    : [];
+  runtime.writing = runtime.writing
+    .then(async () => {
+      await fs.mkdir(path.dirname(FILE), { recursive: true });
+      await writeJsonAtomic(FILE, snapshot);
+    })
+    .catch((err) => {
+      const detail = err instanceof Error ? err.message : String(err);
+      console.warn(`[kiwoom] 목표가/손절 감시 저장 실패 (${detail})`);
+    });
 }
 
 export async function listBrackets(): Promise<KiwoomBracket[]> {
@@ -133,7 +168,7 @@ export async function updateBracketLevels(input: {
     row.firing = false;
   }
   persist();
-  await writing;
+  await runtime.writing;
   syncSubs();
   return { ...row, orderNos: row.orderNos.map((o) => ({ ...o })) };
 }
@@ -162,7 +197,7 @@ export async function armBracket(input: {
   };
   rows.push(bracket);
   persist();
-  await writing;
+  await runtime.writing;
   return bracket;
 }
 
@@ -173,7 +208,7 @@ export async function disarmBracket(id: string): Promise<boolean> {
   row.armed = false;
   row.firing = false;
   persist();
-  await writing;
+  await runtime.writing;
   syncSubs();
   return true;
 }
@@ -194,7 +229,7 @@ export async function cancelBracketOrders(id: string): Promise<{ cancelled: numb
   }
   if (failed === 0) row.orderNos = [];
   persist();
-  await writing;
+  await runtime.writing;
   return { cancelled, failed };
 }
 
@@ -236,7 +271,7 @@ async function fireBracket(bracket: KiwoomBracket, action: "stop" | "take"): Pro
       bracket.waitInside = true;
     }
     persist();
-    await writing;
+    await runtime.writing;
     return;
   }
 
@@ -251,13 +286,15 @@ async function fireBracket(bracket: KiwoomBracket, action: "stop" | "take"): Pro
     bracket.waitInside = true;
   }
   persist();
-  await writing;
+  await runtime.writing;
 }
 
 function onTick(code: string, price: number): void {
-  const rows = mem ?? [];
+  const rows = runtime.mem ?? [];
+  const now = Date.now();
   for (const bracket of rows) {
     if (bracket.code !== code || !bracket.armed || bracket.firing) continue;
+    if (now < (runtime.retryAt.get(bracket.id) ?? 0)) continue;
     if (bracket.waitInside) {
       if (priceOutside(bracket, price)) continue;
       bracket.waitInside = false;
@@ -266,28 +303,39 @@ function onTick(code: string, price: number): void {
     if (!action) continue;
     bracket.firing = true;
     persist();
-    void fireBracket(bracket, action).catch((err) => {
-      bracket.firing = false;
-      bracket.armed = true;
-      persist();
-      const detail = err instanceof Error ? err.message : "order failed";
-      console.warn(`[kiwoom] 목표가/손절 매도 실패 ${code} (${detail})`);
-    });
+    void fireBracket(bracket, action)
+      .then(() => {
+        runtime.failures.delete(bracket.id);
+        runtime.retryAt.delete(bracket.id);
+      })
+      .catch((err) => {
+        bracket.firing = false;
+        bracket.armed = true;
+        persist();
+        const failures = (runtime.failures.get(bracket.id) ?? 0) + 1;
+        const delay = sellRetryDelayMs(failures);
+        runtime.failures.set(bracket.id, failures);
+        runtime.retryAt.set(bracket.id, Date.now() + delay);
+        const detail = err instanceof Error ? err.message : "order failed";
+        console.warn(
+          `[kiwoom] 목표가/손절 매도 실패 ${code} (${detail}). ${Math.round(delay / 1000)}초 뒤 다시 시도합니다.`
+        );
+      });
   }
 }
 
 function syncSubs(): void {
-  const wanted = new Set((mem ?? []).filter((b) => b.armed).map((b) => b.code));
-  for (const [code, stop] of unsubs) {
+  const wanted = new Set((runtime.mem ?? []).filter((b) => b.armed).map((b) => b.code));
+  for (const [code, stop] of runtime.unsubs) {
     if (wanted.has(code)) continue;
     stop();
-    unsubs.delete(code);
+    runtime.unsubs.delete(code);
   }
   if (!kiwoomQuotesConfigured()) return;
   const hub = getKiwoomQuoteHub();
   for (const code of wanted) {
-    if (!/^\d{6}$/.test(code) || unsubs.has(code)) continue;
-    unsubs.set(
+    if (!/^\d{6}$/.test(code) || runtime.unsubs.has(code)) continue;
+    runtime.unsubs.set(
       code,
       hub.subscribe(code, (tick) => {
         if (tick.price != null && Number.isFinite(tick.price)) onTick(code, tick.price);
@@ -299,22 +347,24 @@ function syncSubs(): void {
 export async function resumeBracketWatcher(): Promise<void> {
   if (!kiwoomQuotesConfigured()) return;
   const rows = await load();
-  if (!booted) {
-    booted = true;
+  if (!runtime.booted) {
+    runtime.booted = true;
     for (const row of rows) {
       if (row.firing) row.firing = false;
     }
     persist();
-    await writing;
+    await runtime.writing;
   }
   if (!rows.some((b) => b.armed)) return;
   syncSubs();
 }
 
 export function resetBracketsForTests(): void {
-  for (const stop of unsubs.values()) stop();
-  unsubs.clear();
-  mem = null;
-  booted = false;
-  writing = Promise.resolve();
+  for (const stop of runtime.unsubs.values()) stop();
+  runtime.unsubs.clear();
+  runtime.failures.clear();
+  runtime.retryAt.clear();
+  runtime.mem = null;
+  runtime.booted = false;
+  runtime.writing = Promise.resolve();
 }

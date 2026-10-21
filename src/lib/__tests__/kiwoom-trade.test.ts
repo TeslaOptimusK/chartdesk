@@ -14,7 +14,7 @@ import {
   parseUsValuation,
   reportedAssetsIfComplete,
 } from "@/lib/kiwoom/rest-trade";
-import { bracketAction, separateLongLevels } from "@/lib/kiwoom/brackets";
+import { bracketAction, sellRetryDelayMs, separateLongLevels } from "@/lib/kiwoom/brackets";
 import { groupLotsByPrice, historyWindows, lotKey, lotsCover, openLotsFromFills, reconcileLots } from "@/lib/kiwoom/lots";
 import { buildScaleInOrders, krxTickSize, roundToTick } from "@/lib/kiwoom/scale-plan";
 
@@ -76,6 +76,13 @@ describe("bracket trigger", () => {
       takeProfit: 120,
       stopLoss: 80,
     });
+  });
+
+  it("waits longer after each failed sell instead of retrying on every tick", () => {
+    assert.deepEqual(
+      [1, 2, 3, 4, 5, 6, 7, 12].map(sellRetryDelayMs),
+      [1_000, 2_000, 4_000, 8_000, 16_000, 32_000, 60_000, 60_000]
+    );
   });
 });
 
