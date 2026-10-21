@@ -82,8 +82,15 @@ if exist "package.json" if exist "node_modules\.chartdesk-package.json" (
   if errorlevel 1 set "NEED_NPM=1"
 )
 if not exist "data\" mkdir data
+REM The running server keeps data\chartdesk-server.log open. Stop it before
+REM npm install, and write that log elsewhere, or the install looks failed.
+set "APP_PORT=43127"
+for /f "tokens=5" %%P in ('netstat -ano ^| findstr /C:":%APP_PORT%" ^| findstr /C:"LISTENING"') do (
+  taskkill /F /PID %%P >nul 2>&1
+)
+taskkill /F /T /FI "WINDOWTITLE eq ChartDesk Server" >nul 2>&1
 if "%NEED_NPM%"=="1" (
-  call npm install >> "data\chartdesk-server.log" 2>&1
+  call npm install > "data\chartdesk-npm.log" 2>&1
   if errorlevel 1 goto fail_npm
 )
 if exist "node_modules\" (
