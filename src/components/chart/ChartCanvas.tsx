@@ -532,6 +532,8 @@ export function ChartCanvas({
       });
     }
     mainSeriesRef.current = series;
+    // The new series is empty; the next data pass must load every bar, not just the last.
+    livePaintRef.current = "";
     setChartApi({ chart, series: series as ISeriesApi<"Candlestick"> });
   }, [chartStyle, chartSettings.upColor, chartSettings.downColor]);
 
@@ -1178,12 +1180,15 @@ export function ChartCanvas({
     indicators,
     patternHits,
     chartStyle,
+    chartSettings.upColor,
+    chartSettings.downColor,
     compareCandles,
     compareLabel,
     rangePreset,
     timeframe,
     eventMarkers,
     eventToggles,
+    extendedHours,
     volumeWeights,
     indicatorOnIndicator,
     customIndicatorSource,
