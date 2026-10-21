@@ -10,6 +10,7 @@ import {
   CATEGORY_LABELS,
   DIRECTION_LABELS,
   type PostCategory,
+  type PriceWatch,
   type PriceWatchOp,
 } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
@@ -609,13 +610,14 @@ function AlertsTab() {
   };
 
   const removeWatch = async (id: string) => {
-    const next = priceWatches.filter((x) => x.id !== id);
-    setPriceWatches(next);
-    await fetch("/api/watches", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ priceWatches: next }),
-    });
+    setPriceWatches(priceWatches.filter((x) => x.id !== id));
+    const res = await fetch(`/api/watches?id=${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }).catch(() => null);
+    const data = (await res?.json().catch(() => null)) as {
+      priceWatches?: PriceWatch[];
+    } | null;
+    if (data?.priceWatches) setPriceWatches(data.priceWatches);
   };
 
   const active = symbols.find((s) => s.id === activeSymbolId);
