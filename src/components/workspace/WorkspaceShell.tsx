@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { ChartToolbar } from "@/components/workspace/ChartToolbar";
 import { CommandPalette } from "@/components/workspace/CommandPalette";
 import { Phase3Panels } from "@/components/workspace/Phase3Panels";
@@ -12,14 +13,9 @@ import { CryptoQuoteBridge } from "@/components/market/CryptoQuoteBridge";
 import { SessionQuoteBridge } from "@/components/market/SessionQuoteBridge";
 import { SymbolChartPane } from "@/components/chart/SymbolChartPane";
 import { MultiChartGrid } from "@/components/workspace/MultiChartGrid";
+import { WorkspaceFooter } from "@/components/workspace/WorkspaceFooter";
 import { useWorkspace } from "@/lib/store";
 import type { DrawingTool, Timeframe } from "@/lib/types";
-import {
-  TIMEZONE_OPTIONS,
-  extendedSessionBadge,
-  getSessionStatus,
-  timezoneDisplay,
-} from "@/lib/session";
 import { Button } from "@/components/ui/button";
 import { editCommand, isPlainShortcut } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
@@ -63,30 +59,58 @@ export function WorkspaceShell() {
     watchlist,
     fullscreen,
     setFullscreen,
-    timezone,
-    setTimezone,
     setTimeframe,
     setDrawingTool,
     setMagnet,
     magnet,
     setRightTab,
     drawingTool,
-    symbols,
     undoDrawings,
     redoDrawings,
     setObjectTreeOpen,
     drawingsLocked,
     setDrawingsLocked,
-    extendedHours,
     setPriceWatches,
     setTechnicalAlerts,
     setMultiConditionAlerts,
     setAlerts,
-  } = useWorkspace();
+  } = useWorkspace(
+    useShallow((s) => ({
+      ready: s.ready,
+      hydrate: s.hydrate,
+      activeSymbolId: s.activeSymbolId,
+      secondarySymbolIds: s.secondarySymbolIds,
+      layoutMode: s.layoutMode,
+      sync: s.sync,
+      activePaneIndex: s.activePaneIndex,
+      setActivePaneIndex: s.setActivePaneIndex,
+      paneTimeframes: s.paneTimeframes,
+      timeframe: s.timeframe,
+      showDisclaimer: s.showDisclaimer,
+      setShowDisclaimer: s.setShowDisclaimer,
+      watchlist: s.watchlist,
+      fullscreen: s.fullscreen,
+      setFullscreen: s.setFullscreen,
+      setTimeframe: s.setTimeframe,
+      setDrawingTool: s.setDrawingTool,
+      setMagnet: s.setMagnet,
+      magnet: s.magnet,
+      setRightTab: s.setRightTab,
+      drawingTool: s.drawingTool,
+      undoDrawings: s.undoDrawings,
+      redoDrawings: s.redoDrawings,
+      setObjectTreeOpen: s.setObjectTreeOpen,
+      drawingsLocked: s.drawingsLocked,
+      setDrawingsLocked: s.setDrawingsLocked,
+      setPriceWatches: s.setPriceWatches,
+      setTechnicalAlerts: s.setTechnicalAlerts,
+      setMultiConditionAlerts: s.setMultiConditionAlerts,
+      setAlerts: s.setAlerts,
+    }))
+  );
   const [ingestOpen, setIngestOpen] = useState(false);
   const [bootError, setBootError] = useState<string | null>(null);
   const [bootAttempt, setBootAttempt] = useState(0);
-  const [clock, setClock] = useState(() => new Date());
 
   useEffect(() => {
     if (ready) return;
@@ -128,11 +152,6 @@ export function WorkspaceShell() {
       window.clearTimeout(timeoutId);
     };
   }, [hydrate, ready, bootAttempt]);
-
-  useEffect(() => {
-    const id = window.setInterval(() => setClock(new Date()), 1000);
-    return () => window.clearInterval(id);
-  }, []);
 
   // Watchlist / multi / technical — evaluate pending across symbols on mock ticks
   useEffect(() => {
@@ -260,16 +279,6 @@ export function WorkspaceShell() {
     setDrawingsLocked,
   ]);
 
-  const active = symbols.find((s) => s.id === activeSymbolId);
-  const session = useMemo(
-    () => getSessionStatus(active?.exchange, clock),
-    [active?.exchange, clock]
-  );
-  const extBadge = useMemo(
-    () => extendedSessionBadge(active?.exchange, extendedHours, clock),
-    [active?.exchange, extendedHours, clock]
-  );
-
   const paneSymbolsRaw =
     layoutMode === "single"
       ? [activeSymbolId]
@@ -320,15 +329,6 @@ export function WorkspaceShell() {
       </div>
     );
   }
-
-  const tzNow = clock.toLocaleString("ko-KR", {
-    timeZone: timezone,
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    month: "short",
-    day: "numeric",
-  });
 
   return (
     <div
@@ -406,56 +406,7 @@ export function WorkspaceShell() {
         )}
       </div>
 
-      <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--workspace-border)] bg-[var(--workspace-panel)] px-3 py-1.5 text-[10px] text-[var(--workspace-faint)]">
-        <span className="flex flex-wrap items-center gap-2">
-          <span data-feature="data.session_status">{session.label}</span>
-          {extBadge ? (
-            <>
-              <span>·</span>
-              <span
-                className="rounded bg-[var(--workspace-elevated)] px-1.5 py-0.5 text-[var(--workspace-muted)]"
-                data-feature="chart.extended_hours"
-              >
-                {extBadge}
-              </span>
-            </>
-          ) : null}
-          <span>·</span>
-          <label
-            className="inline-flex items-center gap-1"
-            data-feature="chart.timezone"
-          >
-            <select
-              value={timezone}
-              onChange={(e) => setTimezone(e.target.value)}
-              className="h-5 rounded border border-[var(--workspace-border)] bg-[var(--workspace-elevated)] px-1 text-[10px] text-[var(--workspace-muted)]"
-            >
-              {TIMEZONE_OPTIONS.map((tz) => (
-                <option key={tz} value={tz}>
-                  {timezoneDisplay(tz, clock)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <span>· {tzNow}</span>
-          {magnet ? " · 자석 ON" : " · 자석 OFF"}
-          {drawingsLocked ? " · 잠금" : ""}
-        </span>
-        <span className="flex flex-wrap items-center gap-3">
-          <span>
-            Ctrl+Z 실행취소 · Y 수평레이 · L 잠금 · A 알림 · O 오브젝트
-          </span>
-          <a
-            href="https://www.tradingview.com/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-[var(--workspace-muted)] underline-offset-2 hover:text-[var(--workspace-fg)] hover:underline"
-            title="Charts powered by TradingView Lightweight Charts"
-          >
-            Charts by TradingView
-          </a>
-        </span>
-      </footer>
+      <WorkspaceFooter />
 
       <LiveQuotesBridge />
       <SessionQuoteBridge />

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { ChartCanvas } from "@/components/chart/ChartCanvas";
 import { useWorkspace, type IndicatorId } from "@/lib/store";
 import type { Candle, Drawing, PatternHit, Timeframe } from "@/lib/types";
@@ -105,7 +106,55 @@ export function SymbolChartPane({
     easyOverlayPreset,
     activeSymbolId,
     entrySignalsEnabled,
-  } = useWorkspace();
+  } = useWorkspace(
+    useShallow((s) => ({
+      timeframe: s.timeframe,
+      indicators: s.indicators,
+      drawingTool: s.drawingTool,
+      patternHits: s.patternHits,
+      drawings: s.drawings,
+      setDrawings: s.setDrawings,
+      symbols: s.symbols,
+      chartStyle: s.chartStyle,
+      compareSymbolId: s.compareSymbolId,
+      magnet: s.magnet,
+      goToDate: s.goToDate,
+      priceWatches: s.priceWatches,
+      setPriceWatches: s.setPriceWatches,
+      setAlerts: s.setAlerts,
+      technicalAlerts: s.technicalAlerts,
+      setTechnicalAlerts: s.setTechnicalAlerts,
+      multiConditionAlerts: s.multiConditionAlerts,
+      setMultiConditionAlerts: s.setMultiConditionAlerts,
+      drawingsLocked: s.drawingsLocked,
+      chartSettings: s.chartSettings,
+      priceScaleMode: s.priceScaleMode,
+      rangePreset: s.rangePreset,
+      dateFormat: s.dateFormat,
+      extendedHours: s.extendedHours,
+      showCountdown: s.showCountdown,
+      timezone: s.timezone,
+      eventToggles: s.eventToggles,
+      snapshotTick: s.snapshotTick,
+      sync: s.sync,
+      sharedCrosshairTime: s.sharedCrosshairTime,
+      setSharedCrosshairTime: s.setSharedCrosshairTime,
+      stayInDrawMode: s.stayInDrawMode,
+      customIntervalMinutes: s.customIntervalMinutes,
+      replayActive: s.replayActive,
+      replayIndex: s.replayIndex,
+      setReplayIndex: s.setReplayIndex,
+      setReplayTotalBars: s.setReplayTotalBars,
+      layoutMode: s.layoutMode,
+      indicatorOnIndicator: s.indicatorOnIndicator,
+      customIndicatorSource: s.customIndicatorSource,
+      easyOverlayEnabled: s.easyOverlayEnabled,
+      easyOverlayToggles: s.easyOverlayToggles,
+      easyOverlayPreset: s.easyOverlayPreset,
+      activeSymbolId: s.activeSymbolId,
+      entrySignalsEnabled: s.entrySignalsEnabled,
+    }))
+  );
   const timeframe = paneTimeframe ?? storeTimeframe;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
