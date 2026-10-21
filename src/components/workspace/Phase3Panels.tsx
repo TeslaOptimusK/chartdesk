@@ -21,7 +21,6 @@ import {
 } from "@/lib/phase3-data";
 import { CUSTOM_INDICATOR_EXAMPLE, customIndicatorError } from "@/lib/custom-indicator";
 import type {
-  MultiAlertCondition,
   PaperOrderSide,
   PaperOrderType,
   PostCategory,
@@ -278,8 +277,6 @@ function PaperDialog({
     const n = Number(qty);
     if (!Number.isFinite(n) || n <= 0) return;
     const mockLast = 100 + (activeSymbolId.length % 50);
-    const fill =
-      type === "limit" && limit ? Number(limit) : mockLast;
     const res = await fetch("/api/paper", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -424,11 +421,12 @@ function PortfolioDialog({
     (a, h) => a + h.shares * h.last,
     0
   );
+  const curve: { i: number; v: number }[] = [];
   let cum = 100;
-  const curve = holdings.map((h, i) => {
+  for (const [i, h] of holdings.entries()) {
     cum += ((h.last - h.avgCost) / h.avgCost) * 8;
-    return { i, v: cum };
-  });
+    curve.push({ i, v: cum });
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
