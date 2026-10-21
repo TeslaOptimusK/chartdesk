@@ -455,23 +455,45 @@ export function KiwoomAccountDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="relative flex !max-w-none !translate-x-0 !translate-y-0 flex-col gap-3 overflow-hidden border-[var(--workspace-border)] bg-[var(--workspace-panel)] p-6 text-base data-open:animate-none"
-        style={{
-          top: frame.top,
-          left: frame.left,
-          width: frame.width,
-          height: frame.height,
-          transform: "none",
-          animation: "none",
-          maxWidth: "none",
-        }}
-        data-feature="trade.kiwoom.account.panel"
+        showCloseButton={false}
+        className="pointer-events-none !fixed !inset-0 !top-0 !left-0 !h-screen !w-screen !max-w-none !translate-x-0 !translate-y-0 bg-transparent p-0 shadow-none ring-0 data-open:animate-none"
+        style={{ transform: "none", animation: "none", maxWidth: "none" }}
       >
+        <div
+          className="pointer-events-auto absolute flex flex-col gap-3 overflow-hidden rounded-xl border border-[var(--workspace-border)] bg-[var(--workspace-panel)] p-6 text-base shadow-2xl"
+          style={{
+            top: frame.top,
+            left: frame.left,
+            width: frame.width,
+            height: frame.height,
+          }}
+          data-feature="trade.kiwoom.account.panel"
+        >
         <DialogHeader
-          className="cursor-grab active:cursor-grabbing"
+          className="cursor-grab touch-none active:cursor-grabbing"
           onPointerDown={(ev) => {
             if ((ev.target as HTMLElement).closest("button, a, input, label")) return;
+            ev.preventDefault();
+            ev.currentTarget.setPointerCapture(ev.pointerId);
             dragRef.current = { kind: "move", x: ev.clientX, y: ev.clientY, frame };
+          }}
+          onPointerMove={(ev) => {
+            if (!ev.currentTarget.hasPointerCapture(ev.pointerId)) return;
+            const drag = dragRef.current;
+            if (!drag || drag.kind !== "move") return;
+            setFrame(
+              clampAccountFrame({
+                ...drag.frame,
+                left: drag.frame.left + ev.clientX - drag.x,
+                top: drag.frame.top + ev.clientY - drag.y,
+              })
+            );
+          }}
+          onPointerUp={(ev) => {
+            if (ev.currentTarget.hasPointerCapture(ev.pointerId)) {
+              ev.currentTarget.releasePointerCapture(ev.pointerId);
+            }
+            dragRef.current = null;
           }}
         >
           <DialogTitle className="flex items-center gap-2 text-xl">
@@ -491,6 +513,9 @@ export function KiwoomAccountDialog({
             )}
             <button type="button" className="ml-auto text-base font-normal text-[var(--workspace-muted)] underline" onClick={load}>
               새로고침
+            </button>
+            <button type="button" className="text-base font-normal text-[var(--workspace-muted)]" onClick={() => onOpenChange(false)}>
+              닫기
             </button>
           </DialogTitle>
         </DialogHeader>
@@ -740,13 +765,33 @@ export function KiwoomAccountDialog({
           />
         )}
         <div
-          className="absolute right-1 bottom-1 z-40 h-5 w-5 cursor-nwse-resize rounded-sm border-r-2 border-b-2 border-[var(--workspace-muted)]"
+          className="absolute right-1 bottom-1 z-40 h-5 w-5 cursor-nwse-resize touch-none rounded-sm border-r-2 border-b-2 border-[var(--workspace-muted)]"
           onPointerDown={(ev) => {
             ev.preventDefault();
             ev.stopPropagation();
+            ev.currentTarget.setPointerCapture(ev.pointerId);
             dragRef.current = { kind: "resize", x: ev.clientX, y: ev.clientY, frame };
           }}
+          onPointerMove={(ev) => {
+            if (!ev.currentTarget.hasPointerCapture(ev.pointerId)) return;
+            const drag = dragRef.current;
+            if (!drag || drag.kind !== "resize") return;
+            setFrame(
+              clampAccountFrame({
+                ...drag.frame,
+                width: drag.frame.width + ev.clientX - drag.x,
+                height: drag.frame.height + ev.clientY - drag.y,
+              })
+            );
+          }}
+          onPointerUp={(ev) => {
+            if (ev.currentTarget.hasPointerCapture(ev.pointerId)) {
+              ev.currentTarget.releasePointerCapture(ev.pointerId);
+            }
+            dragRef.current = null;
+          }}
         />
+        </div>
       </DialogContent>
     </Dialog>
   );
