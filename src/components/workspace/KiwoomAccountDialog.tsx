@@ -118,6 +118,27 @@ function share(value: number | null | undefined): string {
   return `${value.toFixed(1)}%`;
 }
 
+function centeredAccountFrame(): { left: number; top: number; width: number; height: number } {
+  const margin = 24;
+  const width = Math.min(window.innerWidth - margin * 2, Math.round(window.innerWidth * 0.9));
+  const height = Math.min(window.innerHeight - margin * 2, Math.round(window.innerHeight * 0.84));
+  return {
+    left: Math.max(margin, Math.round((window.innerWidth - width) / 2)),
+    top: Math.max(margin, Math.round((window.innerHeight - height) / 2)),
+    width: Math.max(720, width),
+    height: Math.max(480, height),
+  };
+}
+
+function clampAccountFrame(frame: { left: number; top: number; width: number; height: number }) {
+  const margin = 8;
+  const width = Math.min(Math.max(720, frame.width), window.innerWidth - margin);
+  const height = Math.min(Math.max(420, frame.height), window.innerHeight - margin);
+  const left = Math.min(Math.max(margin, frame.left), window.innerWidth - width - margin);
+  const top = Math.min(Math.max(margin, frame.top), window.innerHeight - height - margin);
+  return { left, top, width, height };
+}
+
 function mergeAccount(prev: AccountView | null, next: AccountView): AccountView {
   if (!prev) return next;
   const lotsByCode = new Map(prev.positions.map((row) => [row.code, row.lots]));
@@ -280,6 +301,13 @@ export function KiwoomAccountDialog({
   const [ipNotice, setIpNotice] = useState<string | null>(null);
   const [lotsPending, setLotsPending] = useState(false);
   const [tradeCard, setTradeCard] = useState<TradeCard | null>(null);
+  const [frame, setFrame] = useState({ left: 24, top: 24, width: 1100, height: 720 });
+  const dragRef = useRef<{
+    kind: "move" | "resize";
+    x: number;
+    y: number;
+    frame: { left: number; top: number; width: number; height: number };
+  } | null>(null);
   const loadGen = useRef(0);
   const accountRef = useRef<AccountView | null>(null);
 
@@ -301,6 +329,46 @@ export function KiwoomAccountDialog({
     );
     window.localStorage.setItem(key, ip);
   };
+
+  useEffect(() => {
+    if (!open) return;
+    setFrame(clampAccountFrame(centeredAccountFrame()));
+  }, [open]);
+
+  useEffect(() => {
+    const move = (ev: PointerEvent) => {
+      const drag = dragRef.current;
+      if (!drag) return;
+      const dx = ev.clientX - drag.x;
+      const dy = ev.clientY - drag.y;
+      if (drag.kind === "move") {
+        setFrame(
+          clampAccountFrame({
+            ...drag.frame,
+            left: drag.frame.left + dx,
+            top: drag.frame.top + dy,
+          })
+        );
+        return;
+      }
+      setFrame(
+        clampAccountFrame({
+          ...drag.frame,
+          width: drag.frame.width + dx,
+          height: drag.frame.height + dy,
+        })
+      );
+    };
+    const stop = () => {
+      dragRef.current = null;
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop);
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+    };
+  }, []);
 
   const load = () => {
     const mine = ++loadGen.current;
@@ -387,10 +455,25 @@ export function KiwoomAccountDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="relative flex h-[92vh] max-h-[92vh] w-[96vw] max-w-[96vw] flex-col gap-3 overflow-hidden border-[var(--workspace-border)] bg-[var(--workspace-panel)] p-6 text-base sm:max-w-[96vw]"
+        className="relative flex !max-w-none !translate-x-0 !translate-y-0 flex-col gap-3 overflow-hidden border-[var(--workspace-border)] bg-[var(--workspace-panel)] p-6 text-base data-open:animate-none"
+        style={{
+          top: frame.top,
+          left: frame.left,
+          width: frame.width,
+          height: frame.height,
+          transform: "none",
+          animation: "none",
+          maxWidth: "none",
+        }}
         data-feature="trade.kiwoom.account.panel"
       >
-        <DialogHeader>
+        <DialogHeader
+          className="cursor-grab active:cursor-grabbing"
+          onPointerDown={(ev) => {
+            if ((ev.target as HTMLElement).closest("button, a, input, label")) return;
+            dragRef.current = { kind: "move", x: ev.clientX, y: ev.clientY, frame };
+          }}
+        >
           <DialogTitle className="flex items-center gap-2 text-xl">
             계좌 · 키움
             <span
@@ -656,6 +739,14 @@ export function KiwoomAccountDialog({
             }}
           />
         )}
+        <div
+          className="absolute right-1 bottom-1 z-40 h-5 w-5 cursor-nwse-resize rounded-sm border-r-2 border-b-2 border-[var(--workspace-muted)]"
+          onPointerDown={(ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            dragRef.current = { kind: "resize", x: ev.clientX, y: ev.clientY, frame };
+          }}
+        />
       </DialogContent>
     </Dialog>
   );
