@@ -275,6 +275,7 @@ export function KiwoomAccountDialog({
   const [account, setAccount] = useState<AccountView | null>(null);
   const [openLots, setOpenLots] = useState<Record<string, boolean>>({});
   const [confirmLive, setConfirmLive] = useState(false);
+  const [selling, setSelling] = useState(false);
   const [sellMsg, setSellMsg] = useState<string | null>(null);
   const [ipNotice, setIpNotice] = useState<string | null>(null);
   const [lotsPending, setLotsPending] = useState(false);
@@ -282,12 +283,32 @@ export function KiwoomAccountDialog({
   const loadGen = useRef(0);
   const accountRef = useRef<AccountView | null>(null);
 
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) setConfirmLive(false);
+  }
+
+  const noteOutboundIp = (data: AccountView) => {
+    const ip = data.outboundIp;
+    if (!ip || data.error) return;
+    const key = "chartdesk.kiwoom-ip";
+    const prev = window.localStorage.getItem(key);
+    setIpNotice(
+      prev && prev !== ip
+        ? `접속 주소가 ${prev}에서 ${ip}로 바뀌었습니다. 키움 등록 목록에 새 주소가 없으면 다음 조회가 막힙니다.`
+        : null
+    );
+    window.localStorage.setItem(key, ip);
+  };
+
   const load = () => {
     const mine = ++loadGen.current;
     fetch("/api/kiwoom/account")
       .then(async (res) => (await res.json()) as AccountView)
       .then((data) => {
         if (mine !== loadGen.current) return;
+        noteOutboundIp(data);
         const hadLots = (accountRef.current?.positions ?? []).some((row) => (row.lots?.length ?? 0) > 0);
         const next = mergeAccount(accountRef.current, data);
         accountRef.current = next;
@@ -323,38 +344,33 @@ export function KiwoomAccountDialog({
     return () => window.clearInterval(id);
   }, [open]);
 
-  useEffect(() => {
-    const ip = account?.outboundIp;
-    if (!ip || account?.error) return;
-    const key = "chartdesk.kiwoom-ip";
-    const prev = window.localStorage.getItem(key);
-    if (prev && prev !== ip) {
-      setIpNotice(`접속 주소가 ${prev}에서 ${ip}로 바뀌었습니다. 키움 등록 목록에 새 주소가 없으면 다음 조회가 막힙니다.`);
-    } else {
-      setIpNotice(null);
-    }
-    window.localStorage.setItem(key, ip);
-  }, [account?.outboundIp, account?.error]);
-
   const sellLot = async (row: PositionRow, qty: number) => {
+    if (selling) return;
+    setSelling(true);
     setSellMsg(null);
-    const res = await fetch("/api/kiwoom/sell", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        code: row.code,
-        qty,
-        stex: row.venue ?? "ND",
-        confirmLive,
-      }),
-    });
-    const data = (await res.json().catch(() => ({}))) as { error?: string; orderNo?: string };
-    if (!res.ok) {
-      setSellMsg(data.error ?? "매도에 실패했습니다");
-      return;
+    try {
+      const res = await fetch("/api/kiwoom/sell", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          code: row.code,
+          qty,
+          stex: row.venue ?? "ND",
+          confirmLive,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string; orderNo?: string };
+      if (!res.ok) {
+        setSellMsg(data.error ?? "매도에 실패했습니다");
+        return;
+      }
+      setSellMsg(`${row.code} ${qty}주 매도 접수 ${data.orderNo ?? ""}`);
+      load();
+    } catch {
+      setSellMsg("네트워크 오류로 매도 결과를 받지 못했습니다. 계좌를 새로고침해 접수 여부를 확인하세요");
+    } finally {
+      setSelling(false);
     }
-    setSellMsg(`${row.code} ${qty}주 매도 접수 ${data.orderNo ?? ""}`);
-    load();
   };
 
   const live = account?.live === true;
@@ -594,7 +610,7 @@ export function KiwoomAccountDialog({
                               <button
                                 type="button"
                                 className="rounded border border-rose-400/40 px-2 py-0.5 text-sm text-rose-200 disabled:opacity-40"
-                                disabled={live && !confirmLive}
+                                disabled={selling || (live && !confirmLive)}
                                 onClick={(ev) => {
                                   ev.stopPropagation();
                                   void sellLot(row, lot.qty);
