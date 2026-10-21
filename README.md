@@ -58,7 +58,7 @@ The API only answers `localhost` and IP addresses, and refuses order, alert, and
 
 If `KIWOOM_APP_KEY` and `KIWOOM_APP_SECRET` are both set in `.env.local`, domestic 6-digit symbols use **Kiwoom REST history + websocket trades** (`0B` on port 10000). Other symbols stay on Yahoo or mock. `KIWOOM_QUOTE_HOST=mock` points at the paper host; real and paper keys are not interchangeable. The desktop launcher can keep `MARKET_DATA_MODE=delayed` — Korean quotes still switch to Kiwoom when the keys are present. Close ChartDesk and double-click the desktop icon again after changing keys.
 
-Mock SSE keeps an in-memory **forming bar** and ticks about every `MARKET_DATA_TICK_MS` (default 1000ms) so 1분봉 wicks/body visibly move. Delayed/realtime Yahoo shares one poll subscriber so chart + watchlist show the same last print.
+Mock SSE keeps an in-memory **forming bar** and ticks about every `MARKET_DATA_TICK_MS` (default 1000ms) so 1분봉 wicks/body visibly move. Delayed/realtime Yahoo shares one poll subscriber so chart + watchlist show the same last print. All chart panes and the watchlist share one server-sent event stream (`/api/market/stream`); panes post their symbol and timeframe to it, so the four-pane layout still leaves the browser's other connections free for API calls.
 
 ### Kiwoom 매매
 

@@ -26,6 +26,7 @@ import { ExchangeMark } from "@/components/market/ExchangeMark";
 import { LiveQuoteBadge } from "@/components/market/LiveQuoteBadge";
 import { alignSeedDrawings } from "@/lib/seed";
 import { applyLiveCandle } from "@/lib/market-data/mock-adapter";
+import { subscribeChartStream } from "@/lib/market-stream";
 
 interface LoadedSeries {
   key: string;
@@ -239,20 +240,14 @@ export function SymbolChartPane({
     };
   }, []);
 
-  // Mock / delayed / realtime — SSE ticks drive candle updates + alert evaluate
+  // Mock / delayed / realtime — shared stream ticks drive candle updates + alert evaluate
   useEffect(() => {
     if (!interactive) return;
     let cancelled = false;
     const streamTf = fetchTf;
-    const es = new EventSource(
-      `/api/market/sse?symbolId=${encodeURIComponent(symbolId)}&tf=${encodeURIComponent(streamTf)}`
-    );
-    es.onmessage = (ev) => {
+    const unsubscribe = subscribeChartStream(symbolId, streamTf, (next) => {
       if (cancelled) return;
       try {
-        const msg = JSON.parse(ev.data) as { type?: string; candle?: Candle };
-        if (msg.type !== "candle" || !msg.candle) return;
-        const next = msg.candle;
         setFromTick(symbolId, next);
         pendingTickRef.current = next;
         if (tickTimerRef.current != null) return;
@@ -283,14 +278,14 @@ export function SymbolChartPane({
       } catch {
         /* ignore */
       }
-    };
+    });
     return () => {
       cancelled = true;
       if (tickTimerRef.current != null) {
         window.clearTimeout(tickTimerRef.current);
         tickTimerRef.current = null;
       }
-      es.close();
+      unsubscribe();
     };
   }, [interactive, marketMode, symbolId, fetchTf, candleLimit, setFromTick]);
 
