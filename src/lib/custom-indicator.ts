@@ -1,5 +1,27 @@
 import type { Candle } from "@/lib/types";
 
+function compileIndicator(source: string): (candles: Candle[]) => unknown {
+  return new Function(
+    "candles",
+    `"use strict";
+    const result = (function() { ${source} })();
+    if (!Array.isArray(result)) return null;
+    return result;`
+  ) as (candles: Candle[]) => unknown;
+}
+
+/** Null when the script compiles, otherwise the syntax error to show the user. */
+export function customIndicatorError(source: string): string | null {
+  const trimmed = source.trim();
+  if (!trimmed) return null;
+  try {
+    compileIndicator(trimmed);
+    return null;
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
+  }
+}
+
 /** JS custom indicator sandbox — candles only in scope */
 export function runCustomIndicator(
   source: string,
@@ -7,16 +29,8 @@ export function runCustomIndicator(
 ): (number | null)[] {
   const trimmed = source.trim();
   if (!trimmed) return candles.map(() => null);
-  // eslint-disable-next-line no-new-func
-  const fn = new Function(
-    "candles",
-    `"use strict";
-    const result = (function() { ${trimmed} })();
-    if (!Array.isArray(result)) return null;
-    return result;`
-  ) as (candles: Candle[]) => unknown;
   try {
-    const raw = fn(candles);
+    const raw = compileIndicator(trimmed)(candles);
     if (!Array.isArray(raw)) return candles.map(() => null);
     return candles.map((_, i) => {
       const v = raw[i];
