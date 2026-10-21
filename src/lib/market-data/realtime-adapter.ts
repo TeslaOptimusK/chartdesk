@@ -45,6 +45,7 @@ export class RealtimeMarketDataAdapter implements MarketDataAdapter {
         const res = await fetch(url.toString(), {
           headers: { Authorization: `Bearer ${apiKey}` },
           cache: "no-store",
+          signal: AbortSignal.timeout(10_000),
         });
         if (res.ok) {
           const data = (await res.json()) as Candle[];

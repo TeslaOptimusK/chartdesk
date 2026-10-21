@@ -13,6 +13,9 @@ interface YahooPollSession {
 
 const pollSessions = new Map<string, YahooPollSession>();
 
+/** A stalled Yahoo call would otherwise hold a chart on "로딩" for minutes. */
+const YAHOO_TIMEOUT_MS = 10_000;
+
 /** Symbols with no Yahoo mapping — callers should use mock. */
 const UNMAPPED = new Set(["MAG7", "VNPA"]);
 
@@ -202,6 +205,7 @@ export async function fetchYahooSessionSnapshot(
         Accept: "application/json",
       },
       cache: "no-store",
+      signal: AbortSignal.timeout(YAHOO_TIMEOUT_MS),
     });
     if (!res.ok) return null;
     const json = (await res.json()) as {
@@ -273,6 +277,7 @@ export async function fetchYahooCandles(
         Accept: "application/json",
       },
       cache: "no-store",
+      signal: AbortSignal.timeout(YAHOO_TIMEOUT_MS),
     });
     if (!res.ok) return null;
     const json = (await res.json()) as unknown;

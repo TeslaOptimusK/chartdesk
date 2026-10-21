@@ -17,3 +17,6 @@ export function resolveLlmEndpoint(): string {
 export function resolveLlmModel(): string {
   return process.env.LLM_MODEL?.trim() || "gpt-4o-mini";
 }
+
+/** Callers fall back to the heuristic extractors when the model does not answer in time. */
+export const LLM_TIMEOUT_MS = 60_000;
