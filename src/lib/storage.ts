@@ -30,7 +30,43 @@ import {
 const DATA_DIR = path.join(process.cwd(), "data");
 const STORE_PATH = path.join(DATA_DIR, "store.json");
 
-let writeQueue: Promise<unknown> = Promise.resolve();
+/** Route bundles and dev reloads can load this module more than once; they must share one queue. */
+const storeQueue = globalThis as typeof globalThis & {
+  __chartdeskStoreQueue?: Promise<unknown>;
+};
+
+function enqueue<T>(task: () => Promise<T>): Promise<T> {
+  const run = (storeQueue.__chartdeskStoreQueue ?? Promise.resolve()).then(task);
+  storeQueue.__chartdeskStoreQueue = run.catch(() => undefined);
+  return run;
+}
+
+/** Antivirus and indexers briefly lock files on Windows. */
+const TRANSIENT_FS_CODES = new Set(["EPERM", "EBUSY", "EACCES"]);
+
+async function retryTransient<T>(task: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await task();
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code ?? "";
+      if (attempt >= 5 || !TRANSIENT_FS_CODES.has(code)) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 40 * (attempt + 1)));
+    }
+  }
+}
+
+/** A killed server leaves either the old file or the new one, never half of one. */
+export async function writeJsonAtomic(file: string, data: unknown): Promise<void> {
+  const tmp = `${file}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`;
+  await fs.writeFile(tmp, JSON.stringify(data, null, 2), "utf8");
+  try {
+    await retryTransient(() => fs.rename(tmp, file));
+  } catch (err) {
+    await fs.rm(tmp, { force: true }).catch(() => undefined);
+    throw err;
+  }
+}
 
 function migrateStore(raw: AppStoreData): AppStoreData {
   let patterns: PatternDef[] = (raw.patterns ?? []).map((p) => ({
@@ -64,33 +100,47 @@ function migrateStore(raw: AppStoreData): AppStoreData {
   };
 }
 
-async function ensureStore(): Promise<AppStoreData> {
+/** Null when there is no usable store yet. An unreadable file is kept aside, not overwritten. */
+async function loadStore(): Promise<AppStoreData | null> {
   await fs.mkdir(DATA_DIR, { recursive: true });
+  let raw: string;
   try {
-    const raw = await fs.readFile(STORE_PATH, "utf8");
+    raw = await retryTransient(() => fs.readFile(STORE_PATH, "utf8"));
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw err;
+  }
+  try {
     return migrateStore(JSON.parse(raw) as AppStoreData);
   } catch {
-    const seed = createSeedStore();
-    await fs.writeFile(STORE_PATH, JSON.stringify(seed, null, 2), "utf8");
-    return seed;
+    const aside = path.join(DATA_DIR, `store.corrupt-${Date.now()}.json`);
+    await retryTransient(() => fs.rename(STORE_PATH, aside));
+    console.error(
+      `[store] data/store.json could not be parsed. Kept it as data/${path.basename(aside)} and started from the seed.`
+    );
+    return null;
   }
 }
 
 async function mutate(
   fn: (data: AppStoreData) => AppStoreData | void
 ): Promise<AppStoreData> {
-  const run = writeQueue.then(async () => {
-    const data = await ensureStore();
+  return enqueue(async () => {
+    const data = (await loadStore()) ?? createSeedStore();
     const next = fn(data) ?? data;
-    await fs.writeFile(STORE_PATH, JSON.stringify(next, null, 2), "utf8");
+    await writeJsonAtomic(STORE_PATH, next);
     return next;
   });
-  writeQueue = run.catch(() => undefined);
-  return run;
 }
 
 export async function readStore(): Promise<AppStoreData> {
-  return ensureStore();
+  return enqueue(async () => {
+    const data = await loadStore();
+    if (data) return data;
+    const seed = createSeedStore();
+    await writeJsonAtomic(STORE_PATH, seed);
+    return seed;
+  });
 }
 
 export async function resetStore(): Promise<AppStoreData> {
@@ -238,6 +288,56 @@ export async function addAlert(
     d.alerts.unshift(created);
   });
   return created;
+}
+
+export interface AlertClaim {
+  kind: "price" | "technical" | "multi";
+  id: string;
+  alert: Omit<AlertItem, "id" | "firedAt" | "read">;
+}
+
+/**
+ * Marks each watch triggered and records its alert in one write. A watch that
+ * another evaluation already triggered, or that was deleted meanwhile, is skipped.
+ */
+export async function claimTriggeredAlerts(
+  claims: AlertClaim[],
+  lastClose?: number
+): Promise<{ fired: AlertItem[]; store: AppStoreData }> {
+  const fired: AlertItem[] = [];
+  const store = await mutate((d) => {
+    const firedAt = new Date().toISOString();
+    for (const claim of claims) {
+      const list: Array<{ id: string; triggered?: boolean }> =
+        claim.kind === "price"
+          ? d.priceWatches
+          : claim.kind === "technical"
+            ? d.technicalAlerts
+            : (d.multiConditionAlerts ?? []);
+      const row = list.find((item) => item.id === claim.id);
+      if (!row || row.triggered) continue;
+      row.triggered = true;
+      if (claim.kind === "price" && lastClose != null) {
+        (row as PriceWatch).lastClose = lastClose;
+      }
+      const alert: AlertItem = {
+        ...claim.alert,
+        id: `alert_${randomUUID().slice(0, 8)}`,
+        firedAt,
+        read: false,
+      };
+      d.alerts.unshift(alert);
+      fired.push(alert);
+    }
+  });
+  return { fired, store };
+}
+
+export async function removePriceWatch(id: string): Promise<PriceWatch[]> {
+  const store = await mutate((d) => {
+    d.priceWatches = (d.priceWatches ?? []).filter((watch) => watch.id !== id);
+  });
+  return store.priceWatches;
 }
 
 export async function markAlertsRead(ids?: string[]): Promise<AppStoreData> {

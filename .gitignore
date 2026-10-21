@@ -34,10 +34,10 @@ yarn-error.log*
 .env*
 !.env.example
 
-# local JSON app store
-/data/store.json
-/data/kiwoom-brackets.json
-/data/*.log
+# local runtime data: store, brackets, logs, webhook log, kept corrupt copies
+/data/*
+!/data/.gitkeep
+!/data/symbol-db.json
 
 # vercel
 .vercel
