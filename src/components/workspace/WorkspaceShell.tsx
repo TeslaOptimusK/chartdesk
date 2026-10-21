@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { ChartToolbar } from "@/components/workspace/ChartToolbar";
 import { CommandPalette } from "@/components/workspace/CommandPalette";
 import { Phase3Panels } from "@/components/workspace/Phase3Panels";
@@ -12,15 +13,12 @@ import { CryptoQuoteBridge } from "@/components/market/CryptoQuoteBridge";
 import { SessionQuoteBridge } from "@/components/market/SessionQuoteBridge";
 import { SymbolChartPane } from "@/components/chart/SymbolChartPane";
 import { MultiChartGrid } from "@/components/workspace/MultiChartGrid";
+import { PaneErrorBoundary } from "@/components/workspace/PaneErrorBoundary";
+import { WorkspaceFooter } from "@/components/workspace/WorkspaceFooter";
 import { useWorkspace } from "@/lib/store";
 import type { DrawingTool, Timeframe } from "@/lib/types";
-import {
-  TIMEZONE_OPTIONS,
-  extendedSessionBadge,
-  getSessionStatus,
-  timezoneDisplay,
-} from "@/lib/session";
 import { Button } from "@/components/ui/button";
+import { editCommand, isPlainShortcut } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 
 const TF_KEYS: Record<string, Timeframe> = {
@@ -62,37 +60,64 @@ export function WorkspaceShell() {
     watchlist,
     fullscreen,
     setFullscreen,
-    timezone,
-    setTimezone,
     setTimeframe,
     setDrawingTool,
     setMagnet,
     magnet,
     setRightTab,
     drawingTool,
-    symbols,
     undoDrawings,
     redoDrawings,
     setObjectTreeOpen,
     drawingsLocked,
     setDrawingsLocked,
-    extendedHours,
     setPriceWatches,
     setTechnicalAlerts,
     setMultiConditionAlerts,
     setAlerts,
-  } = useWorkspace();
+  } = useWorkspace(
+    useShallow((s) => ({
+      ready: s.ready,
+      hydrate: s.hydrate,
+      activeSymbolId: s.activeSymbolId,
+      secondarySymbolIds: s.secondarySymbolIds,
+      layoutMode: s.layoutMode,
+      sync: s.sync,
+      activePaneIndex: s.activePaneIndex,
+      setActivePaneIndex: s.setActivePaneIndex,
+      paneTimeframes: s.paneTimeframes,
+      timeframe: s.timeframe,
+      showDisclaimer: s.showDisclaimer,
+      setShowDisclaimer: s.setShowDisclaimer,
+      watchlist: s.watchlist,
+      fullscreen: s.fullscreen,
+      setFullscreen: s.setFullscreen,
+      setTimeframe: s.setTimeframe,
+      setDrawingTool: s.setDrawingTool,
+      setMagnet: s.setMagnet,
+      magnet: s.magnet,
+      setRightTab: s.setRightTab,
+      drawingTool: s.drawingTool,
+      undoDrawings: s.undoDrawings,
+      redoDrawings: s.redoDrawings,
+      setObjectTreeOpen: s.setObjectTreeOpen,
+      drawingsLocked: s.drawingsLocked,
+      setDrawingsLocked: s.setDrawingsLocked,
+      setPriceWatches: s.setPriceWatches,
+      setTechnicalAlerts: s.setTechnicalAlerts,
+      setMultiConditionAlerts: s.setMultiConditionAlerts,
+      setAlerts: s.setAlerts,
+    }))
+  );
   const [ingestOpen, setIngestOpen] = useState(false);
   const [bootError, setBootError] = useState<string | null>(null);
   const [bootAttempt, setBootAttempt] = useState(0);
-  const [clock, setClock] = useState(() => new Date());
 
   useEffect(() => {
     if (ready) return;
     let cancelled = false;
     const ac = new AbortController();
     const timeoutId = window.setTimeout(() => ac.abort(), 20_000);
-    setBootError(null);
 
     fetch("/api/bootstrap", { signal: ac.signal, cache: "no-store" })
       .then(async (r) => {
@@ -112,7 +137,7 @@ export function WorkspaceShell() {
         if (cancelled) return;
         if (ac.signal.aborted) {
           setBootError(
-            "부트스트랩 시간 초과 — ChartDesk Server 창에서 Next.js가 살아 있는지, http://127.0.0.1:43127/api/bootstrap 응답을 확인하세요."
+            "부트스트랩 시간 초과 — ChartDesk 서버가 20초 안에 응답하지 않았습니다."
           );
           return;
         }
@@ -127,11 +152,6 @@ export function WorkspaceShell() {
       window.clearTimeout(timeoutId);
     };
   }, [hydrate, ready, bootAttempt]);
-
-  useEffect(() => {
-    const id = window.setInterval(() => setClock(new Date()), 1000);
-    return () => window.clearInterval(id);
-  }, []);
 
   // Watchlist / multi / technical — evaluate pending across symbols on mock ticks
   useEffect(() => {
@@ -166,23 +186,27 @@ export function WorkspaceShell() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
       const target = e.target as HTMLElement | null;
       const tag = target?.tagName;
       if (
         tag === "INPUT" ||
         tag === "TEXTAREA" ||
         tag === "SELECT" ||
-        target?.isContentEditable
+        target?.isContentEditable ||
+        target?.closest?.('[role="dialog"], [role="alertdialog"]')
       ) {
         return;
       }
 
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+      const edit = editCommand(e);
+      if (edit) {
         e.preventDefault();
-        if (e.shiftKey) redoDrawings();
+        if (edit === "redo") redoDrawings();
         else undoDrawings();
         return;
       }
+      if (!isPlainShortcut(e)) return;
 
       if (e.key === "Escape") {
         if (fullscreen) {
@@ -255,16 +279,6 @@ export function WorkspaceShell() {
     setDrawingsLocked,
   ]);
 
-  const active = symbols.find((s) => s.id === activeSymbolId);
-  const session = useMemo(
-    () => getSessionStatus(active?.exchange, clock),
-    [active?.exchange, clock]
-  );
-  const extBadge = useMemo(
-    () => extendedSessionBadge(active?.exchange, extendedHours, clock),
-    [active?.exchange, extendedHours, clock]
-  );
-
   const paneSymbolsRaw =
     layoutMode === "single"
       ? [activeSymbolId]
@@ -288,8 +302,9 @@ export function WorkspaceShell() {
       <div className="flex h-screen flex-col items-center justify-center gap-4 bg-[var(--workspace-bg)] px-6 text-center">
         <p className="max-w-lg text-sm text-rose-300">{bootError}</p>
         <p className="max-w-md text-xs text-[var(--workspace-muted)]">
-          `scripts\start-chartdesk.bat`로 다시 실행하고, 제목 &quot;ChartDesk
-          Server&quot; 콘솔이 열려 있는지 확인하세요.
+          바탕화면 ChartDesk 아이콘(또는 scripts\start-chartdesk.bat)으로 다시
+          여세요. 계속되면 ChartDesk 폴더의 data\chartdesk-server.log 에 서버
+          오류가 남아 있습니다.
         </p>
         <Button
           type="button"
@@ -315,15 +330,6 @@ export function WorkspaceShell() {
       </div>
     );
   }
-
-  const tzNow = clock.toLocaleString("ko-KR", {
-    timeZone: timezone,
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    month: "short",
-    day: "numeric",
-  });
 
   return (
     <div
@@ -380,77 +386,31 @@ export function WorkspaceShell() {
                   ? timeframe
                   : (paneTimeframes[idx] ?? timeframe);
               return (
-                <SymbolChartPane
-                  key={`${layoutMode}-${idx}-${id}`}
-                  symbolId={id}
-                  paneTimeframe={paneTf}
-                  interactive
-                  paneIndex={idx}
-                  active={activePaneIndex === idx}
-                  onActivate={() => setActivePaneIndex(idx)}
-                  className="h-full min-h-0"
-                />
+                <PaneErrorBoundary key={`${layoutMode}-${idx}-${id}`} label="차트">
+                  <SymbolChartPane
+                    symbolId={id}
+                    paneTimeframe={paneTf}
+                    interactive
+                    paneIndex={idx}
+                    active={activePaneIndex === idx}
+                    onActivate={() => setActivePaneIndex(idx)}
+                    className="h-full min-h-0"
+                  />
+                </PaneErrorBoundary>
               );
             })}
           </MultiChartGrid>
         </main>
         {!fullscreen && (
           <div className="hidden w-[360px] shrink-0 lg:block">
-            <RightPanel />
+            <PaneErrorBoundary label="오른쪽 패널">
+              <RightPanel />
+            </PaneErrorBoundary>
           </div>
         )}
       </div>
 
-      <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--workspace-border)] bg-[var(--workspace-panel)] px-3 py-1.5 text-[10px] text-[var(--workspace-faint)]">
-        <span className="flex flex-wrap items-center gap-2">
-          <span data-feature="data.session_status">{session.label}</span>
-          {extBadge ? (
-            <>
-              <span>·</span>
-              <span
-                className="rounded bg-[var(--workspace-elevated)] px-1.5 py-0.5 text-[var(--workspace-muted)]"
-                data-feature="chart.extended_hours"
-              >
-                {extBadge}
-              </span>
-            </>
-          ) : null}
-          <span>·</span>
-          <label
-            className="inline-flex items-center gap-1"
-            data-feature="chart.timezone"
-          >
-            <select
-              value={timezone}
-              onChange={(e) => setTimezone(e.target.value)}
-              className="h-5 rounded border border-[var(--workspace-border)] bg-[var(--workspace-elevated)] px-1 text-[10px] text-[var(--workspace-muted)]"
-            >
-              {TIMEZONE_OPTIONS.map((tz) => (
-                <option key={tz} value={tz}>
-                  {timezoneDisplay(tz, clock)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <span>· {tzNow}</span>
-          {magnet ? " · 자석 ON" : " · 자석 OFF"}
-          {drawingsLocked ? " · 잠금" : ""}
-        </span>
-        <span className="flex flex-wrap items-center gap-3">
-          <span>
-            Ctrl+Z 실행취소 · Y 수평레이 · L 잠금 · A 알림 · O 오브젝트
-          </span>
-          <a
-            href="https://www.tradingview.com/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-[var(--workspace-muted)] underline-offset-2 hover:text-[var(--workspace-fg)] hover:underline"
-            title="Charts powered by TradingView Lightweight Charts"
-          >
-            Charts by TradingView
-          </a>
-        </span>
-      </footer>
+      <WorkspaceFooter />
 
       <LiveQuotesBridge />
       <SessionQuoteBridge />

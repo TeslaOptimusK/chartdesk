@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
+    "test": "npx --yes tsx --test src/lib/__tests__/crypto-venue.test.ts src/lib/__tests__/custom-indicator.test.ts src/lib/__tests__/entry-signals.test.ts src/lib/__tests__/kiwoom-quotes.test.ts src/lib/__tests__/kiwoom-trade.test.ts src/lib/__tests__/live-forming-bar.test.ts src/lib/__tests__/mock-price-align.test.ts src/lib/__tests__/request-guard.test.ts src/lib/__tests__/session-quote.test.ts src/lib/__tests__/shortcuts.test.ts src/lib/__tests__/stoch-rsi.test.ts src/lib/__tests__/storage.test.ts src/lib/__tests__/stream-hub.test.ts src/lib/__tests__/watchlist.test.ts src/lib/__tests__/workspace-restore.test.ts src/lib/easychart/__tests__/overlay-phase2.test.ts src/lib/easychart/__tests__/overlay-rules.test.ts",
     "test:easychart": "npx --yes tsx --test src/lib/easychart/__tests__/overlay-rules.test.ts src/lib/easychart/__tests__/overlay-phase2.test.ts",
     "test:indicators": "npx --yes tsx --test src/lib/__tests__/stoch-rsi.test.ts src/lib/__tests__/entry-signals.test.ts",
     "test:live-candles": "npx --yes tsx --test src/lib/__tests__/live-forming-bar.test.ts",

@@ -2,7 +2,7 @@
 
 import {
   Children,
-  useCallback,
+  useEffect,
   useRef,
   useState,
   type ReactNode,
@@ -28,34 +28,38 @@ export function MultiChartGrid({
 }: MultiChartGridProps) {
   const [colPct, setColPct] = useState(50);
   const [rowPct, setRowPct] = useState(50);
+  const [dragKind, setDragKind] = useState<"col" | "row" | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const dragKind = useRef<"col" | "row" | null>(null);
   const panes = Children.toArray(children);
 
-  const onPointerMove = useCallback((e: PointerEvent) => {
-    const el = wrapRef.current;
-    if (!el || !dragKind.current) return;
-    const rect = el.getBoundingClientRect();
-    if (dragKind.current === "col") {
-      const pct = ((e.clientX - rect.left) / rect.width) * 100;
-      setColPct(Math.min(78, Math.max(22, pct)));
-    } else {
-      const pct = ((e.clientY - rect.top) / rect.height) * 100;
-      setRowPct(Math.min(78, Math.max(22, pct)));
-    }
-  }, []);
-
-  const endDrag = useCallback(() => {
-    dragKind.current = null;
-    window.removeEventListener("pointermove", onPointerMove);
-    window.removeEventListener("pointerup", endDrag);
-  }, [onPointerMove]);
+  useEffect(() => {
+    if (!dragKind) return;
+    const onPointerMove = (e: PointerEvent) => {
+      const el = wrapRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      if (dragKind === "col") {
+        const pct = ((e.clientX - rect.left) / rect.width) * 100;
+        setColPct(Math.min(78, Math.max(22, pct)));
+      } else {
+        const pct = ((e.clientY - rect.top) / rect.height) * 100;
+        setRowPct(Math.min(78, Math.max(22, pct)));
+      }
+    };
+    const endDrag = () => setDragKind(null);
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", endDrag);
+    window.addEventListener("pointercancel", endDrag);
+    return () => {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", endDrag);
+      window.removeEventListener("pointercancel", endDrag);
+    };
+  }, [dragKind]);
 
   const startDrag = (kind: "col" | "row") => (e: ReactPointerEvent) => {
     e.preventDefault();
-    dragKind.current = kind;
-    window.addEventListener("pointermove", onPointerMove);
-    window.addEventListener("pointerup", endDrag);
+    setDragKind(kind);
   };
 
   const vSep = (key: string) => (

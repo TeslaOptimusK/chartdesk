@@ -8,6 +8,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { copyTradeShareImage, TradeShareArt } from "@/components/workspace/trade-share-card";
 import { krwToUsd } from "@/lib/kiwoom/rest-trade";
 import { useWorkspace } from "@/lib/store";
 import type { SymbolMeta } from "@/lib/types";
@@ -118,6 +119,27 @@ function share(value: number | null | undefined): string {
   return `${value.toFixed(1)}%`;
 }
 
+function centeredAccountFrame(): { left: number; top: number; width: number; height: number } {
+  const margin = 24;
+  const width = Math.min(window.innerWidth - margin * 2, Math.round(window.innerWidth * 0.9));
+  const height = Math.min(window.innerHeight - margin * 2, Math.round(window.innerHeight * 0.84));
+  return {
+    left: Math.max(margin, Math.round((window.innerWidth - width) / 2)),
+    top: Math.max(margin, Math.round((window.innerHeight - height) / 2)),
+    width: Math.max(720, width),
+    height: Math.max(480, height),
+  };
+}
+
+function clampAccountFrame(frame: { left: number; top: number; width: number; height: number }) {
+  const margin = 8;
+  const width = Math.min(Math.max(720, frame.width), window.innerWidth - margin);
+  const height = Math.min(Math.max(420, frame.height), window.innerHeight - margin);
+  const left = Math.min(Math.max(margin, frame.left), window.innerWidth - width - margin);
+  const top = Math.min(Math.max(margin, frame.top), window.innerHeight - height - margin);
+  return { left, top, width, height };
+}
+
 function mergeAccount(prev: AccountView | null, next: AccountView): AccountView {
   if (!prev) return next;
   const lotsByCode = new Map(prev.positions.map((row) => [row.code, row.lots]));
@@ -167,59 +189,50 @@ function TradePnlCard({
 }) {
   const up = (card.ret ?? 0) > 0;
   const down = (card.ret ?? 0) < 0;
-  const color = up ? "text-emerald-300" : down ? "text-rose-300" : "text-white";
-  const wash = up ? "bg-emerald-400/15" : down ? "bg-rose-400/15" : "bg-white/10";
-  const glow = up
-    ? "shadow-[0_0_90px_rgba(52,211,153,0.28)]"
-    : down
-      ? "shadow-[0_0_90px_rgba(251,113,133,0.28)]"
-      : "";
   const won =
     card.currency === "USD" && rate != null && card.pnl != null ? card.pnl * rate : null;
+  const art = {
+    title: card.title,
+    meta: `${card.code} · ${card.when}`,
+    pctLabel: pct(card.ret),
+    pnlLabel: priceText(card.currency, card.pnl),
+    wonLabel: won != null ? krw(won) : null,
+    rows: [
+      ["매수가", priceText(card.currency, card.entry)],
+      ["현재가", priceText(card.currency, card.last)],
+      ["수량", `${card.qty.toLocaleString("ko-KR")}주`],
+    ] as Array<[string, string]>,
+    positive: up,
+    negative: down,
+  };
+  const [copyMsg, setCopyMsg] = useState<string | null>(null);
+  const copyImage = async () => {
+    try {
+      await copyTradeShareImage(art);
+      setCopyMsg("이미지를 복사했습니다");
+    } catch {
+      setCopyMsg("이미지 복사에 실패했습니다");
+    }
+  };
   return (
     <div
       className="absolute inset-0 z-30 flex items-center justify-center bg-black/75 p-4"
       onClick={onClose}
     >
-      <article
-        className={cn(
-          "flex h-[min(760px,92%)] w-[min(390px,100%)] flex-col rounded-[28px] border border-white/10 bg-[#0b1220] px-6 py-7",
-          glow
-        )}
-        onClick={(ev) => ev.stopPropagation()}
-      >
-        <div className="text-sm tracking-[0.18em] text-white/45">CHARTDESK</div>
-        <h2 className="mt-8 text-2xl font-semibold leading-tight text-white">{card.title}</h2>
-        <p className="mt-1 font-mono text-sm text-white/50">
-          {card.code} · {card.when}
-        </p>
-        <div className="flex flex-1 flex-col items-center justify-center">
-          <div className="text-sm text-white/55">수익률</div>
-          <div className={cn("mt-3 font-mono text-7xl font-bold tabular-nums leading-none", color)}>
-            {pct(card.ret)}
-          </div>
-          <div className={cn("mt-5 rounded-full px-5 py-2 text-center font-mono text-xl tabular-nums", wash, color)}>
-            <div>{priceText(card.currency, card.pnl)}</div>
-            {won != null && <div className="text-sm text-white/55">{krw(won)}</div>}
-          </div>
-        </div>
-        <dl className="space-y-3 border-t border-white/10 pt-5 text-base">
-          {[
-            ["매수가", priceText(card.currency, card.entry)],
-            ["현재가", priceText(card.currency, card.last)],
-            ["수량", `${card.qty.toLocaleString("ko-KR")}주`],
-          ].map(([label, value]) => (
-            <div key={label} className="flex items-baseline justify-between gap-4">
-              <dt className="text-white/50">{label}</dt>
-              <dd className="font-mono tabular-nums text-white">{value}</dd>
-            </div>
-          ))}
-        </dl>
-        <div className="mt-6 flex gap-2">
+      <div className="flex w-[min(390px,100%)] flex-col" onClick={(ev) => ev.stopPropagation()}>
+        <TradeShareArt {...art} />
+        <div className="mt-3 flex gap-2">
+          <button
+            type="button"
+            className="h-11 flex-1 rounded-full bg-white text-sm font-medium text-[#0b1220]"
+            onClick={() => void copyImage()}
+          >
+            이미지 복사
+          </button>
           {card.symbolId && (
             <button
               type="button"
-              className="h-11 flex-1 rounded-full bg-white text-sm font-medium text-[#0b1220]"
+              className="h-11 flex-1 rounded-full border border-white/15 text-sm text-white/80"
               onClick={onChart}
             >
               차트로
@@ -233,7 +246,8 @@ function TradePnlCard({
             닫기
           </button>
         </div>
-      </article>
+        {copyMsg && <p className="mt-2 text-center text-sm text-white/70">{copyMsg}</p>}
+      </div>
     </div>
   );
 }
@@ -275,12 +289,79 @@ export function KiwoomAccountDialog({
   const [account, setAccount] = useState<AccountView | null>(null);
   const [openLots, setOpenLots] = useState<Record<string, boolean>>({});
   const [confirmLive, setConfirmLive] = useState(false);
+  const [selling, setSelling] = useState(false);
   const [sellMsg, setSellMsg] = useState<string | null>(null);
   const [ipNotice, setIpNotice] = useState<string | null>(null);
   const [lotsPending, setLotsPending] = useState(false);
   const [tradeCard, setTradeCard] = useState<TradeCard | null>(null);
+  const [frame, setFrame] = useState({ left: 24, top: 24, width: 1100, height: 720 });
+  const dragRef = useRef<{
+    kind: "move" | "resize";
+    x: number;
+    y: number;
+    frame: { left: number; top: number; width: number; height: number };
+  } | null>(null);
   const loadGen = useRef(0);
   const accountRef = useRef<AccountView | null>(null);
+
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) setConfirmLive(false);
+  }
+
+  const noteOutboundIp = (data: AccountView) => {
+    const ip = data.outboundIp;
+    if (!ip || data.error) return;
+    const key = "chartdesk.kiwoom-ip";
+    const prev = window.localStorage.getItem(key);
+    setIpNotice(
+      prev && prev !== ip
+        ? `접속 주소가 ${prev}에서 ${ip}로 바뀌었습니다. 키움 등록 목록에 새 주소가 없으면 다음 조회가 막힙니다.`
+        : null
+    );
+    window.localStorage.setItem(key, ip);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    setFrame(clampAccountFrame(centeredAccountFrame()));
+  }, [open]);
+
+  useEffect(() => {
+    const move = (ev: PointerEvent) => {
+      const drag = dragRef.current;
+      if (!drag) return;
+      const dx = ev.clientX - drag.x;
+      const dy = ev.clientY - drag.y;
+      if (drag.kind === "move") {
+        setFrame(
+          clampAccountFrame({
+            ...drag.frame,
+            left: drag.frame.left + dx,
+            top: drag.frame.top + dy,
+          })
+        );
+        return;
+      }
+      setFrame(
+        clampAccountFrame({
+          ...drag.frame,
+          width: drag.frame.width + dx,
+          height: drag.frame.height + dy,
+        })
+      );
+    };
+    const stop = () => {
+      dragRef.current = null;
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop);
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+    };
+  }, []);
 
   const load = () => {
     const mine = ++loadGen.current;
@@ -288,6 +369,7 @@ export function KiwoomAccountDialog({
       .then(async (res) => (await res.json()) as AccountView)
       .then((data) => {
         if (mine !== loadGen.current) return;
+        noteOutboundIp(data);
         const hadLots = (accountRef.current?.positions ?? []).some((row) => (row.lots?.length ?? 0) > 0);
         const next = mergeAccount(accountRef.current, data);
         accountRef.current = next;
@@ -323,38 +405,33 @@ export function KiwoomAccountDialog({
     return () => window.clearInterval(id);
   }, [open]);
 
-  useEffect(() => {
-    const ip = account?.outboundIp;
-    if (!ip || account?.error) return;
-    const key = "chartdesk.kiwoom-ip";
-    const prev = window.localStorage.getItem(key);
-    if (prev && prev !== ip) {
-      setIpNotice(`접속 주소가 ${prev}에서 ${ip}로 바뀌었습니다. 키움 등록 목록에 새 주소가 없으면 다음 조회가 막힙니다.`);
-    } else {
-      setIpNotice(null);
-    }
-    window.localStorage.setItem(key, ip);
-  }, [account?.outboundIp, account?.error]);
-
   const sellLot = async (row: PositionRow, qty: number) => {
+    if (selling) return;
+    setSelling(true);
     setSellMsg(null);
-    const res = await fetch("/api/kiwoom/sell", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        code: row.code,
-        qty,
-        stex: row.venue ?? "ND",
-        confirmLive,
-      }),
-    });
-    const data = (await res.json().catch(() => ({}))) as { error?: string; orderNo?: string };
-    if (!res.ok) {
-      setSellMsg(data.error ?? "매도에 실패했습니다");
-      return;
+    try {
+      const res = await fetch("/api/kiwoom/sell", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          code: row.code,
+          qty,
+          stex: row.venue ?? "ND",
+          confirmLive,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string; orderNo?: string };
+      if (!res.ok) {
+        setSellMsg(data.error ?? "매도에 실패했습니다");
+        return;
+      }
+      setSellMsg(`${row.code} ${qty}주 매도 접수 ${data.orderNo ?? ""}`);
+      load();
+    } catch {
+      setSellMsg("네트워크 오류로 매도 결과를 받지 못했습니다. 계좌를 새로고침해 접수 여부를 확인하세요");
+    } finally {
+      setSelling(false);
     }
-    setSellMsg(`${row.code} ${qty}주 매도 접수 ${data.orderNo ?? ""}`);
-    load();
   };
 
   const live = account?.live === true;
@@ -371,10 +448,47 @@ export function KiwoomAccountDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="relative flex h-[92vh] max-h-[92vh] w-[96vw] max-w-[96vw] flex-col gap-3 overflow-hidden border-[var(--workspace-border)] bg-[var(--workspace-panel)] p-6 text-base sm:max-w-[96vw]"
-        data-feature="trade.kiwoom.account.panel"
+        showCloseButton={false}
+        className="pointer-events-none !fixed !inset-0 !top-0 !left-0 !h-screen !w-screen !max-w-none !translate-x-0 !translate-y-0 bg-transparent p-0 shadow-none ring-0 data-open:animate-none"
+        style={{ transform: "none", animation: "none", maxWidth: "none" }}
       >
-        <DialogHeader>
+        <div
+          className="pointer-events-auto absolute flex flex-col gap-3 overflow-hidden rounded-xl border border-[var(--workspace-border)] bg-[var(--workspace-panel)] p-6 text-base shadow-2xl"
+          style={{
+            top: frame.top,
+            left: frame.left,
+            width: frame.width,
+            height: frame.height,
+          }}
+          data-feature="trade.kiwoom.account.panel"
+        >
+        <DialogHeader
+          className="cursor-grab touch-none active:cursor-grabbing"
+          onPointerDown={(ev) => {
+            if ((ev.target as HTMLElement).closest("button, a, input, label")) return;
+            ev.preventDefault();
+            ev.currentTarget.setPointerCapture(ev.pointerId);
+            dragRef.current = { kind: "move", x: ev.clientX, y: ev.clientY, frame };
+          }}
+          onPointerMove={(ev) => {
+            if (!ev.currentTarget.hasPointerCapture(ev.pointerId)) return;
+            const drag = dragRef.current;
+            if (!drag || drag.kind !== "move") return;
+            setFrame(
+              clampAccountFrame({
+                ...drag.frame,
+                left: drag.frame.left + ev.clientX - drag.x,
+                top: drag.frame.top + ev.clientY - drag.y,
+              })
+            );
+          }}
+          onPointerUp={(ev) => {
+            if (ev.currentTarget.hasPointerCapture(ev.pointerId)) {
+              ev.currentTarget.releasePointerCapture(ev.pointerId);
+            }
+            dragRef.current = null;
+          }}
+        >
           <DialogTitle className="flex items-center gap-2 text-xl">
             계좌 · 키움
             <span
@@ -392,6 +506,9 @@ export function KiwoomAccountDialog({
             )}
             <button type="button" className="ml-auto text-base font-normal text-[var(--workspace-muted)] underline" onClick={load}>
               새로고침
+            </button>
+            <button type="button" className="text-base font-normal text-[var(--workspace-muted)]" onClick={() => onOpenChange(false)}>
+              닫기
             </button>
           </DialogTitle>
         </DialogHeader>
@@ -594,7 +711,7 @@ export function KiwoomAccountDialog({
                               <button
                                 type="button"
                                 className="rounded border border-rose-400/40 px-2 py-0.5 text-sm text-rose-200 disabled:opacity-40"
-                                disabled={live && !confirmLive}
+                                disabled={selling || (live && !confirmLive)}
                                 onClick={(ev) => {
                                   ev.stopPropagation();
                                   void sellLot(row, lot.qty);
@@ -640,6 +757,34 @@ export function KiwoomAccountDialog({
             }}
           />
         )}
+        <div
+          className="absolute right-1 bottom-1 z-40 h-5 w-5 cursor-nwse-resize touch-none rounded-sm border-r-2 border-b-2 border-[var(--workspace-muted)]"
+          onPointerDown={(ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            ev.currentTarget.setPointerCapture(ev.pointerId);
+            dragRef.current = { kind: "resize", x: ev.clientX, y: ev.clientY, frame };
+          }}
+          onPointerMove={(ev) => {
+            if (!ev.currentTarget.hasPointerCapture(ev.pointerId)) return;
+            const drag = dragRef.current;
+            if (!drag || drag.kind !== "resize") return;
+            setFrame(
+              clampAccountFrame({
+                ...drag.frame,
+                width: drag.frame.width + ev.clientX - drag.x,
+                height: drag.frame.height + ev.clientY - drag.y,
+              })
+            );
+          }}
+          onPointerUp={(ev) => {
+            if (ev.currentTarget.hasPointerCapture(ev.pointerId)) {
+              ev.currentTarget.releasePointerCapture(ev.pointerId);
+            }
+            dragRef.current = null;
+          }}
+        />
+        </div>
       </DialogContent>
     </Dialog>
   );

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useWorkspace } from "@/lib/store";
+import { useQuotesStore } from "@/lib/quotes-store";
 import {
   Dialog,
   DialogContent,
@@ -113,6 +114,8 @@ export function KiwoomTradeDialog({
   const [busy, setBusy] = useState(false);
   const [lastMsg, setLastMsg] = useState<string | null>(null);
 
+  const lastPrice = useQuotesStore((s) => s.quotes[activeSymbolId]?.last ?? null);
+
   const loadAccount = () => {
     fetch("/api/kiwoom/account")
       .then(async (res) => ({ res, data: (await res.json()) as AccountView }))
@@ -120,23 +123,31 @@ export function KiwoomTradeDialog({
       .catch(() => setAccount(null));
   };
 
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) setConfirmLive(false);
+  }
+
   useEffect(() => {
     if (!open) return;
-    setConfirmLive(false);
     loadAccount();
     const id = window.setInterval(loadAccount, 15000);
     return () => window.clearInterval(id);
   }, [open]);
 
-  useEffect(() => {
-    if (!chartOrderLines || chartOrderLines.symbolId !== activeSymbolId) return;
-    const us = sym?.assetClass === "us_stock";
-    const text = (n: number | null) =>
-      n == null ? "" : us ? n.toFixed(2) : String(Math.round(n));
-    if (chartOrderLines.entry != null) setLimit(text(chartOrderLines.entry));
-    setTakeProfit(text(chartOrderLines.takeProfit));
-    setStopLoss(text(chartOrderLines.stopLoss));
-  }, [chartOrderLines, activeSymbolId, sym?.assetClass]);
+  const [seenLines, setSeenLines] = useState({ lines: chartOrderLines, symbolId: activeSymbolId });
+  if (seenLines.lines !== chartOrderLines || seenLines.symbolId !== activeSymbolId) {
+    setSeenLines({ lines: chartOrderLines, symbolId: activeSymbolId });
+    if (chartOrderLines && chartOrderLines.symbolId === activeSymbolId) {
+      const us = sym?.assetClass === "us_stock";
+      const text = (n: number | null) =>
+        n == null ? "" : us ? n.toFixed(2) : String(Math.round(n));
+      if (chartOrderLines.entry != null) setLimit(text(chartOrderLines.entry));
+      setTakeProfit(text(chartOrderLines.takeProfit));
+      setStopLoss(text(chartOrderLines.stopLoss));
+    }
+  }
 
   const pushLines = (patch: {
     entry?: number | null;
@@ -150,13 +161,14 @@ export function KiwoomTradeDialog({
     setChartOrderLines({ ...cur, ...patch, symbolId: activeSymbolId });
   };
 
-  useEffect(() => {
-    if (!open || !scaleBand || scaleBand.symbolId !== activeSymbolId) return;
+  const [appliedBand, setAppliedBand] = useState<typeof scaleBand>(null);
+  if (open && scaleBand && scaleBand.symbolId === activeSymbolId && scaleBand !== appliedBand) {
+    setAppliedBand(scaleBand);
     setLow(String(Math.round(scaleBand.low)));
     setHigh(String(Math.round(scaleBand.high)));
     setOrderType("scale");
     setSide("buy");
-  }, [open, scaleBand, activeSymbolId]);
+  }
 
   const preview = useMemo(() => {
     if (orderType !== "scale") return { slices: [], error: null as string | null };
@@ -176,6 +188,18 @@ export function KiwoomTradeDialog({
   const krCode = sym ? toKiwoomCode(sym.ticker, sym.exchange, sym.assetClass) : null;
   const live = account?.live === true;
   const rest = account?.mode === "rest";
+
+  const shares = Math.trunc(Number(qty));
+  const estimate = (() => {
+    if (!krCode || !Number.isFinite(shares) || shares <= 0) return null;
+    if (orderType === "scale") {
+      return preview.slices.length
+        ? preview.slices.reduce((sum, slice) => sum + slice.price * slice.qty, 0)
+        : null;
+    }
+    const price = orderType === "limit" ? Number(limit) : lastPrice;
+    return price != null && Number.isFinite(price) && price > 0 ? price * shares : null;
+  })();
 
   const beginRange = () => {
     setScaleBuyPicking(true);
@@ -218,7 +242,10 @@ export function KiwoomTradeDialog({
         error?: string;
       };
       setLastMsg(data.result?.message ?? data.error ?? (res.ok ? "접수" : "주문 실패"));
-      if (data.result?.ok) loadAccount();
+      if (data.result?.ok) {
+        loadAccount();
+        setConfirmLive(false);
+      }
     } catch {
       setLastMsg("네트워크 오류");
     } finally {
@@ -494,6 +521,14 @@ export function KiwoomTradeDialog({
           </div>
         )}
 
+        {estimate != null && (
+          <div className="font-mono text-[11px] text-[var(--workspace-muted)]" data-feature="trade.kiwoom.estimate">
+            {orderType === "market" ? "예상 주문금액 약 " : "주문금액 "}
+            <span className="text-[var(--workspace-fg)]">{won(estimate)}원</span>
+            {orderType === "market" ? " (현재가 기준)" : ""}
+          </div>
+        )}
+
         {live && (
           <label className="flex items-center gap-2 text-[11px] text-rose-200" data-feature="trade.kiwoom.confirm">
             <input
@@ -501,7 +536,7 @@ export function KiwoomTradeDialog({
               checked={confirmLive}
               onChange={(e) => setConfirmLive(e.target.checked)}
             />
-            실전 계좌로 주문을 전송합니다
+            실전 계좌로 주문을 전송합니다 (주문마다 다시 확인)
           </label>
         )}
 

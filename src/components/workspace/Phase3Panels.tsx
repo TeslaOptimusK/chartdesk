@@ -19,9 +19,8 @@ import {
   mockScreenerRows,
   mockWatchlistHeatmap,
 } from "@/lib/phase3-data";
-import { CUSTOM_INDICATOR_EXAMPLE } from "@/lib/custom-indicator";
+import { CUSTOM_INDICATOR_EXAMPLE, customIndicatorError } from "@/lib/custom-indicator";
 import type {
-  MultiAlertCondition,
   PaperOrderSide,
   PaperOrderType,
   PostCategory,
@@ -278,8 +277,6 @@ function PaperDialog({
     const n = Number(qty);
     if (!Number.isFinite(n) || n <= 0) return;
     const mockLast = 100 + (activeSymbolId.length % 50);
-    const fill =
-      type === "limit" && limit ? Number(limit) : mockLast;
     const res = await fetch("/api/paper", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -424,11 +421,12 @@ function PortfolioDialog({
     (a, h) => a + h.shares * h.last,
     0
   );
+  const curve: { i: number; v: number }[] = [];
   let cum = 100;
-  const curve = holdings.map((h, i) => {
+  for (const [i, h] of holdings.entries()) {
     cum += ((h.last - h.avgCost) / h.avgCost) * 8;
-    return { i, v: cum };
-  });
+    curve.push({ i, v: cum });
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -525,14 +523,30 @@ function CustomIndicatorDialog({
     typeof useWorkspace.getState
   >["setIndicatorOnIndicator"];
 }) {
-  const saveScript = async () => {
-    await fetch("/api/custom-indicators", {
+  const [draft, setDraft] = useState(source || CUSTOM_INDICATOR_EXAMPLE);
+  const [error, setError] = useState<string | null>(null);
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) {
+      setDraft(source || CUSTOM_INDICATOR_EXAMPLE);
+      setError(null);
+    }
+  }
+
+  const saveScript = () => {
+    const problem = customIndicatorError(draft);
+    if (problem) {
+      setError(problem);
+      return;
+    }
+    setSource(draft);
+    onOpenChange(false);
+    void fetch("/api/custom-indicators", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: "user_script", source }),
-    });
-    setSource(source);
-    onOpenChange(false);
+      body: JSON.stringify({ name: "user_script", source: draft }),
+    }).catch(() => undefined);
   };
 
   return (
@@ -554,11 +568,18 @@ function CustomIndicatorDialog({
           RSI 위 SMA20 (지표 위 지표)
         </label>
         <textarea
-          value={source || CUSTOM_INDICATOR_EXAMPLE}
-          onChange={(e) => setSource(e.target.value)}
+          value={draft}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            setError(null);
+          }}
           rows={10}
           className="w-full rounded border bg-black/30 p-2 font-mono text-[11px]"
         />
+        {error && <p className="text-[11px] text-rose-300">문법 오류: {error}</p>}
+        <p className="text-[10px] text-[var(--workspace-faint)]">
+          비워 두고 적용하면 커스텀 지표를 끕니다.
+        </p>
         <Button size="sm" onClick={saveScript}>
           적용 · 저장
         </Button>

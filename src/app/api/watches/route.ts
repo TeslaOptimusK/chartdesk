@@ -3,6 +3,7 @@ import {
   addPriceWatchServer,
   addPriceWatchesBulk,
   readStore,
+  removePriceWatch,
   savePriceWatches,
 } from "@/lib/storage";
 import type { PriceWatch, PriceWatchOp } from "@/lib/types";
@@ -65,5 +66,15 @@ export async function PUT(req: Request) {
     );
   }
   const priceWatches = await savePriceWatches(body.priceWatches);
+  return NextResponse.json({ priceWatches });
+}
+
+/** Remove one watch by id so a stale client list cannot undo a trigger the server just saved. */
+export async function DELETE(req: Request) {
+  const id = new URL(req.url).searchParams.get("id")?.trim();
+  if (!id) {
+    return NextResponse.json({ error: "id required" }, { status: 400 });
+  }
+  const priceWatches = await removePriceWatch(id);
   return NextResponse.json({ priceWatches });
 }

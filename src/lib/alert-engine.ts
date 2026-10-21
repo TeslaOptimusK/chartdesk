@@ -2,15 +2,10 @@ import { rsi } from "@/lib/indicators";
 import { entrySignalForAlertTarget } from "@/lib/entry-signals";
 import { createMarketDataAdapter } from "@/lib/market-data";
 import { deliverAlertWebhook } from "@/lib/webhook-deliver";
-import {
-  addAlert,
-  readStore,
-  saveMultiConditionAlerts,
-  savePriceWatches,
-  saveTechnicalAlerts,
-} from "@/lib/storage";
+import { claimTriggeredAlerts, readStore, type AlertClaim } from "@/lib/storage";
 import type {
   AlertItem,
+  AppStoreData,
   Candle,
   Drawing,
   MultiConditionAlert,
@@ -32,6 +27,35 @@ export interface EvaluateAlertsResult {
   priceWatches: PriceWatch[];
   technicalAlerts: TechnicalAlert[];
   multiConditionAlerts: MultiConditionAlert[];
+  alerts: AlertItem[];
+}
+
+function snapshot(store: AppStoreData, fired: AlertItem[] = []): EvaluateAlertsResult {
+  return {
+    fired,
+    priceWatches: store.priceWatches ?? [],
+    technicalAlerts: store.technicalAlerts ?? [],
+    multiConditionAlerts: store.multiConditionAlerts ?? [],
+    alerts: store.alerts ?? [],
+  };
+}
+
+let deliveries: Promise<void> = Promise.resolve();
+
+/** Webhook posts run after the triggered flags are saved, in firing order. */
+function queueDeliveries(alerts: AlertItem[]): void {
+  for (const alert of alerts) {
+    deliveries = deliveries
+      .then(() => deliverAlertWebhook(alert))
+      .catch((err) => {
+        const detail = err instanceof Error ? err.message : String(err);
+        console.warn(`[webhook] delivery skipped for ${alert.id} (${detail})`);
+      });
+  }
+}
+
+export function alertDeliveriesSettled(): Promise<void> {
+  return deliveries;
 }
 
 function lastRsi(candles: Candle[]): number | null {
@@ -129,14 +153,6 @@ function evalTechnical(
   return rv >= threshold;
 }
 
-async function fireAlert(
-  partial: Omit<AlertItem, "id" | "firedAt" | "read">
-): Promise<AlertItem> {
-  const alert = await addAlert(partial);
-  await deliverAlertWebhook(alert);
-  return alert;
-}
-
 /** Evaluate watches, technical, and multi alerts for one symbol; persist triggered flags. */
 export async function evaluateSymbolAlerts(
   input: EvaluateAlertsInput
@@ -144,94 +160,76 @@ export async function evaluateSymbolAlerts(
   const store = await readStore();
   const symbol = store.symbols.find((s) => s.id === input.symbolId);
   const candles = input.candles;
-  if (!candles.length) {
-    return {
-      fired: [],
-      priceWatches: store.priceWatches ?? [],
-      technicalAlerts: store.technicalAlerts ?? [],
-      multiConditionAlerts: store.multiConditionAlerts ?? [],
-    };
-  }
+  if (!candles.length) return snapshot(store);
 
   const last = candles[candles.length - 1];
   const close = input.lastClose ?? last.close;
-  const prev =
+  const prevClose =
     candles.length > 1 ? candles[candles.length - 2].close : null;
-  const prevClose = prev;
 
-  const fired: AlertItem[] = [];
-  let priceWatches = [...(store.priceWatches ?? [])];
-  let technicalAlerts = [...(store.technicalAlerts ?? [])];
-  let multiConditionAlerts = [...(store.multiConditionAlerts ?? [])];
-
+  const claims: AlertClaim[] = [];
   const symbolDrawings = store.drawings.filter(
     (d) => d.symbolId === input.symbolId
   );
 
-  for (const w of priceWatches) {
+  for (const w of store.priceWatches ?? []) {
     if (w.symbolId !== input.symbolId || w.triggered) continue;
     if (!evalPriceWatch(w, close, prevClose)) continue;
-    priceWatches = priceWatches.map((x) =>
-      x.id === w.id ? { ...x, triggered: true, lastClose: close } : x
-    );
     const opLabel =
       w.op === "above" ? "이상" : w.op === "below" ? "이하" : "돌파";
-    const meta = symbol as SymbolMeta | undefined;
-    fired.push(
-      await fireAlert({
+    claims.push({
+      kind: "price",
+      id: w.id,
+      alert: {
         type: "price",
         title: `가격 알림 ${opLabel} ${w.price}`,
         message:
           w.message?.trim() ||
-          `${meta?.ticker ?? input.symbolId} 종가 ${close.toFixed(2)} (${opLabel} ${w.price})`,
+          `${symbol?.ticker ?? input.symbolId} 종가 ${close.toFixed(2)} (${opLabel} ${w.price})`,
         symbolId: input.symbolId,
-      })
-    );
+      },
+    });
   }
 
-  for (const ta of technicalAlerts) {
+  for (const ta of store.technicalAlerts ?? []) {
     if (ta.symbolId !== input.symbolId || ta.triggered) continue;
     if (!evalTechnical(ta, close, prevClose, symbolDrawings, candles)) continue;
-    technicalAlerts = technicalAlerts.map((x) =>
-      x.id === ta.id ? { ...x, triggered: true } : x
-    );
-    fired.push(
-      await fireAlert({
+    claims.push({
+      kind: "technical",
+      id: ta.id,
+      alert: {
         type: ta.kind === "drawing" ? "drawing" : "indicator",
         title: `기술 알림 · ${ta.label}`,
         message:
           ta.message?.trim() ||
           `${metaLabel(symbol)} · ${ta.kind} ${ta.label} 트리거`,
         symbolId: input.symbolId,
-      })
-    );
+      },
+    });
   }
 
-  for (const ma of multiConditionAlerts) {
+  for (const ma of store.multiConditionAlerts ?? []) {
     if (ma.symbolId !== input.symbolId || ma.triggered) continue;
     if (!evalMultiCondition(candles, close, prevClose, ma)) continue;
-    multiConditionAlerts = multiConditionAlerts.map((x) =>
-      x.id === ma.id ? { ...x, triggered: true } : x
-    );
-    fired.push(
-      await fireAlert({
+    claims.push({
+      kind: "multi",
+      id: ma.id,
+      alert: {
         type: "price",
         title: `멀티조건 (${ma.logic.toUpperCase()})`,
         message:
           ma.message?.trim() ||
           `${metaLabel(symbol)} · ${ma.conditions.length}조건 충족`,
         symbolId: input.symbolId,
-      })
-    );
+      },
+    });
   }
 
-  if (fired.length) {
-    await savePriceWatches(priceWatches);
-    await saveTechnicalAlerts(technicalAlerts);
-    await saveMultiConditionAlerts(multiConditionAlerts);
-  }
+  if (!claims.length) return snapshot(store);
 
-  return { fired, priceWatches, technicalAlerts, multiConditionAlerts };
+  const { fired, store: saved } = await claimTriggeredAlerts(claims, close);
+  queueDeliveries(fired);
+  return snapshot(saved, fired);
 }
 
 function metaLabel(symbol: SymbolMeta | undefined): string {
@@ -265,22 +263,13 @@ export async function evaluatePendingWatchlistAlerts(opts?: {
     (store.technicalAlerts ?? []).some((t) => !t.triggered) ||
     (store.multiConditionAlerts ?? []).some((m) => !m.triggered);
 
-  if (!hasPending) {
-    return {
-      fired: [],
-      priceWatches: store.priceWatches ?? [],
-      technicalAlerts: store.technicalAlerts ?? [],
-      multiConditionAlerts: store.multiConditionAlerts ?? [],
-    };
-  }
+  if (!hasPending) return snapshot(store);
 
   const adapter = createMarketDataAdapter();
   const tf = opts?.tf ?? "D";
   const limit = opts?.limit ?? 120;
   const fired: AlertItem[] = [];
-  let priceWatches = store.priceWatches ?? [];
-  let technicalAlerts = store.technicalAlerts ?? [];
-  let multiConditionAlerts = store.multiConditionAlerts ?? [];
+  let latest = snapshot(store);
 
   for (const symbolId of pendingIds) {
     const symbol = store.symbols.find((s) => s.id === symbolId);
@@ -293,12 +282,9 @@ export async function evaluatePendingWatchlistAlerts(opts?: {
       timeframe: tf === "tick" ? "1" : tf,
       limit,
     });
-    const result = await evaluateSymbolAlerts({ symbolId, candles });
-    fired.push(...result.fired);
-    priceWatches = result.priceWatches;
-    technicalAlerts = result.technicalAlerts;
-    multiConditionAlerts = result.multiConditionAlerts;
+    latest = await evaluateSymbolAlerts({ symbolId, candles });
+    fired.push(...latest.fired);
   }
 
-  return { fired, priceWatches, technicalAlerts, multiConditionAlerts };
+  return { ...latest, fired };
 }

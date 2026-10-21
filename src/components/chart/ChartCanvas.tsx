@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AreaSeries,
   BarSeries,
@@ -60,7 +60,6 @@ import {
   vwap,
 } from "@/lib/indicators";
 import {
-  anchoredVwap as anchoredVwapSeries,
   ichimoku,
   stochastic,
   stochasticRsi,
@@ -174,15 +173,6 @@ function sanitizeCandleOrder(candles: Candle[]): Candle[] {
   return candles;
 }
 
-interface LegendState {
-  time: number;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume: number;
-}
-
 export function ChartCanvas({
   symbolId,
   candles,
@@ -248,8 +238,17 @@ export function ChartCanvas({
   const stochPaneEnsured = useRef(false);
   const [chartApi, setChartApi] = useState<ChartApiBundle | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [legend, setLegend] = useState<LegendState | null>(null);
+  const [toolForSelection, setToolForSelection] = useState(drawingTool);
+  if (toolForSelection !== drawingTool) {
+    setToolForSelection(drawingTool);
+    if (drawingTool !== "none") setSelectedId(null);
+  }
+  /** Bar under the crosshair; the legend shows the latest bar when this is null. */
+  const [hoverTime, setHoverTime] = useState<number | null>(null);
   const drawingCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const bindDrawingCanvas = useCallback((el: HTMLCanvasElement | null) => {
+    drawingCanvasRef.current = el;
+  }, []);
 
   const [countdownSec, setCountdownSec] = useState(0);
 
@@ -295,6 +294,12 @@ export function ChartCanvas({
     () => volumeIntensity(displayCandles),
     [displayCandles]
   );
+
+  const legend = useMemo(() => {
+    const hovered =
+      hoverTime != null ? displayCandles.find((c) => c.time === hoverTime) : undefined;
+    return hovered ?? displayCandles[displayCandles.length - 1] ?? null;
+  }, [hoverTime, displayCandles]);
 
   useEffect(() => {
     if (!showCountdown || displayCandles.length === 0) return;
@@ -532,6 +537,8 @@ export function ChartCanvas({
       });
     }
     mainSeriesRef.current = series;
+    // The new series is empty; the next data pass must load every bar, not just the last.
+    livePaintRef.current = "";
     setChartApi({ chart, series: series as ISeriesApi<"Candlestick"> });
   }, [chartStyle, chartSettings.upColor, chartSettings.downColor]);
 
@@ -602,14 +609,6 @@ export function ChartCanvas({
             lastBar.close >= lastBar.open
               ? "rgba(45,212,168,0.45)"
               : "rgba(240,113,120,0.45)",
-        });
-        setLegend({
-          time: lastBar.time,
-          open: lastBar.open,
-          high: lastBar.high,
-          low: lastBar.low,
-          close: lastBar.close,
-          volume: lastBar.volume,
         });
         return;
       } catch {
@@ -1159,18 +1158,6 @@ export function ChartCanvas({
 
     firstBarTimeRef.current = newFirst;
     suppressRangeEventRef.current = false;
-
-    const last = displayCandles[displayCandles.length - 1];
-    if (last) {
-      setLegend({
-        time: last.time,
-        open: last.open,
-        high: last.high,
-        low: last.low,
-        close: last.close,
-        volume: last.volume,
-      });
-    }
     livePaintRef.current = paintKey;
   }, [
     symbolId,
@@ -1178,12 +1165,15 @@ export function ChartCanvas({
     indicators,
     patternHits,
     chartStyle,
+    chartSettings.upColor,
+    chartSettings.downColor,
     compareCandles,
     compareLabel,
     rangePreset,
     timeframe,
     eventMarkers,
     eventToggles,
+    extendedHours,
     volumeWeights,
     indicatorOnIndicator,
     customIndicatorSource,
@@ -1200,23 +1190,17 @@ export function ChartCanvas({
       time?: Time;
       seriesData: Map<AnySeries, unknown>;
     }) => {
-      if (!param.time) return;
+      if (!param.time) {
+        setHoverTime(null);
+        return;
+      }
       const t = Number(param.time);
       onCrosshairTime?.(t);
-      const c = displayCandles.find((x) => x.time === t);
-      if (!c) return;
-      setLegend({
-        time: c.time,
-        open: c.open,
-        high: c.high,
-        low: c.low,
-        close: c.close,
-        volume: c.volume,
-      });
+      setHoverTime(t);
     };
     chart.subscribeCrosshairMove(handler);
     return () => chart.unsubscribeCrosshairMove(handler);
-  }, [displayCandles, onCrosshairTime]);
+  }, [onCrosshairTime]);
 
   useEffect(() => {
     if (!syncCrosshair || sharedCrosshairTime == null) return;
@@ -1259,10 +1243,6 @@ export function ChartCanvas({
     suppressRangeEventRef.current = false;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: do not re-jump on candle ticks
   }, [goToDate]);
-
-  useEffect(() => {
-    if (drawingTool !== "none") setSelectedId(null);
-  }, [drawingTool]);
 
   return (
     <div
@@ -1382,7 +1362,7 @@ export function ChartCanvas({
         locked={locked}
         stayInDrawMode={stayInDrawMode}
         candlesFull={candles}
-        drawingCanvasRef={drawingCanvasRef as RefObject<HTMLCanvasElement | null>}
+        onCanvasElement={bindDrawingCanvas}
       />
       <ScaleBuyOverlay chartApi={chartApi} symbolId={symbolId} />
       <PositionLinesOverlay chartApi={chartApi} symbolId={symbolId} />

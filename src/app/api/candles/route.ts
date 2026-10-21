@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createMarketDataAdapter } from "@/lib/market-data";
+import { isSyntheticSeries } from "@/lib/market-data/mock-adapter";
 import { expandToTickCandles } from "@/lib/phase4-data";
 import { readStore } from "@/lib/storage";
 import type { Timeframe } from "@/lib/types";
@@ -29,6 +30,7 @@ export async function GET(req: Request) {
     timeframe: timeframe === "tick" ? "1" : timeframe,
     limit: timeframe === "tick" ? Math.min(120, Math.ceil(limit / 8)) : limit,
   });
+  const synthetic = isSyntheticSeries(candles);
 
   if (timeframe === "tick") {
     candles = expandToTickCandles(candles, limit);
@@ -39,5 +41,6 @@ export async function GET(req: Request) {
     symbol,
     timeframe,
     candles,
+    synthetic,
   });
 }

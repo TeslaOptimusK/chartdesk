@@ -70,6 +70,16 @@ function closeAt(query: CandleQuery, time: number, step: number): number {
   return roundPx(query.ticker, Math.max(0.01, base * (1 + wave + noise)));
 }
 
+const syntheticSeries = new WeakSet<Candle[]>();
+
+/**
+ * True for a series made up here rather than read from a feed. Adapters fall
+ * back to it silently, so the chart has to say so.
+ */
+export function isSyntheticSeries(candles: Candle[]): boolean {
+  return syntheticSeries.has(candles);
+}
+
 /** Deterministic OHLCV so the app runs without API keys. */
 export function generateMockCandles(query: CandleQuery): Candle[] {
   const limit = query.limit ?? 180;
@@ -104,6 +114,7 @@ export function generateMockCandles(query: CandleQuery): Candle[] {
       })
     );
   }
+  syntheticSeries.add(candles);
   return candles;
 }
 

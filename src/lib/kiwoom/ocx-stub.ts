@@ -1,6 +1,5 @@
 import type {
   KiwoomAdapterStatus,
-  KiwoomOrderRequest,
   KiwoomOrderResult,
   KiwoomTradingAdapter,
 } from "@/lib/kiwoom/types";
@@ -48,7 +47,7 @@ export class OcxKiwoomStubAdapter implements KiwoomTradingAdapter {
     };
   }
 
-  async placeOrder(_req: KiwoomOrderRequest): Promise<KiwoomOrderResult> {
+  async placeOrder(): Promise<KiwoomOrderResult> {
     return {
       ok: false,
       mode: "ocx",

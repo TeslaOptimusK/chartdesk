@@ -9,6 +9,7 @@ import type {
 } from "@/lib/types";
 import { ema, rsi, sma } from "@/lib/indicators";
 import {
+  LLM_TIMEOUT_MS,
   resolveLlmApiKey,
   resolveLlmEndpoint,
   resolveLlmModel,
@@ -232,6 +233,7 @@ export async function draftOpinionWithOptionalLlm(args: {
           },
         ],
       }),
+      signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
     });
     if (!res.ok) return rule;
     const json = (await res.json()) as {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { ChartCanvas } from "@/components/chart/ChartCanvas";
 import { useWorkspace, type IndicatorId } from "@/lib/store";
 import type { Candle, Drawing, PatternHit, Timeframe } from "@/lib/types";
@@ -19,11 +20,24 @@ import {
   detectEntrySignals,
 } from "@/lib/entry-signals";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import { retainChartQuote, useQuotesStore } from "@/lib/quotes-store";
 import { ExchangeMark } from "@/components/market/ExchangeMark";
 import { LiveQuoteBadge } from "@/components/market/LiveQuoteBadge";
 import { alignSeedDrawings } from "@/lib/seed";
 import { applyLiveCandle } from "@/lib/market-data/mock-adapter";
+import { subscribeChartStream } from "@/lib/market-stream";
+
+interface LoadedSeries {
+  key: string;
+  candles: Candle[];
+  /** Generated sample bars, shown when the feed had nothing for this symbol. */
+  synthetic: boolean;
+}
+
+const NO_CANDLES: Candle[] = [];
+
+const ALERT_EVAL_GAP_MS = 3000;
 
 interface SymbolChartPaneProps {
   symbolId: string;
@@ -62,8 +76,9 @@ export function SymbolChartPane({
     priceWatches,
     setPriceWatches,
     setAlerts,
-    alerts,
+    technicalAlerts,
     setTechnicalAlerts,
+    multiConditionAlerts,
     setMultiConditionAlerts,
     drawingsLocked,
     chartSettings,
@@ -92,12 +107,59 @@ export function SymbolChartPane({
     easyOverlayPreset,
     activeSymbolId,
     entrySignalsEnabled,
-  } = useWorkspace();
+  } = useWorkspace(
+    useShallow((s) => ({
+      timeframe: s.timeframe,
+      indicators: s.indicators,
+      drawingTool: s.drawingTool,
+      patternHits: s.patternHits,
+      drawings: s.drawings,
+      setDrawings: s.setDrawings,
+      symbols: s.symbols,
+      chartStyle: s.chartStyle,
+      compareSymbolId: s.compareSymbolId,
+      magnet: s.magnet,
+      goToDate: s.goToDate,
+      priceWatches: s.priceWatches,
+      setPriceWatches: s.setPriceWatches,
+      setAlerts: s.setAlerts,
+      technicalAlerts: s.technicalAlerts,
+      setTechnicalAlerts: s.setTechnicalAlerts,
+      multiConditionAlerts: s.multiConditionAlerts,
+      setMultiConditionAlerts: s.setMultiConditionAlerts,
+      drawingsLocked: s.drawingsLocked,
+      chartSettings: s.chartSettings,
+      priceScaleMode: s.priceScaleMode,
+      rangePreset: s.rangePreset,
+      dateFormat: s.dateFormat,
+      extendedHours: s.extendedHours,
+      showCountdown: s.showCountdown,
+      timezone: s.timezone,
+      eventToggles: s.eventToggles,
+      snapshotTick: s.snapshotTick,
+      sync: s.sync,
+      sharedCrosshairTime: s.sharedCrosshairTime,
+      setSharedCrosshairTime: s.setSharedCrosshairTime,
+      stayInDrawMode: s.stayInDrawMode,
+      customIntervalMinutes: s.customIntervalMinutes,
+      replayActive: s.replayActive,
+      replayIndex: s.replayIndex,
+      setReplayIndex: s.setReplayIndex,
+      setReplayTotalBars: s.setReplayTotalBars,
+      layoutMode: s.layoutMode,
+      indicatorOnIndicator: s.indicatorOnIndicator,
+      customIndicatorSource: s.customIndicatorSource,
+      easyOverlayEnabled: s.easyOverlayEnabled,
+      easyOverlayToggles: s.easyOverlayToggles,
+      easyOverlayPreset: s.easyOverlayPreset,
+      activeSymbolId: s.activeSymbolId,
+      entrySignalsEnabled: s.entrySignalsEnabled,
+    }))
+  );
   const timeframe = paneTimeframe ?? storeTimeframe;
-  const [candles, setCandles] = useState<Candle[]>([]);
-  const [compareCandles, setCompareCandles] = useState<Candle[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
   const [marketMode, setMarketMode] = useState<"mock" | "delayed" | "realtime">(
     "mock"
   );
@@ -114,44 +176,54 @@ export function SymbolChartPane({
   const structureTf: Timeframe =
     easyOverlayPreset === "swing" ? SWING_STRUCTURE_TF : SCALP_STRUCTURE_TF;
 
-  // Drop stale bars as soon as symbol/TF changes so ChartCanvas does not fit the
-  // previous series under the new viewKey (blank / wrong price scale).
+  // Bars carry the key they were loaded for. A symbol/TF switch shows nothing
+  // until the new series lands, so ChartCanvas never fits the previous series
+  // under the new viewKey, and a late tick from the old stream is dropped.
   const candleSourceKey = `${symbolId}|${fetchTf}|${candleLimit}`;
-  const [activeCandleKey, setActiveCandleKey] = useState(candleSourceKey);
-  const candleSourceKeyRef = useRef(candleSourceKey);
-  candleSourceKeyRef.current = candleSourceKey;
-  if (candleSourceKey !== activeCandleKey) {
-    setActiveCandleKey(candleSourceKey);
-    setCandles([]);
+  const [series, setSeries] = useState<LoadedSeries>({
+    key: candleSourceKey,
+    candles: NO_CANDLES,
+    synthetic: false,
+  });
+  if (series.key !== candleSourceKey) {
+    setSeries({ key: candleSourceKey, candles: NO_CANDLES, synthetic: false });
     setLoading(true);
     setError(null);
   }
+  const candles = series.key === candleSourceKey ? series.candles : NO_CANDLES;
 
   useEffect(() => {
     let cancelled = false;
     const requestKey = candleSourceKey;
-    setLoading(true);
-    setError(null);
     fetch(`/api/candles?symbolId=${symbolId}&tf=${fetchTf}&limit=${candleLimit}`)
       .then(async (r) => {
         if (!r.ok) throw new Error("시세 로드 실패");
         return r.json();
       })
-      .then((data: { candles: Candle[] }) => {
-        if (cancelled || candleSourceKeyRef.current !== requestKey) return;
-        setCandles(data.candles);
+      .then((data: { candles: Candle[]; synthetic?: boolean }) => {
+        if (cancelled) return;
+        setSeries((prev) =>
+          prev.key === requestKey
+            ? { key: requestKey, candles: data.candles, synthetic: data.synthetic === true }
+            : prev
+        );
         setLoading(false);
       })
       .catch((e: Error) => {
-        if (!cancelled && candleSourceKeyRef.current === requestKey) {
-          setError(e.message);
-          setLoading(false);
-        }
+        if (cancelled) return;
+        setError(e.message);
+        setLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [symbolId, fetchTf, candleLimit, candleSourceKey]);
+  }, [symbolId, fetchTf, candleLimit, candleSourceKey, attempt]);
+
+  const retryLoad = () => {
+    setLoading(true);
+    setError(null);
+    setAttempt((n) => n + 1);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -168,20 +240,14 @@ export function SymbolChartPane({
     };
   }, []);
 
-  // Mock / delayed / realtime — SSE ticks drive candle updates + alert evaluate
+  // Mock / delayed / realtime — shared stream ticks drive candle updates + alert evaluate
   useEffect(() => {
     if (!interactive) return;
     let cancelled = false;
     const streamTf = fetchTf;
-    const es = new EventSource(
-      `/api/market/sse?symbolId=${encodeURIComponent(symbolId)}&tf=${encodeURIComponent(streamTf)}`
-    );
-    es.onmessage = (ev) => {
+    const unsubscribe = subscribeChartStream(symbolId, streamTf, (next) => {
       if (cancelled) return;
       try {
-        const msg = JSON.parse(ev.data) as { type?: string; candle?: Candle };
-        if (msg.type !== "candle" || !msg.candle) return;
-        const next = msg.candle;
         setFromTick(symbolId, next);
         pendingTickRef.current = next;
         if (tickTimerRef.current != null) return;
@@ -191,59 +257,61 @@ export function SymbolChartPane({
           pendingTickRef.current = null;
           if (!candle) return;
           const expectedKey = `${symbolId}|${streamTf}|${candleLimit}`;
-          setCandles((prev) => {
-          // Drop updates from a prior TF/symbol EventSource whose setState
-          // landed after the series was replaced (causes asc-order crashes).
-          if (candleSourceKeyRef.current !== expectedKey) return prev;
-          if (!prev.length) {
+          setSeries((prev) => {
+            // Drop updates from a prior TF/symbol EventSource whose setState
+            // landed after the series was replaced (causes asc-order crashes).
+            if (prev.key !== expectedKey) return prev;
             // Wait for the HTTP series for this TF — avoid seeding with a lone
             // 1m SSE bar while Tick synthetic bars are still loading.
-            return prev;
-          }
-          const last = prev[prev.length - 1];
-          if (!last) return prev;
-          const merged = applyLiveCandle(prev, candle, {
-            streamTf,
-            maxJump: liveMaxJumpRef.current,
-          });
-          if (merged === prev) return prev;
-          return merged.length > candleLimit
-            ? merged.slice(-candleLimit)
-            : merged;
+            if (!prev.candles.length) return prev;
+            const merged = applyLiveCandle(prev.candles, candle, {
+              streamTf,
+              maxJump: liveMaxJumpRef.current,
+            });
+            if (merged === prev.candles) return prev;
+            return {
+              ...prev,
+              candles: merged.length > candleLimit ? merged.slice(-candleLimit) : merged,
+            };
           });
         }, 120);
       } catch {
         /* ignore */
       }
-    };
+    });
     return () => {
       cancelled = true;
       if (tickTimerRef.current != null) {
         window.clearTimeout(tickTimerRef.current);
         tickTimerRef.current = null;
       }
-      es.close();
+      unsubscribe();
     };
   }, [interactive, marketMode, symbolId, fetchTf, candleLimit, setFromTick]);
 
+  const compareKey =
+    compareSymbolId && interactive ? `${compareSymbolId}|${fetchTf}|${candleLimit}` : null;
+  const [compareSeries, setCompareSeries] = useState<{ key: string; candles: Candle[] } | null>(
+    null
+  );
+  const compareCandles =
+    compareKey != null && compareSeries?.key === compareKey ? compareSeries.candles : NO_CANDLES;
+
   useEffect(() => {
-    if (!compareSymbolId || !interactive) {
-      setCompareCandles([]);
-      return;
-    }
+    if (!compareKey || !compareSymbolId) return;
     let cancelled = false;
     fetch(`/api/candles?symbolId=${compareSymbolId}&tf=${fetchTf}&limit=${candleLimit}`)
       .then((r) => r.json())
-      .then((data: { candles: Candle[] }) => {
-        if (!cancelled) setCompareCandles(data.candles ?? []);
+      .then((data: { candles?: Candle[] }) => {
+        if (!cancelled) setCompareSeries({ key: compareKey, candles: data.candles ?? NO_CANDLES });
       })
       .catch(() => {
-        if (!cancelled) setCompareCandles([]);
+        if (!cancelled) setCompareSeries({ key: compareKey, candles: NO_CANDLES });
       });
     return () => {
       cancelled = true;
     };
-  }, [compareSymbolId, fetchTf, candleLimit, interactive]);
+  }, [compareKey, compareSymbolId, fetchTf, candleLimit]);
 
   const baseCandles = useMemo(() => {
     let list = candles;
@@ -307,33 +375,56 @@ export function SymbolChartPane({
     setReplayIndex,
   ]);
 
+  const hasPendingAlerts = useMemo(
+    () =>
+      priceWatches.some((w) => w.symbolId === symbolId && !w.triggered) ||
+      technicalAlerts.some((t) => t.symbolId === symbolId && !t.triggered) ||
+      multiConditionAlerts.some((m) => m.symbolId === symbolId && !m.triggered),
+    [priceWatches, technicalAlerts, multiConditionAlerts, symbolId]
+  );
+  const lastAlertEvalRef = useRef(0);
+
+  // Live ticks change the bars several times a second; the server only needs
+  // the latest series every few seconds, and only while a watch is pending.
   useEffect(() => {
-    if (!interactive || processedCandles.length === 0) return;
-    const last = processedCandles[processedCandles.length - 1];
-    void fetch("/api/alerts/evaluate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        symbolId,
-        candles: processedCandles,
-        lastClose: last.close,
-        tf: fetchTf,
-      }),
-    })
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.priceWatches) setPriceWatches(data.priceWatches);
-        if (data.technicalAlerts) setTechnicalAlerts(data.technicalAlerts);
-        if (data.multiConditionAlerts) {
-          setMultiConditionAlerts(data.multiConditionAlerts);
-        }
-        if (data.fired?.length) {
-          setAlerts(data.alerts ?? [...data.fired, ...alerts]);
-        }
+    if (!interactive || !hasPendingAlerts || processedCandles.length === 0) return;
+    const wait = Math.max(0, lastAlertEvalRef.current + ALERT_EVAL_GAP_MS - Date.now());
+    const id = window.setTimeout(() => {
+      lastAlertEvalRef.current = Date.now();
+      const last = processedCandles[processedCandles.length - 1]!;
+      void fetch("/api/alerts/evaluate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          symbolId,
+          candles: processedCandles,
+          lastClose: last.close,
+          tf: fetchTf,
+        }),
       })
-      .catch(() => undefined);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [processedCandles, symbolId]);
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.priceWatches) setPriceWatches(data.priceWatches);
+          if (data.technicalAlerts) setTechnicalAlerts(data.technicalAlerts);
+          if (data.multiConditionAlerts) {
+            setMultiConditionAlerts(data.multiConditionAlerts);
+          }
+          if (data.fired?.length && data.alerts) setAlerts(data.alerts);
+        })
+        .catch(() => undefined);
+    }, wait);
+    return () => window.clearTimeout(id);
+  }, [
+    interactive,
+    hasPendingAlerts,
+    processedCandles,
+    symbolId,
+    fetchTf,
+    setPriceWatches,
+    setTechnicalAlerts,
+    setMultiConditionAlerts,
+    setAlerts,
+  ]);
 
   const hits = patternHits.filter(
     (h: PatternHit) => h.symbolId === symbolId && h.timeframe === timeframe
@@ -448,6 +539,24 @@ export function SymbolChartPane({
           <span className="min-w-0 truncate">{symbol?.nameKo}</span>
           <span className="text-[var(--workspace-faint)]">{symbol?.exchange}</span>
           <LiveQuoteBadge symbolId={symbolId} assetClass={symbol?.assetClass} />
+          {series.synthetic && !loading && (
+            <button
+              type="button"
+              className="shrink-0 rounded border border-amber-400/50 bg-amber-500/15 px-1.5 py-0.5 text-[11px] font-medium text-amber-200 hover:bg-amber-500/25"
+              title={
+                marketMode === "mock"
+                  ? "MARKET_DATA_MODE=mock 이라 임의로 만든 캔들을 표시합니다."
+                  : "실시세를 받지 못해 임의로 만든 캔들을 표시합니다. 실제 가격이 아닙니다. 누르면 다시 불러옵니다."
+              }
+              onClick={(ev) => {
+                ev.stopPropagation();
+                retryLoad();
+              }}
+              data-feature="data.synthetic"
+            >
+              {marketMode === "mock" ? "모의 시세" : "샘플 데이터 · 다시 불러오기"}
+            </button>
+          )}
         </div>
         <span>
           {customIntervalMinutes
@@ -464,8 +573,19 @@ export function SymbolChartPane({
         </div>
       )}
       {error && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center text-sm text-rose-300">
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 text-sm text-rose-300">
           {error}
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            onClick={(ev) => {
+              ev.stopPropagation();
+              retryLoad();
+            }}
+          >
+            다시 시도
+          </Button>
         </div>
       )}
       {!loading && !error && processedCandles.length === 0 && (
