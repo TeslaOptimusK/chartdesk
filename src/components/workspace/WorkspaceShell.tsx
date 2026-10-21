@@ -13,6 +13,7 @@ import { CryptoQuoteBridge } from "@/components/market/CryptoQuoteBridge";
 import { SessionQuoteBridge } from "@/components/market/SessionQuoteBridge";
 import { SymbolChartPane } from "@/components/chart/SymbolChartPane";
 import { MultiChartGrid } from "@/components/workspace/MultiChartGrid";
+import { PaneErrorBoundary } from "@/components/workspace/PaneErrorBoundary";
 import { WorkspaceFooter } from "@/components/workspace/WorkspaceFooter";
 import { useWorkspace } from "@/lib/store";
 import type { DrawingTool, Timeframe } from "@/lib/types";
@@ -117,7 +118,6 @@ export function WorkspaceShell() {
     let cancelled = false;
     const ac = new AbortController();
     const timeoutId = window.setTimeout(() => ac.abort(), 20_000);
-    setBootError(null);
 
     fetch("/api/bootstrap", { signal: ac.signal, cache: "no-store" })
       .then(async (r) => {
@@ -137,7 +137,7 @@ export function WorkspaceShell() {
         if (cancelled) return;
         if (ac.signal.aborted) {
           setBootError(
-            "부트스트랩 시간 초과 — ChartDesk Server 창에서 Next.js가 살아 있는지, http://127.0.0.1:43127/api/bootstrap 응답을 확인하세요."
+            "부트스트랩 시간 초과 — ChartDesk 서버가 20초 안에 응답하지 않았습니다."
           );
           return;
         }
@@ -302,8 +302,9 @@ export function WorkspaceShell() {
       <div className="flex h-screen flex-col items-center justify-center gap-4 bg-[var(--workspace-bg)] px-6 text-center">
         <p className="max-w-lg text-sm text-rose-300">{bootError}</p>
         <p className="max-w-md text-xs text-[var(--workspace-muted)]">
-          `scripts\start-chartdesk.bat`로 다시 실행하고, 제목 &quot;ChartDesk
-          Server&quot; 콘솔이 열려 있는지 확인하세요.
+          바탕화면 ChartDesk 아이콘(또는 scripts\start-chartdesk.bat)으로 다시
+          여세요. 계속되면 ChartDesk 폴더의 data\chartdesk-server.log 에 서버
+          오류가 남아 있습니다.
         </p>
         <Button
           type="button"
@@ -385,23 +386,26 @@ export function WorkspaceShell() {
                   ? timeframe
                   : (paneTimeframes[idx] ?? timeframe);
               return (
-                <SymbolChartPane
-                  key={`${layoutMode}-${idx}-${id}`}
-                  symbolId={id}
-                  paneTimeframe={paneTf}
-                  interactive
-                  paneIndex={idx}
-                  active={activePaneIndex === idx}
-                  onActivate={() => setActivePaneIndex(idx)}
-                  className="h-full min-h-0"
-                />
+                <PaneErrorBoundary key={`${layoutMode}-${idx}-${id}`} label="차트">
+                  <SymbolChartPane
+                    symbolId={id}
+                    paneTimeframe={paneTf}
+                    interactive
+                    paneIndex={idx}
+                    active={activePaneIndex === idx}
+                    onActivate={() => setActivePaneIndex(idx)}
+                    className="h-full min-h-0"
+                  />
+                </PaneErrorBoundary>
               );
             })}
           </MultiChartGrid>
         </main>
         {!fullscreen && (
           <div className="hidden w-[360px] shrink-0 lg:block">
-            <RightPanel />
+            <PaneErrorBoundary label="오른쪽 패널">
+              <RightPanel />
+            </PaneErrorBoundary>
           </div>
         )}
       </div>
