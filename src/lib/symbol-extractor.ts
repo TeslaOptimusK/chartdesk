@@ -1,5 +1,6 @@
 import type { Post, SymbolMeta } from "@/lib/types";
 import {
+  LLM_TIMEOUT_MS,
   resolveLlmApiKey,
   resolveLlmEndpoint,
   resolveLlmModel,
@@ -77,6 +78,7 @@ export async function extractSymbolsWithOptionalLlm(
           },
         ],
       }),
+      signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
     });
     if (!res.ok) return base;
     const json = (await res.json()) as {

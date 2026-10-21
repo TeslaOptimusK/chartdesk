@@ -4,7 +4,9 @@ import {
   applyLiveCandle,
   generateMockCandles,
   isAlienPrint,
+  isSyntheticSeries,
 } from "@/lib/market-data/mock-adapter";
+import { DelayedMarketDataAdapter } from "@/lib/market-data/delayed-adapter";
 import { alignSeedDrawings } from "@/lib/seed";
 import { zonesInsideCandleRange } from "@/lib/easychart/confluence";
 import type { Candle, Drawing } from "@/lib/types";
@@ -19,6 +21,25 @@ function lastClose(symbolId: string, ticker: string, tf: "D" | "1", limit: numbe
   });
   return bars.at(-1)!;
 }
+
+describe("sample series flag", () => {
+  it("marks generated bars and nothing else", () => {
+    const bars = generateMockCandles({ symbolId: "us_TSLA", ticker: "TSLA", timeframe: "D", limit: 5 });
+    assert.equal(isSyntheticSeries(bars), true);
+    assert.equal(isSyntheticSeries(bars.slice()), false);
+  });
+
+  it("flags the delayed adapter's stand-in for a basket Yahoo cannot quote", async () => {
+    const bars = await new DelayedMarketDataAdapter().getCandles({
+      symbolId: "idx_MAG7",
+      ticker: "MAG7",
+      timeframe: "D",
+      limit: 10,
+    });
+    assert.ok(bars.length > 0);
+    assert.equal(isSyntheticSeries(bars), true);
+  });
+});
 
 describe("mock series alignment", () => {
   it("limit 2 and limit 240 share the same last bar", () => {

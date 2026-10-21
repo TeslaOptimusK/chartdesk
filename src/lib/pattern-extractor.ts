@@ -1,4 +1,9 @@
-import { resolveLlmApiKey, resolveLlmEndpoint, resolveLlmModel } from "@/lib/llm-env";
+import {
+  LLM_TIMEOUT_MS,
+  resolveLlmApiKey,
+  resolveLlmEndpoint,
+  resolveLlmModel,
+} from "@/lib/llm-env";
 import { parsePatternDsl } from "@/lib/pattern-matcher";
 import type {
   PatternDef,
@@ -253,6 +258,7 @@ Max 3 patterns. Empty array if none.`,
           },
         ],
       }),
+      signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
     });
     if (!res.ok) return [];
     const json = (await res.json()) as {
