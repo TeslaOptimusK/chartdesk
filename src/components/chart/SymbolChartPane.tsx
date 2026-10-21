@@ -35,6 +35,8 @@ interface LoadedSeries {
 
 const NO_CANDLES: Candle[] = [];
 
+const ALERT_EVAL_GAP_MS = 3000;
+
 interface SymbolChartPaneProps {
   symbolId: string;
   height?: number;
@@ -72,8 +74,9 @@ export function SymbolChartPane({
     priceWatches,
     setPriceWatches,
     setAlerts,
-    alerts,
+    technicalAlerts,
     setTechnicalAlerts,
+    multiConditionAlerts,
     setMultiConditionAlerts,
     drawingsLocked,
     chartSettings,
@@ -328,33 +331,56 @@ export function SymbolChartPane({
     setReplayIndex,
   ]);
 
+  const hasPendingAlerts = useMemo(
+    () =>
+      priceWatches.some((w) => w.symbolId === symbolId && !w.triggered) ||
+      technicalAlerts.some((t) => t.symbolId === symbolId && !t.triggered) ||
+      multiConditionAlerts.some((m) => m.symbolId === symbolId && !m.triggered),
+    [priceWatches, technicalAlerts, multiConditionAlerts, symbolId]
+  );
+  const lastAlertEvalRef = useRef(0);
+
+  // Live ticks change the bars several times a second; the server only needs
+  // the latest series every few seconds, and only while a watch is pending.
   useEffect(() => {
-    if (!interactive || processedCandles.length === 0) return;
-    const last = processedCandles[processedCandles.length - 1];
-    void fetch("/api/alerts/evaluate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        symbolId,
-        candles: processedCandles,
-        lastClose: last.close,
-        tf: fetchTf,
-      }),
-    })
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.priceWatches) setPriceWatches(data.priceWatches);
-        if (data.technicalAlerts) setTechnicalAlerts(data.technicalAlerts);
-        if (data.multiConditionAlerts) {
-          setMultiConditionAlerts(data.multiConditionAlerts);
-        }
-        if (data.fired?.length) {
-          setAlerts(data.alerts ?? [...data.fired, ...alerts]);
-        }
+    if (!interactive || !hasPendingAlerts || processedCandles.length === 0) return;
+    const wait = Math.max(0, lastAlertEvalRef.current + ALERT_EVAL_GAP_MS - Date.now());
+    const id = window.setTimeout(() => {
+      lastAlertEvalRef.current = Date.now();
+      const last = processedCandles[processedCandles.length - 1]!;
+      void fetch("/api/alerts/evaluate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          symbolId,
+          candles: processedCandles,
+          lastClose: last.close,
+          tf: fetchTf,
+        }),
       })
-      .catch(() => undefined);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [processedCandles, symbolId]);
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.priceWatches) setPriceWatches(data.priceWatches);
+          if (data.technicalAlerts) setTechnicalAlerts(data.technicalAlerts);
+          if (data.multiConditionAlerts) {
+            setMultiConditionAlerts(data.multiConditionAlerts);
+          }
+          if (data.fired?.length && data.alerts) setAlerts(data.alerts);
+        })
+        .catch(() => undefined);
+    }, wait);
+    return () => window.clearTimeout(id);
+  }, [
+    interactive,
+    hasPendingAlerts,
+    processedCandles,
+    symbolId,
+    fetchTf,
+    setPriceWatches,
+    setTechnicalAlerts,
+    setMultiConditionAlerts,
+    setAlerts,
+  ]);
 
   const hits = patternHits.filter(
     (h: PatternHit) => h.symbolId === symbolId && h.timeframe === timeframe
