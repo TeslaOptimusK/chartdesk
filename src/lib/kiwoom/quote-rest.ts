@@ -46,6 +46,7 @@ export function resetKiwoomRestForTests(): void {
   tokenState = null;
   chartCache.clear();
   gapMs = 220;
+  requestTimeoutMs = REQUEST_TIMEOUT_MS;
   chain = Promise.resolve();
   outboundIpCache = null;
 }
@@ -79,6 +80,30 @@ export function setKiwoomRequestGapForTests(ms: number): void {
   gapMs = ms;
 }
 
+/**
+ * Every broker call shares one queue, so a request that never answers would
+ * also hold back stop-loss sells. Undici would otherwise wait five minutes.
+ */
+const REQUEST_TIMEOUT_MS = 15_000;
+let requestTimeoutMs = REQUEST_TIMEOUT_MS;
+
+export function setKiwoomRequestTimeoutForTests(ms: number): void {
+  requestTimeoutMs = ms;
+}
+
+/** A timed-out order may still have reached the broker. */
+const ORDER_API_IDS = new Set(["kt10000", "kt10001", "kt10002", "kt10003", "ust20001"]);
+
+function timeoutMessage(apiId: string): string {
+  return ORDER_API_IDS.has(apiId)
+    ? "키움 주문 응답이 15초 안에 오지 않았습니다. 접수 여부를 계좌에서 확인하세요"
+    : "키움 응답이 15초 안에 오지 않았습니다";
+}
+
+function isTimeout(err: unknown): boolean {
+  return err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
+}
+
 function enqueue<T>(fn: () => Promise<T>): Promise<T> {
   const run = chain.then(async () => {
     if (gapMs > 0) await new Promise((r) => setTimeout(r, gapMs));
@@ -89,6 +114,38 @@ function enqueue<T>(fn: () => Promise<T>): Promise<T> {
     () => undefined
   );
   return run;
+}
+
+/** Fetch and read the JSON body inside the queue slot, under one deadline. */
+async function postJson(
+  url: string,
+  apiId: string,
+  headers: Record<string, string>,
+  body: unknown
+): Promise<{ res: Response; json: Record<string, unknown> }> {
+  try {
+    return await enqueue(async () => {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json;charset=UTF-8",
+          "api-id": apiId,
+          ...headers,
+        },
+        body: JSON.stringify(body),
+        cache: "no-store",
+        signal: AbortSignal.timeout(requestTimeoutMs),
+      });
+      const json = (await res.json().catch((err: unknown) => {
+        if (isTimeout(err)) throw err;
+        return {};
+      })) as Record<string, unknown>;
+      return { res, json };
+    });
+  } catch (err) {
+    if (isTimeout(err)) throw new KiwoomQuoteError(timeoutMessage(apiId));
+    throw err;
+  }
 }
 
 function assertBodyOk(json: unknown, status: number): void {
@@ -115,22 +172,11 @@ export async function issueKiwoomToken(force = false): Promise<string> {
     throw new KiwoomQuoteError("KIWOOM_APP_KEY and KIWOOM_APP_SECRET are required");
   }
   const { rest } = kiwoomEndpoints();
-  const res = await enqueue(() =>
-    fetch(`${rest}/oauth2/token`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json;charset=UTF-8",
-        "api-id": "au10001",
-      },
-      body: JSON.stringify({
-        grant_type: "client_credentials",
-        appkey,
-        secretkey,
-      }),
-      cache: "no-store",
-    })
-  );
-  const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  const { res, json } = await postJson(`${rest}/oauth2/token`, "au10001", {}, {
+    grant_type: "client_credentials",
+    appkey,
+    secretkey,
+  });
   assertBodyOk(json, res.status);
   const token = typeof json.token === "string" ? json.token : "";
   if (!token) throw new KiwoomQuoteError("Kiwoom token response had no token");
@@ -166,21 +212,12 @@ async function kiwoomAuthorizedPage(
 ): Promise<{ json: Record<string, unknown>; contYn: string | null; nextKey: string | null }> {
   const token = await issueKiwoomToken();
   const { rest } = kiwoomEndpoints();
-  const res = await enqueue(() =>
-    fetch(`${rest}${path}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json;charset=UTF-8",
-        authorization: `Bearer ${token}`,
-        "api-id": apiId,
-        "cont-yn": contYn,
-        "next-key": nextKey,
-      },
-      body: JSON.stringify(body),
-      cache: "no-store",
-    })
+  const { res, json } = await postJson(
+    `${rest}${path}`,
+    apiId,
+    { authorization: `Bearer ${token}`, "cont-yn": contYn, "next-key": nextKey },
+    body
   );
-  const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   assertBodyOk(json, res.status);
   const bodyNext =
     typeof json.next_key === "string"
@@ -235,21 +272,12 @@ async function postChart(
   nextKey: string
 ): Promise<{ json: unknown; contYn: string | null; nextKey: string | null }> {
   const { rest } = kiwoomEndpoints();
-  const res = await enqueue(() =>
-    fetch(`${rest}/api/dostk/chart`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json;charset=UTF-8",
-        authorization: `Bearer ${token}`,
-        "api-id": apiId,
-        "cont-yn": contYn,
-        "next-key": nextKey,
-      },
-      body: JSON.stringify(body),
-      cache: "no-store",
-    })
+  const { res, json } = await postJson(
+    `${rest}/api/dostk/chart`,
+    apiId,
+    { authorization: `Bearer ${token}`, "cont-yn": contYn, "next-key": nextKey },
+    body
   );
-  const json = await res.json().catch(() => ({}));
   assertBodyOk(json, res.status);
   return {
     json,
