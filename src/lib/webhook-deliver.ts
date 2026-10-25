@@ -2,6 +2,7 @@ import { promises as fs } from "fs";
 import path from "path";
 import type { AlertItem } from "@/lib/types";
 import { readWebhookConfig, writeJsonAtomic } from "@/lib/storage";
+import { webhookUrlBlockReason } from "@/lib/webhook-url";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const LOG_PATH = path.join(DATA_DIR, "webhook-log.json");
@@ -112,6 +113,26 @@ export async function deliverAlertWebhook(alert: AlertItem): Promise<void> {
         symbolId: alert.symbolId,
       },
       firedAt,
+    });
+    return;
+  }
+
+  const blocked = webhookUrlBlockReason(url);
+  if (blocked) {
+    console.warn("[webhook] blocked URL", blocked);
+    await appendLog({
+      at: new Date().toISOString(),
+      reason: "failed",
+      alert: {
+        id: alert.id,
+        type: alert.type,
+        title: alert.title,
+        message: alert.message,
+        symbolId: alert.symbolId,
+      },
+      firedAt,
+      url,
+      error: blocked,
     });
     return;
   }

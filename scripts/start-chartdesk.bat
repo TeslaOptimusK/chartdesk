@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableExtensions
 REM ChartDesk launcher. Fast-forward cursor/chartdesk-desktop, then start Next.js
-REM with no console, wait for /api/bootstrap, and open Chrome/Edge in --app= mode.
+REM with no console, wait for /api/health, and open Chrome/Edge in --app= mode.
 REM A double-click from an old shortcut closes its console and continues hidden.
 REM Does not reset or discard local edits.
 
@@ -88,7 +88,7 @@ if exist "node_modules\" (
 set "APP_HOST=127.0.0.1"
 set "APP_PORT=43127"
 set "APP_URL=http://%APP_HOST%:%APP_PORT%"
-set "BOOT_URL=%APP_URL%/api/bootstrap"
+set "BOOT_URL=%APP_URL%/api/health"
 set "CHROME="
 set "EDGE="
 
