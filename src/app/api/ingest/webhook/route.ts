@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { learnFromPost } from "@/lib/learning";
+import { bodyTooLarge } from "@/lib/request-guard";
 import type { IngestMethod, PostCategory } from "@/lib/types";
 
 const CATEGORIES: PostCategory[] = [
@@ -18,6 +19,11 @@ function parseCategory(raw: string | null | undefined): PostCategory {
 
 /** Fanding ingest webhook — JSON body or plain text with ?category= (no scrape). */
 export async function POST(req: Request) {
+  const raw = await req.text();
+  if (bodyTooLarge(req.headers.get("content-length"), Buffer.byteLength(raw))) {
+    return NextResponse.json({ error: "body_too_large" }, { status: 413 });
+  }
+
   const { searchParams } = new URL(req.url);
   const contentType = req.headers.get("content-type") ?? "";
 
@@ -28,7 +34,7 @@ export async function POST(req: Request) {
   let symbolIds: string[] | undefined;
 
   if (contentType.includes("application/json")) {
-    const body = (await req.json()) as {
+    let body: {
       category?: PostCategory;
       title?: string;
       body?: string;
@@ -43,6 +49,14 @@ export async function POST(req: Request) {
         symbolIds?: string[];
       }[];
     };
+    try {
+      body = JSON.parse(raw) as typeof body;
+    } catch {
+      return NextResponse.json({ error: "invalid_json" }, { status: 400 });
+    }
+    if (!body || typeof body !== "object") {
+      return NextResponse.json({ error: "invalid_json" }, { status: 400 });
+    }
 
     if (Array.isArray(body.posts) && body.posts.length) {
       const results = [];
@@ -83,7 +97,7 @@ export async function POST(req: Request) {
     externalUrl = body.externalUrl ?? externalUrl;
     symbolIds = body.symbolIds;
   } else {
-    bodyText = await req.text();
+    bodyText = raw;
     if (!title) {
       const firstLine = bodyText.split(/\r?\n/).find((l) => l.trim()) ?? "";
       title = firstLine.slice(0, 120) || "Webhook ingest";

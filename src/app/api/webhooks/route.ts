@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { WebhookConfig } from "@/lib/types";
 import { readWebhookConfig, saveWebhookConfig } from "@/lib/storage";
+import { webhookUrlBlockReason } from "@/lib/webhook-url";
 
 /** Feature ID: alert.webhook */
 export async function GET() {
@@ -10,6 +11,8 @@ export async function GET() {
 
 export async function PUT(req: Request) {
   const body = (await req.json()) as WebhookConfig;
+  const blocked = webhookUrlBlockReason(body.url);
+  if (blocked) return NextResponse.json({ error: blocked }, { status: 400 });
   const webhookConfig = await saveWebhookConfig({
     url: body.url ?? "",
     enabled: Boolean(body.enabled),
