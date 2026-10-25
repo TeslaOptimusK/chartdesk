@@ -10,7 +10,12 @@ export async function GET() {
 }
 
 export async function PUT(req: Request) {
-  const body = (await req.json()) as WebhookConfig;
+  let body: WebhookConfig;
+  try {
+    body = (await req.json()) as WebhookConfig;
+  } catch {
+    return NextResponse.json({ error: "invalid_json" }, { status: 400 });
+  }
   const blocked = webhookUrlBlockReason(body.url);
   if (blocked) return NextResponse.json({ error: blocked }, { status: 400 });
   const webhookConfig = await saveWebhookConfig({
