@@ -39,6 +39,23 @@ type TokenState = { token: string; expiresAtSec: number };
 let tokenState: TokenState | null = null;
 let gapMs = 220;
 let chain: Promise<unknown> = Promise.resolve();
+/**
+ * From 2026-11-12 18:00 KST, 19 domestic account TRs allow one call per second.
+ * The same id is used twice in one account read (KRX and NXT, or two query types).
+ */
+const DOMESTIC_ACCOUNT_GAP_MS = 1_100;
+const lastDomesticAccountAt = new Map<string, number>();
+
+export function isDomesticAccountRateLimit(apiId: string): boolean {
+  return apiId === "ka00001" || /^kt000\d{2}$/.test(apiId);
+}
+
+function domesticAccountWait(apiId: string): number {
+  if (!isDomesticAccountRateLimit(apiId)) return 0;
+  const last = lastDomesticAccountAt.get(apiId);
+  if (last == null) return 0;
+  return Math.max(0, DOMESTIC_ACCOUNT_GAP_MS - (Date.now() - last));
+}
 
 const chartCache = new Map<string, { expires: number; bars: Candle[] }>();
 
@@ -49,6 +66,7 @@ export function resetKiwoomRestForTests(): void {
   requestTimeoutMs = REQUEST_TIMEOUT_MS;
   chain = Promise.resolve();
   outboundIpCache = null;
+  lastDomesticAccountAt.clear();
 }
 
 /** Kiwoom 8050: the app key is fine, but this PC's public address is not on the allowlist. */
@@ -125,6 +143,9 @@ async function postJson(
 ): Promise<{ res: Response; json: Record<string, unknown> }> {
   try {
     return await enqueue(async () => {
+      const accountWait = domesticAccountWait(apiId);
+      if (accountWait > 0) await new Promise((resolve) => setTimeout(resolve, accountWait));
+      if (isDomesticAccountRateLimit(apiId)) lastDomesticAccountAt.set(apiId, Date.now());
       const res = await fetch(url, {
         method: "POST",
         headers: {
