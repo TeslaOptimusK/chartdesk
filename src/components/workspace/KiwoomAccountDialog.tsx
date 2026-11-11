@@ -303,6 +303,8 @@ export function KiwoomAccountDialog({
   } | null>(null);
   const loadGen = useRef(0);
   const accountRef = useRef<AccountView | null>(null);
+  const forceFull = useRef(false);
+  const reloadLots = useRef(false);
 
   const [wasOpen, setWasOpen] = useState(open);
   if (open !== wasOpen) {
@@ -364,45 +366,89 @@ export function KiwoomAccountDialog({
   }, []);
 
   const load = () => {
-    const mine = ++loadGen.current;
-    fetch("/api/kiwoom/account")
-      .then(async (res) => (await res.json()) as AccountView)
-      .then((data) => {
-        if (mine !== loadGen.current) return;
-        noteOutboundIp(data);
-        const hadLots = (accountRef.current?.positions ?? []).some((row) => (row.lots?.length ?? 0) > 0);
-        const next = mergeAccount(accountRef.current, data);
-        accountRef.current = next;
-        setAccount(next);
-        if (data.mode !== "rest" || data.error) {
-          setLotsPending(false);
-          return;
-        }
-        if (!hadLots) setLotsPending(true);
-        return fetch("/api/kiwoom/account?lots=1")
-          .then(async (res) => (await res.json()) as AccountView)
-          .then((detail) => {
-            if (mine !== loadGen.current || detail.error) return;
-            accountRef.current = detail;
-            setAccount(detail);
-          })
-          .finally(() => {
-            if (mine === loadGen.current) setLotsPending(false);
-          });
-      })
-      .catch(() => {
-        if (mine !== loadGen.current) return;
-        accountRef.current = null;
-        setAccount(null);
-        setLotsPending(false);
-      });
+    forceFull.current = true;
+    reloadLots.current = true;
+    loadGen.current += 1;
   };
 
   useEffect(() => {
     if (!open) return;
-    load();
-    const id = window.setInterval(load, 20000);
-    return () => window.clearInterval(id);
+    let stop = false;
+    let fullAt = 0;
+    let lotsStarted = false;
+    const run = async () => {
+      while (!stop) {
+        if (document.hidden) {
+          await new Promise((resolve) => setTimeout(resolve, 400));
+          continue;
+        }
+        const now = Date.now();
+        const full = forceFull.current || now - fullAt >= 30_000;
+        forceFull.current = false;
+        if (full) fullAt = now;
+        const seq = ++loadGen.current;
+        const wantLots = full && (reloadLots.current || !lotsStarted);
+        reloadLots.current = false;
+        try {
+          const res = await fetch(
+            full ? "/api/kiwoom/account?fresh=1" : "/api/kiwoom/account?marks=1"
+          );
+          if (stop || seq !== loadGen.current) continue;
+          if (!res.ok) {
+            if (!accountRef.current) {
+              const failed = (await res.json().catch(() => null)) as AccountView | null;
+              if (failed && seq === loadGen.current) setAccount(failed);
+            }
+            await new Promise((resolve) => setTimeout(resolve, 1_100));
+            continue;
+          }
+          const data = (await res.json()) as AccountView;
+          if (stop || seq !== loadGen.current) continue;
+          noteOutboundIp(data);
+          const next = mergeAccount(accountRef.current, data);
+          accountRef.current = next;
+          setAccount(next);
+          if (data.mode !== "rest") {
+            await new Promise((resolve) => setTimeout(resolve, 20_000));
+            continue;
+          }
+          if (data.error || !wantLots) continue;
+          lotsStarted = true;
+          const hadLots = next.positions.some((row) => (row.lots?.length ?? 0) > 0);
+          if (!hadLots) setLotsPending(true);
+          void fetch("/api/kiwoom/account?lots=1")
+            .then(async (lotsRes) => (await lotsRes.json()) as AccountView)
+            .then((detail) => {
+              if (stop || detail.error) return;
+              const prev = accountRef.current;
+              if (!prev) return;
+              const lotsByCode = new Map(detail.positions.map((row) => [row.code, row.lots]));
+              const merged: AccountView = {
+                ...prev,
+                historyNote: detail.historyNote ?? prev.historyNote,
+                positions: prev.positions.map((row) => ({
+                  ...row,
+                  lots: lotsByCode.get(row.code)?.length ? lotsByCode.get(row.code) : row.lots,
+                })),
+              };
+              accountRef.current = merged;
+              setAccount(merged);
+            })
+            .finally(() => {
+              if (!stop) setLotsPending(false);
+            });
+        } catch {
+          if (stop || seq !== loadGen.current) continue;
+          if (!accountRef.current) setAccount(null);
+          await new Promise((resolve) => setTimeout(resolve, 1_100));
+        }
+      }
+    };
+    void run();
+    return () => {
+      stop = true;
+      loadGen.current += 1;
+    };
   }, [open]);
 
   const sellLot = async (row: PositionRow, qty: number) => {
@@ -743,6 +789,7 @@ export function KiwoomAccountDialog({
 
         <p className="text-sm leading-relaxed text-[var(--workspace-faint)]">
           계좌번호 10자리는 8자리 계좌에 상품코드 2자리가 붙은 값입니다. 10은 위탁종합입니다.
+          평가손익은 키움 앱과 같이 매매 수수료를 뺀 금액입니다. 이 창이 열려 있으면 미국 잔고를 약 1.1초마다 다시 읽습니다.
           국내 잔고는 kt00018, 미국 잔고는 원장잔고확인 ust21070, 원화 추정자산은 통화별 평가 ust21120입니다.
           미국 종목은 달러가 위, 키움이 환산한 원이 아래입니다. 항목을 누르면 그 거래의 수익률 카드가 열립니다.
           {account?.historyNote ? ` ${account.historyNote}` : ""}

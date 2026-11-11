@@ -38,6 +38,8 @@ yarn-error.log*
 /data/*
 !/data/.gitkeep
 !/data/symbol-db.json
+# session secret created on first launch (also covered by /data/*)
+/data/local-auth.token
 
 # vercel
 .vercel

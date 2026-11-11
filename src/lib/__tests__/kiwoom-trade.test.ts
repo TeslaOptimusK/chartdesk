@@ -9,6 +9,7 @@ import {
   historyFillPrice,
   krwToUsd,
   mergeAccountSnapshots,
+  overlayAccountMarks,
   parseKiwoomAccount,
   parseUsLedger,
   parseUsValuation,
@@ -169,9 +170,93 @@ describe("us ledger", () => {
     assert.equal(merged.positions.length, 1);
     assert.equal(merged.summary.evaluation, 14000000);
     assert.equal(merged.summary.purchase, 13590000);
+    assert.equal(merged.summary.pnl, 980000);
+    assert.equal(merged.positions[0]!.krwPnl, 980000);
+    assert.equal(merged.positions[0]!.returnPct, 24.03);
     assert.equal(merged.summary.estimatedAssets, 19000000);
     assert.equal(merged.fxCash[0]!.deposit, 1500.25);
     assert.ok(Math.abs(merged.positions[0]!.weightPct! - (5_060_000 / 14_000_000) * 100) < 1e-6);
+  });
+
+  it("keeps the fee-inclusive total the Kiwoom app shows", () => {
+    const us = parseUsLedger({
+      tot_prch_amt_krw: "46037968",
+      tot_evlt_amt_krw: "43273960",
+      tot_pl_amt_krw: "-2987269",
+      tot_pl_rt: "-6.48",
+      result_list: [
+        {
+          crnc_code: "USD",
+          stk_cd: "SPCX",
+          poss_qty: "121",
+          frgn_stk_book_uv: "160.00",
+          now_pric: "145.00",
+          frgn_stk_book_amt: "19360.00",
+          evlt_amt: "17545.00",
+          pl_amt: "-1885.50",
+          pl_rt: "-9.66",
+          frgn_stk_book_amt_krw: "26043726",
+          evlt_amt_krw: "23650193",
+          pl_amt_krw: "-2517761",
+        },
+        {
+          crnc_code: "USD",
+          stk_cd: "TSLA",
+          poss_qty: "17",
+          frgn_stk_book_uv: "370.00",
+          now_pric: "378.00",
+          pl_amt: "98.50",
+          pl_rt: "1.53",
+          frgn_stk_book_amt_krw: "8612348",
+          evlt_amt_krw: "8787769",
+          pl_amt_krw: "131927",
+        },
+      ],
+    });
+    assert.equal(us.positions[0]!.pnl, -1885.5);
+    assert.equal(us.summary.pnl, -2385834);
+    const moved = parseUsLedger({
+      tot_prch_amt_krw: "46037968",
+      tot_evlt_amt_krw: "32187769",
+      tot_pl_amt_krw: "-2511800",
+      result_list: [
+        {
+          crnc_code: "USD",
+          stk_cd: "SPCX",
+          poss_qty: "121",
+          frgn_stk_book_uv: "160.00",
+          now_pric: "144.00",
+          pl_amt: "-2000",
+          pl_rt: "-10.00",
+          frgn_stk_book_amt_krw: "26043726",
+          evlt_amt_krw: "23400000",
+          pl_amt_krw: "-2643726",
+        },
+        {
+          crnc_code: "USD",
+          stk_cd: "TSLA",
+          poss_qty: "17",
+          frgn_stk_book_uv: "370.00",
+          now_pric: "378.00",
+          pl_amt: "98.50",
+          pl_rt: "1.53",
+          frgn_stk_book_amt_krw: "8612348",
+          evlt_amt_krw: "8787769",
+          pl_amt_krw: "131927",
+        },
+      ],
+    });
+    const base = {
+      ...us,
+      positions: us.positions.map((row, index) =>
+        index === 0 ? { ...row, lots: [{ date: "20261101", qty: 121, price: 160 }] } : row
+      ),
+    };
+    const overlaid = overlayAccountMarks(base, [{ book: "US", snapshot: moved }]);
+    assert.equal(overlaid.summary.pnl, -2511800);
+    assert.equal(overlaid.summary.evaluation, 32187769);
+    assert.equal(overlaid.positions.find((row) => row.code === "SPCX")?.lots?.[0]?.qty, 121);
+    assert.equal(overlaid.positions.find((row) => row.code === "TSLA")?.krwPnl, 131927);
   });
 });
 
@@ -362,11 +447,11 @@ describe("account parse", () => {
     assert.equal(snap.positions[0]!.sellableQty, 8);
     assert.equal(snap.positions[0]!.avgPrice, 70000);
     assert.equal(snap.positions[0]!.lastPrice, 71000);
-    assert.equal(snap.positions[0]!.pnl, 10000);
+    assert.equal(snap.positions[0]!.pnl, -5000);
     assert.equal(snap.positions[0]!.purchaseAmount, 700000);
     assert.equal(snap.positions[0]!.evalAmount, 710000);
     assert.ok(Math.abs(snap.positions[0]!.weightPct! - (710000 / 910000) * 100) < 1e-9);
-    assert.ok(Math.abs(snap.positions[0]!.returnPct! - (1000 / 70000) * 100) < 1e-9);
+    assert.equal(snap.positions[0]!.returnPct, 99);
     assert.equal(snap.positions[1]!.returnPct, -3.5);
     assert.equal(snap.positions[1]!.lastPrice, null);
     assert.equal(snap.positions[1]!.pnl, -4000);
@@ -374,7 +459,8 @@ describe("account parse", () => {
     assert.equal(snap.positions[1]!.evalAmount, null);
     assert.equal(snap.summary.purchase, 900000);
     assert.equal(snap.summary.evaluation, 910000);
+    assert.equal(snap.summary.pnl, -9000);
     assert.equal(snap.summary.estimatedAssets, 1910000);
-    assert.ok(Math.abs(snap.summary.returnPct! - (10000 / 900000) * 100) < 1e-9);
+    assert.ok(Math.abs(snap.summary.returnPct! - (-9000 / 900000) * 100) < 1e-9);
   });
 });
