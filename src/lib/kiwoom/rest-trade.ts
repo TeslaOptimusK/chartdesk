@@ -24,9 +24,9 @@ export interface KiwoomPosition {
   currency: string;
   avgPrice: number | null;
   lastPrice: number | null;
-  /** (현재가-매수가)×수량 when both prices exist, otherwise the broker figure. */
+  /** Broker 평가손익 in `currency`, including the round-trip fee the Kiwoom app deducts. */
   pnl: number | null;
-  /** Percent vs average cost. Matches 매수가/현재가 when both exist. */
+  /** Broker yield. 평가손익 ÷ 매입금액, same as the Kiwoom app. */
   returnPct: number | null;
   /** 매입금액 in `currency`. Broker figure, else 매수가×수량. */
   purchaseAmount: number | null;
@@ -86,7 +86,7 @@ function signed(raw: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-/** Yield that matches the two prices on screen. Reported rate is only a fallback. */
+/** Price yield. Reported rate is the fallback when a price is missing. */
 export function positionReturnPct(
   avgPrice: number | null,
   lastPrice: number | null,
@@ -96,6 +96,42 @@ export function positionReturnPct(
     return ((lastPrice - avgPrice) / avgPrice) * 100;
   }
   return reported;
+}
+
+/** Won P&L the Kiwoom app shows for one row, fee included when the broker sent it. */
+export function positionWonPnl(
+  row: Pick<KiwoomPosition, "krwPnl" | "pnl" | "currency" | "krwEvalAmount" | "krwPurchaseAmount">
+): number | null {
+  if (row.krwPnl != null) return row.krwPnl;
+  if (row.currency === "KRW" && row.pnl != null) return row.pnl;
+  if (row.krwEvalAmount != null && row.krwPurchaseAmount != null) {
+    return row.krwEvalAmount - row.krwPurchaseAmount;
+  }
+  return null;
+}
+
+/**
+ * Prefer the broker total when it is the row sum within one won per row.
+ * A total from another book, or the price gap before fees, stays unused.
+ */
+export function brokerAccountPnl(
+  rowPnl: number | null,
+  reported: Array<number | null>,
+  rowCount: number
+): number | null {
+  if (rowPnl == null) return null;
+  const tolerance = Math.max(1, rowCount);
+  let best: number | null = null;
+  let bestGap = Infinity;
+  for (const value of reported) {
+    if (value == null) continue;
+    const gap = Math.abs(value - rowPnl);
+    if (gap <= tolerance && gap < bestGap) {
+      best = value;
+      bestGap = gap;
+    }
+  }
+  return best ?? rowPnl;
 }
 
 /** A tiny reported total must not hide a real stock evaluation. */
@@ -238,10 +274,9 @@ export function parseKiwoomAccount(
       const evalAmount =
         firstAbs(row, ["evlt_amt", "evlu_amt"]) ??
         (lastPrice != null ? lastPrice * qty : null);
-      const pnl =
-        avgPrice != null && lastPrice != null
-          ? (lastPrice - avgPrice) * qty
-          : reportedPnl;
+      const pricePnl =
+        avgPrice != null && lastPrice != null ? (lastPrice - avgPrice) * qty : null;
+      const pnl = reportedPnl ?? pricePnl;
       return {
         code,
         name: typeof row.stk_nm === "string" ? row.stk_nm.trim() : code,
@@ -251,7 +286,7 @@ export function parseKiwoomAccount(
         avgPrice,
         lastPrice,
         pnl,
-        returnPct: positionReturnPct(avgPrice, lastPrice, reportedRate),
+        returnPct: reportedRate ?? positionReturnPct(avgPrice, lastPrice, null),
         purchaseAmount,
         evalAmount,
         krwAvgPrice: avgPrice,
@@ -266,6 +301,12 @@ export function parseKiwoomAccount(
     .filter((row): row is KiwoomPosition => row != null);
 
   const summaryBase = holdingsSummary(balance);
+  const rowPnls = positions.map(positionWonPnl);
+  const rowPnl =
+    positions.length > 0 && rowPnls.every((value) => value != null)
+      ? rowPnls.reduce((sum, value) => sum + (value ?? 0), 0)
+      : null;
+  const pnl = brokerAccountPnl(rowPnl, [summaryBase.pnl], positions.length) ?? summaryBase.pnl;
   const depositAmount = firstAbs(deposit, ["entr", "dnca_tot_amt", "d2_entra"]);
   const weightBase =
     summaryBase.evaluation ??
@@ -290,6 +331,11 @@ export function parseKiwoomAccount(
     ]),
     summary: {
       ...summaryBase,
+      pnl,
+      returnPct:
+        summaryBase.purchase != null && summaryBase.purchase > 0 && pnl != null
+          ? (pnl / summaryBase.purchase) * 100
+          : summaryBase.returnPct,
       estimatedAssets: accountEstimatedAssets(
         depositAmount,
         summaryBase.evaluation,
@@ -341,9 +387,18 @@ export function parseUsLedger(body: unknown): KiwoomAccountSnapshot {
         (avgPrice != null ? avgPrice * qty : null);
       const evalAmount =
         firstAbs(row, ["evlt_amt"]) ?? (lastPrice != null ? lastPrice * qty : null);
+      const pricePnl =
+        avgPrice != null && lastPrice != null ? (lastPrice - avgPrice) * qty : null;
       const reportedPnl = signed(row.pl_amt);
-      const pnl =
-        avgPrice != null && lastPrice != null ? (lastPrice - avgPrice) * qty : reportedPnl;
+      const pnl = reportedPnl ?? pricePnl;
+      const krwPurchaseAmount = firstAbs(row, ["frgn_stk_book_amt_krw"]);
+      const krwEvalAmount = firstAbs(row, ["evlt_amt_krw"]);
+      const krwPnl =
+        signed(row.pl_amt_krw) ??
+        (krwEvalAmount != null && krwPurchaseAmount != null
+          ? krwEvalAmount - krwPurchaseAmount
+          : null);
+      const reportedRate = signed(row.pl_rt);
       const name =
         typeof row.frgn_stk_nm === "string" && row.frgn_stk_nm.trim()
           ? row.frgn_stk_nm.trim()
@@ -357,14 +412,18 @@ export function parseUsLedger(body: unknown): KiwoomAccountSnapshot {
         avgPrice,
         lastPrice,
         pnl,
-        returnPct: positionReturnPct(avgPrice, lastPrice, signed(row.pl_rt)),
+        returnPct:
+          reportedRate ??
+          (krwPurchaseAmount != null && krwPurchaseAmount > 0 && krwPnl != null
+            ? (krwPnl / krwPurchaseAmount) * 100
+            : positionReturnPct(avgPrice, lastPrice, null)),
         purchaseAmount,
         evalAmount,
         krwAvgPrice: firstAbs(row, ["frgn_stk_book_uv_krw"]),
         krwLastPrice: firstAbs(row, ["now_pric_krw"]),
-        krwPurchaseAmount: firstAbs(row, ["frgn_stk_book_amt_krw"]),
-        krwEvalAmount: firstAbs(row, ["evlt_amt_krw"]),
-        krwPnl: signed(row.pl_amt_krw),
+        krwPurchaseAmount,
+        krwEvalAmount,
+        krwPnl,
         fxRate: firstAbs(row, ["exch_rate"]),
         weightPct: null as number | null,
         venue: usBoard(row.stex_nm),
@@ -375,7 +434,16 @@ export function parseUsLedger(body: unknown): KiwoomAccountSnapshot {
 
   const purchase = firstAbs(root, ["tot_prch_amt_krw"]);
   const evaluation = firstAbs(root, ["tot_evlt_amt_krw"]);
-  const pnl = signed(root.tot_pl_amt_krw);
+  const reportedPnl = signed(root.tot_pl_amt_krw);
+  const rowPnls = positions.map(positionWonPnl);
+  const rowPnl =
+    positions.length > 0 && rowPnls.every((value) => value != null)
+      ? rowPnls.reduce((sum, value) => sum + (value ?? 0), 0)
+      : null;
+  const pnl =
+    brokerAccountPnl(rowPnl, [reportedPnl], positions.length) ??
+    reportedPnl ??
+    (purchase != null && evaluation != null ? evaluation - purchase : null);
   return {
     accountNo: null,
     deposit: null,
@@ -383,8 +451,11 @@ export function parseUsLedger(body: unknown): KiwoomAccountSnapshot {
     summary: {
       purchase,
       evaluation,
-      pnl: pnl ?? (purchase != null && evaluation != null ? evaluation - purchase : null),
-      returnPct: positionReturnPct(purchase, evaluation, signed(root.tot_pl_rt)),
+      pnl,
+      returnPct:
+        purchase != null && purchase > 0 && pnl != null
+          ? (pnl / purchase) * 100
+          : positionReturnPct(purchase, evaluation, signed(root.tot_pl_rt)),
       estimatedAssets: null,
     },
     positions,
@@ -502,8 +573,18 @@ export function mergeAccountSnapshots(parts: KiwoomAccountSnapshot[]): KiwoomAcc
   const deposit = preferAmount(parts.map((part) => part.deposit));
   const reportedPnl = preferAmount(parts.map((part) => part.summary.pnl));
   const reportedAssets = preferAmount(parts.map((part) => part.summary.estimatedAssets));
+  const rowPnls = positions.map(positionWonPnl);
+  const rowPnl =
+    positions.length > 0 && rowPnls.every((value) => value != null)
+      ? rowPnls.reduce((sum, value) => sum + (value ?? 0), 0)
+      : null;
   const pnl =
-    purchase > 0 || evaluation > 0 ? evaluation - purchase : reportedPnl;
+    brokerAccountPnl(
+      rowPnl,
+      parts.map((part) => part.summary.pnl),
+      positions.length
+    ) ??
+    (purchase > 0 || evaluation > 0 ? evaluation - purchase : reportedPnl);
   const weightBase = evaluation > 0 ? evaluation : summedEval;
   for (const row of positions) {
     const wonEval = wonBook(row.currency, row.evalAmount, row.krwEvalAmount);
@@ -526,11 +607,14 @@ export function mergeAccountSnapshots(parts: KiwoomAccountSnapshot[]): KiwoomAcc
       purchase: purchase || preferAmount(parts.map((part) => part.summary.purchase)),
       evaluation: evaluation || preferAmount(parts.map((part) => part.summary.evaluation)),
       pnl,
-      returnPct: positionReturnPct(
-        purchase || null,
-        evaluation || null,
-        preferAmount(parts.map((part) => part.summary.returnPct))
-      ),
+      returnPct:
+        purchase > 0 && pnl != null
+          ? (pnl / purchase) * 100
+          : positionReturnPct(
+              purchase || null,
+              evaluation || null,
+              preferAmount(parts.map((part) => part.summary.returnPct))
+            ),
       estimatedAssets: accountEstimatedAssets(
         deposit,
         evaluation > 0 ? evaluation : null,
@@ -539,6 +623,78 @@ export function mergeAccountSnapshots(parts: KiwoomAccountSnapshot[]): KiwoomAcc
     },
     positions,
     fxCash: [...fxByCurrency.values()],
+  };
+}
+
+function isKrCode(code: string): boolean {
+  return /^\d{6}$/.test(code);
+}
+
+function wonPurchase(row: KiwoomPosition): number {
+  return wonBook(row.currency, row.purchaseAmount, row.krwPurchaseAmount);
+}
+
+function wonEval(row: KiwoomPosition): number {
+  return wonBook(row.currency, row.evalAmount, row.krwEvalAmount);
+}
+
+/** Replace one book (domestic or US) with a fresh read and keep the other book's rows and lots. */
+export function overlayAccountMarks(
+  base: KiwoomAccountSnapshot,
+  updates: Array<{ book: "KR" | "US"; snapshot: KiwoomAccountSnapshot }>
+): KiwoomAccountSnapshot {
+  const replaced = new Set(updates.map((update) => update.book));
+  const bookOf = (code: string): "KR" | "US" => (isKrCode(code) ? "KR" : "US");
+  const kept = base.positions.filter((row) => !replaced.has(bookOf(row.code)));
+  const incoming = updates.flatMap((update) =>
+    update.snapshot.positions.map((row) => {
+      const prev = base.positions.find((item) => item.code === row.code && item.currency === row.currency);
+      return { ...row, lots: row.lots?.length ? row.lots : (prev?.lots ?? []) };
+    })
+  );
+  const positions = [...kept, ...incoming].sort(
+    (a, b) => wonEval(b) - wonEval(a) || a.code.localeCompare(b.code)
+  );
+  let purchase = 0;
+  let evaluation = 0;
+  const reported: Array<number | null> = [];
+  for (const book of ["KR", "US"] as const) {
+    const rows = positions.filter((row) => bookOf(row.code) === book);
+    const update = updates.find((item) => item.book === book);
+    if (!rows.length && !update) continue;
+    const summedPurchase = rows.reduce((sum, row) => sum + wonPurchase(row), 0);
+    const summedEval = rows.reduce((sum, row) => sum + wonEval(row), 0);
+    const reportedPurchase = update?.snapshot.summary.purchase;
+    const reportedEval = update?.snapshot.summary.evaluation;
+    purchase += reportedPurchase != null && reportedPurchase > 0 ? reportedPurchase : summedPurchase;
+    evaluation += reportedEval != null && reportedEval > 0 ? reportedEval : summedEval;
+    if (update) reported.push(update.snapshot.summary.pnl);
+  }
+  const rowPnls = positions.map(positionWonPnl);
+  const rowPnl =
+    positions.length > 0 && rowPnls.every((value) => value != null)
+      ? rowPnls.reduce((sum, value) => sum + (value ?? 0), 0)
+      : positions.length === 0
+        ? 0
+        : null;
+  const pnl = brokerAccountPnl(rowPnl, reported, positions.length) ?? rowPnl;
+  const oldEval = base.summary.evaluation ?? base.positions.reduce((sum, row) => sum + wonEval(row), 0);
+  const estimated =
+    base.summary.estimatedAssets != null ? base.summary.estimatedAssets - oldEval + evaluation : null;
+  for (const row of positions) {
+    const value = wonEval(row);
+    row.weightPct = value > 0 && evaluation > 0 ? (value / evaluation) * 100 : null;
+  }
+  return {
+    ...base,
+    positions,
+    summary: {
+      purchase,
+      evaluation,
+      pnl,
+      returnPct: purchase > 0 && pnl != null ? (pnl / purchase) * 100 : null,
+      estimatedAssets: estimated,
+    },
   };
 }
 
@@ -560,11 +716,28 @@ async function readBalance(apiId: string, body: Record<string, unknown>): Promis
 }
 
 const BALANCE_CACHE_MS = 15_000;
+/** Same id cannot be called more than once a second. One mark read is a single US balance TR. */
+const ACCOUNT_MARKS_GAP_MS = 1_100;
 let balanceCache: { until: number; snapshot: KiwoomAccountSnapshot } | null = null;
+let fullInflight: Promise<KiwoomAccountSnapshot> | null = null;
+let lastMarksAt = 0;
+let marksChain: Promise<unknown> = Promise.resolve();
 
-async function loadKiwoomBalance(): Promise<KiwoomAccountSnapshot> {
-  const now = Date.now();
-  if (balanceCache && now < balanceCache.until) return structuredClone(balanceCache.snapshot);
+function enqueueMarks<T>(fn: () => Promise<T>): Promise<T> {
+  const run = marksChain.then(async () => {
+    const wait = lastMarksAt > 0 ? ACCOUNT_MARKS_GAP_MS - (Date.now() - lastMarksAt) : 0;
+    if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+    lastMarksAt = Date.now();
+    return fn();
+  });
+  marksChain = run.then(
+    () => undefined,
+    () => undefined
+  );
+  return run;
+}
+
+async function readFullBalance(): Promise<KiwoomAccountSnapshot> {
   const [depositEstimated, depositPlain, accountBody, krx18, nxt18, krx04, nxt04, usLedger, usValue] =
     await Promise.all([
       kiwoomAuthorizedPost("/api/dostk/acnt", "kt00001", { qry_tp: "3" }),
@@ -585,35 +758,82 @@ async function loadKiwoomBalance(): Promise<KiwoomAccountSnapshot> {
   if (usLedger) snaps.push(parseUsLedger(usLedger));
   if (usValue) snaps.push(parseUsValuation(usValue));
   const merged = mergeAccountSnapshots(snaps);
-  const snapshot: KiwoomAccountSnapshot = {
+  return {
     ...merged,
     accountNo: formatKiwoomAccountNo(rawAccountNo ?? merged.accountNo),
     historyNote: null,
   };
-  balanceCache = { until: Date.now() + BALANCE_CACHE_MS, snapshot };
-  return structuredClone(snapshot);
 }
 
-export async function fetchKiwoomAccount(options?: { lots?: boolean }): Promise<KiwoomAccountSnapshot> {
-  const snapshot = await loadKiwoomBalance();
+async function loadKiwoomBalance(force = false): Promise<KiwoomAccountSnapshot> {
+  if (!force && balanceCache && Date.now() < balanceCache.until) return structuredClone(balanceCache.snapshot);
+  if (fullInflight) return fullInflight.then((snap) => structuredClone(snap));
+  fullInflight = readFullBalance()
+    .then((snapshot) => {
+      balanceCache = { until: Date.now() + BALANCE_CACHE_MS, snapshot };
+      lastMarksAt = Date.now();
+      return snapshot;
+    })
+    .finally(() => {
+      fullInflight = null;
+    });
+  return fullInflight.then((snap) => structuredClone(snap));
+}
+
+async function refreshMarks(base: KiwoomAccountSnapshot): Promise<KiwoomAccountSnapshot> {
+  const hasKr = base.positions.some((row) => isKrCode(row.code));
+  const [usBody, krxBody, nxtBody] = await Promise.all([
+    readBook("/api/us/acnt", "ust21070", { stex_tp: "", stk_cd: "" }),
+    hasKr ? readBalance("kt00018", { qry_tp: "1", dmst_stex_tp: "KRX" }) : Promise.resolve(null),
+    hasKr ? readBalance("kt00018", { qry_tp: "1", dmst_stex_tp: "NXT" }) : Promise.resolve(null),
+  ]);
+  const updates: Array<{ book: "KR" | "US"; snapshot: KiwoomAccountSnapshot }> = [];
+  if (usBody) updates.push({ book: "US", snapshot: parseUsLedger(usBody) });
+  const krBodies = [krxBody, nxtBody].filter((body): body is Record<string, unknown> => body != null);
+  if (hasKr && krBodies.length) {
+    updates.push({
+      book: "KR",
+      snapshot: mergeAccountSnapshots(krBodies.map((body) => parseKiwoomAccount({}, body))),
+    });
+  }
+  if (!updates.length) return base;
+  return overlayAccountMarks(base, updates);
+}
+
+async function loadKiwoomMarks(): Promise<KiwoomAccountSnapshot> {
+  if (!balanceCache) return loadKiwoomBalance();
+  return enqueueMarks(async () => {
+    if (!balanceCache) return loadKiwoomBalance();
+    const next = await refreshMarks(structuredClone(balanceCache.snapshot));
+    balanceCache = { until: Date.now() + BALANCE_CACHE_MS, snapshot: next };
+    return structuredClone(next);
+  });
+}
+
+export async function fetchKiwoomAccount(options?: {
+  lots?: boolean;
+  /** Re-read the balance TR only. Domestic rows are included when the book already has them. */
+  marks?: boolean;
+  /** Ignore the short balance cache and read deposit plus every holdings TR. */
+  fresh?: boolean;
+}): Promise<KiwoomAccountSnapshot> {
+  const snapshot =
+    options?.marks && !options.fresh ? await loadKiwoomMarks() : await loadKiwoomBalance(options?.fresh === true);
   if (!options?.lots) return snapshot;
-  const held = snapshot.positions.filter((position) => !/^\d{6}$/.test(position.code) && position.qty > 0);
+  const held = snapshot.positions.filter((position) => !isKrCode(position.code) && position.qty > 0);
   const { events, failed } = await readUsTradeFills(held);
   const lotsByCode = openLotsFromFills(events);
   for (const position of snapshot.positions) {
-    if (/^\d{6}$/.test(position.code)) continue;
+    if (isKrCode(position.code)) continue;
     position.lots = groupLotsByPrice(
-      reconcileLots(
-        lotsByCode.get(lotKey(position.code)) ?? [],
-        position.qty,
-        position.avgPrice
-      )
+      reconcileLots(lotsByCode.get(lotKey(position.code)) ?? [], position.qty, position.avgPrice)
     );
   }
   snapshot.historyNote =
     held.length > 0 && failed && events.length === 0
       ? "미국 매수 내역을 읽지 못해 분할 잔고 대신 평균만 표시합니다."
       : null;
+  if (balanceCache) balanceCache = { ...balanceCache, snapshot: structuredClone(snapshot) };
   return snapshot;
 }
 
