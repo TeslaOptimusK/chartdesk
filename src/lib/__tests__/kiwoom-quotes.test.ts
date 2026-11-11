@@ -17,6 +17,7 @@ import {
 import { createQuoteHub, type KiwoomSocket } from "@/lib/kiwoom/quote-hub";
 import {
   fetchKiwoomCandles,
+  isDomesticAccountRateLimit,
   kiwoomAuthorizedPost,
   resetKiwoomRestForTests,
   setKiwoomRequestGapForTests,
@@ -338,6 +339,46 @@ describe("kiwoom routing", () => {
       assert.equal(bars.length, 1);
       assert.equal(bars[0]!.close, 74800);
       assert.equal(bars[0]!.open, 74700);
+    } finally {
+      globalThis.fetch = orig;
+      resetKiwoomRestForTests();
+    }
+  });
+});
+
+describe("domestic account rate limit", () => {
+  it("spaces the same account TR at least a second apart", async () => {
+    assert.equal(isDomesticAccountRateLimit("kt00018"), true);
+    assert.equal(isDomesticAccountRateLimit("ka00001"), true);
+    assert.equal(isDomesticAccountRateLimit("kt10000"), false);
+    assert.equal(isDomesticAccountRateLimit("ka10081"), false);
+    process.env.KIWOOM_APP_KEY = "test-app";
+    process.env.KIWOOM_APP_SECRET = "test-secret";
+    process.env.KIWOOM_REST_URL = "https://kiwoom.test";
+    resetKiwoomRestForTests();
+    setKiwoomRequestGapForTests(0);
+    const orig = globalThis.fetch;
+    const stamps: number[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      const ok = (body: unknown) =>
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      if (url.endsWith("/oauth2/token")) {
+        return ok({ token: "access-token", expires_dt: "20991231235959", return_code: 0 });
+      }
+      stamps.push(Date.now());
+      return ok({ return_code: 0 });
+    }) as typeof fetch;
+    try {
+      await Promise.all([
+        kiwoomAuthorizedPost("/api/dostk/acnt", "kt00018", { dmst_stex_tp: "KRX" }),
+        kiwoomAuthorizedPost("/api/dostk/acnt", "kt00018", { dmst_stex_tp: "NXT" }),
+      ]);
+      assert.equal(stamps.length, 2);
+      assert.ok((stamps[1] ?? 0) - (stamps[0] ?? 0) >= 1000);
     } finally {
       globalThis.fetch = orig;
       resetKiwoomRestForTests();
