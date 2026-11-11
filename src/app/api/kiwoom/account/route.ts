@@ -15,6 +15,8 @@ export const dynamic = "force-dynamic";
 /** Current Kiwoom deposit, positions, and local TP/SL watches. Paper ledger when keys are absent. */
 export async function GET(request: Request) {
   const lots = new URL(request.url).searchParams.get("lots") === "1";
+  const fresh = new URL(request.url).searchParams.get("fresh") === "1";
+  const marks = new URL(request.url).searchParams.get("marks") === "1" && !lots && !fresh;
   const configured = kiwoomQuotesConfigured();
   const live = configured && !kiwoomEndpoints().mock;
   await resumeBracketWatcher().catch(() => undefined);
@@ -45,7 +47,7 @@ export async function GET(request: Request) {
 
   try {
     const [account, usdKrw, outboundIp] = await Promise.all([
-      fetchKiwoomAccount({ lots }),
+      fetchKiwoomAccount({ lots, marks, fresh }),
       fetchUsdKrw(),
       lookupOutboundIp(),
     ]);
