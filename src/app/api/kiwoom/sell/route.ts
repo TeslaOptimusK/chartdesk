@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import {
   KiwoomQuoteError,
-  kiwoomEndpoints,
-  kiwoomQuotesConfigured,
+  kiwoomBrokerConfigured,
+  kiwoomBrokerLive,
 } from "@/lib/kiwoom/quote-rest";
 import { placeKiwoomUsSell } from "@/lib/kiwoom/rest-trade";
 
@@ -16,8 +16,8 @@ export async function POST(req: Request) {
     stex?: "ND" | "NY" | "NA";
     confirmLive?: boolean;
   } | null;
-  const live = kiwoomQuotesConfigured() && !kiwoomEndpoints().mock;
-  if (!kiwoomQuotesConfigured()) {
+  const live = kiwoomBrokerLive();
+  if (!kiwoomBrokerConfigured()) {
     return NextResponse.json({ error: "키움 연결이 없습니다" }, { status: 400 });
   }
   if (live && body?.confirmLive !== true) {

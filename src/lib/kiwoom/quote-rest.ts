@@ -7,6 +7,14 @@ import {
   kiwoomOk,
   kstYmdHmsToEpoch,
 } from "@/lib/kiwoom/quote-protocol";
+import {
+  kiwoomBridgeCall,
+  kiwoomBridgeClient,
+  kiwoomBridgeMock,
+  KiwoomBridgeError,
+  type BridgeCall,
+  type BridgePage,
+} from "@/lib/kiwoom/bridge";
 
 export class KiwoomQuoteError extends Error {
   constructor(message: string) {
@@ -19,6 +27,21 @@ export function kiwoomQuotesConfigured(): boolean {
   return Boolean(
     process.env.KIWOOM_APP_KEY?.trim() && process.env.KIWOOM_APP_SECRET?.trim()
   );
+}
+
+/** Account and order REST. True when this PC has keys, or it delegates to the mini-PC bridge. */
+export function kiwoomBrokerConfigured(): boolean {
+  return kiwoomQuotesConfigured() || kiwoomBridgeClient() != null;
+}
+
+/** Live host. After a bridge call, this follows the mini-PC's KIWOOM_QUOTE_HOST. */
+export function kiwoomBrokerLive(): boolean {
+  if (!kiwoomBrokerConfigured()) return false;
+  if (kiwoomBridgeClient()) {
+    const mock = kiwoomBridgeMock();
+    if (mock != null) return !mock;
+  }
+  return !kiwoomEndpoints().mock;
 }
 
 export function kiwoomEndpoints(): { rest: string; ws: string; mock: boolean } {
@@ -165,7 +188,9 @@ async function postJson(
     });
   } catch (err) {
     if (isTimeout(err)) throw new KiwoomQuoteError(timeoutMessage(apiId));
-    throw err;
+    if (err instanceof KiwoomQuoteError) throw err;
+    const detail = err instanceof Error && err.message ? err.message.slice(0, 160) : "알 수 없는 오류";
+    throw new KiwoomQuoteError(`키움 서버에 연결하지 못했습니다 (${detail})`);
   }
 }
 
@@ -224,7 +249,49 @@ function headerValue(res: Response, name: string): string | null {
   return res.headers.get(name) ?? res.headers.get(name.toLowerCase());
 }
 
+function asBridgeError(err: unknown): KiwoomQuoteError {
+  if (err instanceof KiwoomBridgeError) return new KiwoomQuoteError(err.message);
+  throw err;
+}
+
 async function kiwoomAuthorizedPage(
+  path: string,
+  apiId: string,
+  body: Record<string, unknown>,
+  contYn: string,
+  nextKey: string
+): Promise<{ json: Record<string, unknown>; contYn: string | null; nextKey: string | null }> {
+  if (kiwoomBridgeClient()) {
+    try {
+      const page = await kiwoomBridgeCall({ path, apiId, body, contYn, nextKey });
+      assertBodyOk(page.json, page.status);
+      return { json: page.json, contYn: page.contYn, nextKey: page.nextKey };
+    } catch (err) {
+      throw asBridgeError(err);
+    }
+  }
+  return kiwoomAuthorizedPageDirect(path, apiId, body, contYn, nextKey);
+}
+
+/** Used by the mini-PC bridge. Never delegates, so the bridge cannot call itself. */
+export async function executeKiwoomBridgeCall(input: BridgeCall): Promise<BridgePage> {
+  const page = await kiwoomAuthorizedPageDirect(
+    input.path,
+    input.apiId,
+    input.body,
+    input.contYn,
+    input.nextKey
+  );
+  return {
+    status: 200,
+    json: page.json,
+    contYn: page.contYn,
+    nextKey: page.nextKey,
+    mock: kiwoomEndpoints().mock,
+  };
+}
+
+async function kiwoomAuthorizedPageDirect(
   path: string,
   apiId: string,
   body: Record<string, unknown>,
@@ -318,12 +385,14 @@ export async function fetchKiwoomCandles(
   const hit = chartCache.get(cacheKey);
   if (hit && hit.expires > Date.now()) return hit.bars;
 
-  const token = await issueKiwoomToken();
   const rows: Record<string, unknown>[] = [];
   let contYn = "N";
   let nextKey = "";
+  const token = kiwoomBridgeClient() ? "" : await issueKiwoomToken();
   for (let page = 0; page < 4; page++) {
-    const pageRes = await postChart(spec.apiId, spec.body, token, contYn, nextKey);
+    const pageRes = kiwoomBridgeClient()
+      ? await kiwoomAuthorizedPage("/api/dostk/chart", spec.apiId, spec.body, contYn, nextKey)
+      : await postChart(spec.apiId, spec.body, token, contYn, nextKey);
     rows.push(...chartRowsFromBody(pageRes.json));
     if (pageRes.contYn !== "Y" || !pageRes.nextKey) break;
     if (rows.length >= limit) break;

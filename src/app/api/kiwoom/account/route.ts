@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { listBrackets, resumeBracketWatcher } from "@/lib/kiwoom/brackets";
+import { kiwoomBridgeClient, kiwoomBridgeOutboundIp } from "@/lib/kiwoom/bridge";
 import {
   KiwoomQuoteError,
-  kiwoomEndpoints,
+  kiwoomBrokerConfigured,
+  kiwoomBrokerLive,
   kiwoomNeedsIpRegistration,
-  kiwoomQuotesConfigured,
   lookupOutboundIp,
 } from "@/lib/kiwoom/quote-rest";
 import { fetchKiwoomAccount, fetchUsdKrw } from "@/lib/kiwoom/rest-trade";
@@ -17,8 +18,9 @@ export async function GET(request: Request) {
   const lots = new URL(request.url).searchParams.get("lots") === "1";
   const fresh = new URL(request.url).searchParams.get("fresh") === "1";
   const marks = new URL(request.url).searchParams.get("marks") === "1" && !lots && !fresh;
-  const configured = kiwoomQuotesConfigured();
-  const live = configured && !kiwoomEndpoints().mock;
+  const viaBridge = kiwoomBridgeClient() != null;
+  const configured = kiwoomBrokerConfigured();
+  const via = viaBridge ? "minipc" : "direct";
   await resumeBracketWatcher().catch(() => undefined);
   const brackets = await listBrackets();
 
@@ -27,6 +29,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       mode: "paper",
       live: false,
+      via,
       deposit: paper.cash,
       orderable: paper.cash,
       summary: { purchase: null, evaluation: null, pnl: null, returnPct: null, estimatedAssets: null },
@@ -49,23 +52,34 @@ export async function GET(request: Request) {
     const [account, usdKrw, outboundIp] = await Promise.all([
       fetchKiwoomAccount({ lots, marks, fresh }),
       fetchUsdKrw(),
-      lookupOutboundIp(),
+      viaBridge ? Promise.resolve(null) : lookupOutboundIp(),
     ]);
     return NextResponse.json({
       mode: "rest",
-      live,
+      live: kiwoomBrokerLive(),
+      via,
       ...account,
       usdKrw,
-      outboundIp,
+      outboundIp: viaBridge ? kiwoomBridgeOutboundIp() : outboundIp,
       brackets: brackets.filter((b) => b.armed),
     });
   } catch (err) {
-    const message = err instanceof KiwoomQuoteError ? err.message : "계좌 조회에 실패했습니다";
-    const outboundIp = kiwoomNeedsIpRegistration(message) ? await lookupOutboundIp() : null;
+    const message =
+      err instanceof KiwoomQuoteError
+        ? err.message
+        : err instanceof Error && err.message
+          ? `계좌 조회에 실패했습니다 (${err.message.slice(0, 160)})`
+          : "계좌 조회에 실패했습니다";
+    const outboundIp = viaBridge
+      ? kiwoomBridgeOutboundIp()
+      : kiwoomNeedsIpRegistration(message)
+        ? await lookupOutboundIp()
+        : null;
     return NextResponse.json(
       {
         mode: "rest",
-        live,
+        live: kiwoomBrokerLive(),
+        via,
         deposit: null,
         orderable: null,
         summary: { purchase: null, evaluation: null, pnl: null, returnPct: null, estimatedAssets: null },

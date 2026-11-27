@@ -60,6 +60,7 @@ interface AccountView {
   accountNo?: string | null;
   error?: string;
   outboundIp?: string | null;
+  via?: "minipc" | "direct";
   historyNote?: string | null;
 }
 
@@ -560,10 +561,14 @@ export function KiwoomAccountDialog({
         </DialogHeader>
 
         {account?.error && <div className="text-base text-rose-300">{account.error}</div>}
+        {account?.via === "minipc" && (
+          <div className="text-sm text-[var(--workspace-faint)]">조회는 집 미니 PC의 등록된 주소로 나갑니다.</div>
+        )}
         {account?.outboundIp && (
           <div className="flex flex-wrap items-center gap-2 text-base text-[var(--workspace-fg)]">
             <span>
-              이 PC 접속 주소 <span className="font-mono text-rose-200">{account.outboundIp}</span>
+              {account.via === "minipc" ? "미니 PC 접속 주소" : "이 PC 접속 주소"}{" "}
+              <span className="font-mono text-rose-200">{account.outboundIp}</span>
             </span>
             <button
               type="button"

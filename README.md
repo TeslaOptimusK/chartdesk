@@ -64,6 +64,8 @@ Mock SSE keeps an in-memory **forming bar** and ticks about every `MARKET_DATA_T
 
 Toolbar **매매**. With `KIWOOM_APP_KEY` and `KIWOOM_APP_SECRET`, the ticket reads the account (`kt00001`, `kt00018`) and sends cash orders on the same host as quotes. `KIWOOM_QUOTE_HOST=real` is a live account and asks for a confirm checkbox; `mock` uses the paper host. A buy can set a take-profit and a stop: while ChartDesk is running, a realtime print sells only shares already held. **분할** places equal limit buys across a chart price band (2–20 slices). Without keys, orders stay on the local paper ledger and brackets are not watched. Never commit app keys.
 
+To read that account from another PC, keep the keys on the home mini-PC and set `KIWOOM_BRIDGE_LISTEN=1` plus a long `KIWOOM_BRIDGE_TOKEN` there. ChartDesk opens port `43128` and sends Kiwoom REST out from that PC's registered address. The other PC sets `KIWOOM_BRIDGE_URL` to the mini-PC's Tailscale or LAN address and the same token, and does not get a copy of the app key. The account window then says the read went out through the home mini-PC. Leave `KIWOOM_BRIDGE_URL` unset on the mini-PC itself. If the other PC cannot connect, allow inbound TCP `43128` on the mini-PC for the Tailscale or LAN interface only. Automatic take-profit and stop watches still run only in the ChartDesk that has the app keys.
+
 On a domestic holding the chart draws the fill, target, and stop lines. Solid lines are being watched; dashed lines marked **미설정** are suggestions. Dragging a suggestion arms only that level (the live account asks first); a click without a drag does nothing. Lines on US and crypto holdings are display only, since the watcher can sell KRX codes only.
 
 ### Alerts & webhooks
